@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/memorysystem migrate \"${CLAUDE_PROJECT_DIR}/.agentmem\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "touch \"${CLAUDE_PROJECT_DIR}/.agentmem/.last-write\""
+          }
+        ]
+      }
+    ]
+  }
+}

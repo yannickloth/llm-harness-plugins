@@ -1,0 +1,10 @@
+{
+  "name": "agentmem",
+  "description": "Persistent file-based AI memory system — ADD-only, multi-signal retrieval, hierarchical scoping, ~35 improvements beyond any surveyed system",
+  "version": "1.0.0",
+  "author": {
+    "name": "infolead"
+  },
+  "repository": "https://github.com/infolead/llm-harness-plugins",
+  "tags": ["memory", "persistence", "knowledge", "context"]
+}
