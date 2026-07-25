@@ -1,0 +1,15 @@
+{
+  "name": "llm-harness-plugins",
+  "description": "Cross-platform plugins for LLM coding agents",
+  "owner": {
+    "name": "infolead"
+  },
+  "plugins": [
+    {
+      "name": "agentmem",
+      "description": "Persistent file-based memory system — ADD-only, multi-signal retrieval, hierarchical scoping. One Java core, OpenCode + Claude Code + Pi backends.",
+      "source": "./agentmem",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/agentmem"
+    }
+  ]
+}

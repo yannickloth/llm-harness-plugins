@@ -1,0 +1,51 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": {
+    "memory": "./agentmem/prompts/agent-prompt.md"
+  },
+  "plugin": [
+    "./agentmem/opencode/index.ts"
+  ],
+  "agent": {
+    "memory-keeper": {
+      "description": "Out-of-band memory curator. Extracts non-derivable learnings from conversation.",
+      "mode": "subagent",
+      "steps": 5,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow"
+      }
+    },
+    "memory-dreamer": {
+      "description": "Nightly memory consolidation. Merges, deduplicates, prunes, links.",
+      "mode": "subagent",
+      "steps": 10,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow"
+      }
+    }
+  },
+  "command": {
+    "save-memories": {
+      "description": "Extract learnings from conversation to memory",
+      "run": "opencode run --agent memory-keeper -- Extract non-derivable learnings from the conversation and persist to .agentmem/."
+    },
+    "dream": {
+      "description": "Run memory consolidation",
+      "run": "opencode run --agent memory-dreamer -- Run memory consolidation: merge, deduplicate, prune, link."
+    },
+    "init-memory": {
+      "description": "Bootstrap memory from git history",
+      "run": "java --class-path agentmem/build/classes --source 25 agentmem/MemorySystem.java bootstrap .agentmem ."
+    },
+    "forget-memory": {
+      "description": "Explicitly forget a memory. Usage: /forget-memory <name>",
+      "run": "java --class-path agentmem/build/classes --source 25 agentmem/MemorySystem.java delete .agentmem $ARG"
+    },
+    "skip-review": {
+      "description": "Skip this week's memory review",
+      "run": "echo 'Review skipped.'"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+.agentmem/.tmp/
+.agentmem/.consolidate-lock
+.agentmem/.cold/
+.agentmem/.history/
+.opencode/
