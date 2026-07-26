@@ -58,6 +58,10 @@ Add to your project's `opencode.json`:
 
 Restart OpenCode. The plugin loads and registers four tools.
 
+> **Note:** As of opencode v1.x, the docs only document npm packages in `plugin[]`. However, the source
+> code (`packages/opencode/src/config/plugin.ts`, `resolvePluginSpec`) explicitly supports relative
+> and absolute paths — resolved relative to the config file’s directory. This is confirmed working.
+
 ### Direct copy
 
 ```bash
