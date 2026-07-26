@@ -16,6 +16,24 @@
       "description": "Session analytics + AI-generated narrative reports — scan transcripts, extract facets via LLM, generate HTML insights report with charts and suggestions.",
       "source": "./agentinsights",
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/agentinsights"
+    },
+    {
+      "name": "general-skills",
+"description": "Generic, reusable audit/quality skills for any project — config, redundancy, logic, math, style, cross-refs, citations, proofs, review-convergence. 10 agents across 11 subskills. Domain-agnostic agents, format-aware cross-ref checker.",
+"source": "./general-skills",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/general-skills"
+    },
+    {
+      "name": "typst-toolkit",
+      "description": "Typst-specific tools — syntax fixer, formatting-fixer, xref checker, citation checker, production readiness, diagram checker. 6 agents across 6 subskills.",
+      "source": "./typst-toolkit",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/typst-toolkit"
+    },
+    {
+      "name": "latex-toolkit",
+      "description": "LaTeX-specific tools — syntax fixer, formatting-fixer, xref checker, citation checker, production readiness, figure captions, index auditor, notation checker. 8 agents across 8 subskills.",
+      "source": "./latex-toolkit",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/latex-toolkit"
     }
   ]
 }

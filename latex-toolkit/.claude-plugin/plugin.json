@@ -1,0 +1,9 @@
+{
+  "name": "latex-toolkit",
+  "description": "LaTeX-specific tools for syntax fixing, formatting, cross-reference checking, citation validation, production readiness, figure auditing, notation consistency, and index validation. Format-bound: assumes .tex files and LaTeX syntax.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": { "name": "infolead" },
+  "repository": "https://github.com/infolead/llm-harness-plugins",
+  "tags": ["latex", "tex", "syntax", "formatting", "cross-reference", "citation", "production", "notation"]
+}
