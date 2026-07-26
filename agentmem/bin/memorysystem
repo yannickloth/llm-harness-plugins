@@ -5,4 +5,25 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
 else
     ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 fi
-exec java --class-path "${ROOT}/build/classes" --source 25 "${ROOT}/MemorySystem.java" "$@"
+
+case "$1" in
+    scoped-inject)
+        # Reads PostToolUse JSON from stdin, extracts file path, runs scoped inject
+        EVENT=$(cat)
+        FILE_PATH=$(echo "$EVENT" | python3 -c "
+import sys, json
+e = json.load(sys.stdin)
+# Try tool_input.file_path first (Read/Write/Edit), then tool_input.path, then empty
+ti = e.get('tool_input', {})
+fp = ti.get('file_path') or ti.get('path') or ''
+print(fp)
+" 2>/dev/null)
+        if [ -z "$FILE_PATH" ]; then
+            exit 0
+        fi
+        exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.memory.MemorySystemCli scoped-inject "$2" "$FILE_PATH"
+        ;;
+    *)
+        exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.memory.MemorySystemCli "$@"
+        ;;
+esac

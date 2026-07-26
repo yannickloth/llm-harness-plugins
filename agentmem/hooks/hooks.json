@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/memorysystem migrate \"${CLAUDE_PROJECT_DIR}/.agentmem\""
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/memorysystem inject \"${CLAUDE_PROJECT_DIR}/.agentmem\""
           }
         ]
       }
@@ -18,6 +22,21 @@
           {
             "type": "command",
             "command": "touch \"${CLAUDE_PROJECT_DIR}/.agentmem/.last-write\""
+          },
+          {
+            "type": "command",
+            "command": "FILE=$(cat | python3 -c \"import sys,json; ti=json.load(sys.stdin).get('tool_input',{}); print(ti.get('file_path',''))\" 2>/dev/null); case \"$FILE\" in \"${CLAUDE_PROJECT_DIR}\"/.agentmem/*) exec \"${CLAUDE_PLUGIN_ROOT}\"/bin/memorysystem inject \"${CLAUDE_PROJECT_DIR}/.agentmem\" ;; esac"
+          }
+        ]
+      }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob|Find|Ls|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/memorysystem scoped-inject \"${CLAUDE_PROJECT_DIR}/.agentmem\""
           }
         ]
       }
