@@ -10,6 +10,7 @@ with platform backends for OpenCode, Claude Code, and Pi.
 | Plugin | Description |
 |--------|-------------|
 | [`agentmem`](./agentmem) | Persistent file-based memory system — ADD-only, multi-signal retrieval, hierarchical scoping |
+| [`agentinsights`](./agentinsights) | Session analytics + AI-generated narrative reports — scan transcripts, extract facets via LLM, generate HTML insights |
 
 ---
 
@@ -103,22 +104,25 @@ llm-harness-plugins/           ← marketplace root
 ├── .claude-plugin/
 │   └── marketplace.json       ← registers all plugins
 ├── agentmem/                  ← plugin
+│   ├── ...                    ← 16 core modules
+├── agentinsights/             ← plugin
 │   ├── .claude-plugin/
-│   │   └── plugin.json        ← Claude Code manifest
+│   │   └── plugin.json
 │   ├── bin/
-│   │   └── memorysystem       ← compiled CLI (added to PATH)
+│   │   └── insights           ← compiled CLI
 │   ├── hooks/
-│   │   └── hooks.json         ← SessionStart migration, PostToolUse stamp
-│   ├── MemorySystem.java      ← CLI dispatcher
+│   │   └── hooks.json
 │   ├── opencode/
 │   │   └── index.ts           ← OpenCode plugin entry
-│   ├── prompts/
-│   │   └── agent-prompt.md    ← Agent system prompt
+│   ├── commands/
+│   │   └── insights.md        ← /insights command
+│   ├── prompts/               ← LLM prompt templates
 │   ├── build/classes/         ← compiled Java (committed)
-│   └── src/main/java/eu/infolead/llmhp/memory/
-│       ├── types/             ← MemoryType, Entry, Confidence, etc.
-│       └── ...                ← 16 core modules
+│   └── src/main/java/eu/infolead/llmhp/insights/
+│       ├── types/             ← SessionMeta, SessionFacets, AggregatedData, InsightResults
+│       └── ...                ← 8 core modules
 ├── build.sh
 ├── opencode.json.sample
+├── insights.md                ← Design document for the insights feature
 └── README.md
 ```

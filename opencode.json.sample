@@ -4,7 +4,8 @@
     "memory": "./agentmem/prompts/agent-prompt.md"
   },
   "plugin": [
-    "./agentmem/opencode/index.ts"
+    "./agentmem/opencode/index.ts",
+    "./agentinsights/opencode/index.ts"
   ],
   "agent": {
     "memory-keeper": {
@@ -46,6 +47,10 @@
     "skip-review": {
       "description": "Skip this week's memory review",
       "run": "echo 'Review skipped.'"
+    },
+    "insights": {
+      "description": "Generate session analytics + AI-powered insights report",
+      "run": "java --class-path agentinsights/build/classes eu.infolead.llmhp.insights.InsightsCli run --session-dir .opencode/sessions --insights-dir .agentmem/insights --platform opencode"
     }
   }
 }

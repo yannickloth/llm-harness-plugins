@@ -10,6 +10,12 @@
       "description": "Persistent file-based memory system — ADD-only, multi-signal retrieval, hierarchical scoping. One Java core, OpenCode + Claude Code + Pi backends.",
       "source": "./agentmem",
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/agentmem"
+    },
+    {
+      "name": "agentinsights",
+      "description": "Session analytics + AI-generated narrative reports — scan transcripts, extract facets via LLM, generate HTML insights report with charts and suggestions.",
+      "source": "./agentinsights",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/agentinsights"
     }
   ]
 }
