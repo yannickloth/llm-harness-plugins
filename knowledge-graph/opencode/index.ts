@@ -1,7 +1,7 @@
 import type { Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
-import { existsSync, readFileSync } from "fs"
+import { existsSync } from "fs"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")

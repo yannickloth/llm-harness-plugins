@@ -27,6 +27,7 @@ public final class GraphPreprocessor {
     public Graph process() throws IOException {
         var allTypFiles = findAllTypFiles();
         phase1LabelScan(allTypFiles);
+        phase1bReferenceScan(allTypFiles);
         phase2IncludeResolve(allTypFiles);
         phase3StructuralContext();
         phase4DependencyExtract(allTypFiles);
@@ -107,6 +108,47 @@ public final class GraphPreprocessor {
         }
 
         addProjectStructuralNodes(files);
+    }
+
+    private void phase1bReferenceScan(List<Path> files) throws IOException {
+        var refPattern = Pattern.compile("[@<]([a-zA-Z][a-zA-Z0-9_-]+(?:[.:@][a-zA-Z][a-zA-Z0-9_-]+)*)[>]?");
+
+        for (var file : files) {
+            var content = Files.readString(file);
+            var relPath = projectRoot.relativize(file).toString();
+
+            var matcher = refPattern.matcher(content);
+            while (matcher.find()) {
+                var ref = matcher.group(1);
+                var resolvedNode = resolveReference(ref);
+                if (resolvedNode == null) continue;
+                if (resolvedNode.equals("import")) continue;
+
+                var sourceNode = findParentNodeForFile(relPath);
+                if (sourceNode != null && !sourceNode.equals(resolvedNode)) {
+                    edges.add(new Edge(sourceNode, resolvedNode, "depends_on", Map.of(
+                        "file", relPath,
+                        "scan", "phase1b"
+                    )));
+                }
+            }
+        }
+    }
+
+    private String resolveReference(String ref) {
+        if (nodes.containsKey(ref)) return ref;
+        for (var prefix : List.of("def:", "thm:", "lem:", "prop:", "cor:", "axm:", "asm:",
+                "proof:", "rem:", "ex:", "ki:", "cex:", "obs:",
+                "hyp:", "mech:", "bio:", "drug:", "trt:", "sx:", "cit:",
+                "causal:", "model:", "var:", "spec:", "prot:", "pat:",
+                "fig:", "tab:", "sym:", "ch:", "sec:", "subsec:", "vol:", "part:")) {
+            var candidate = prefix + ref;
+            if (nodes.containsKey(candidate)) return candidate;
+        }
+        var defCand = "def:" + ref;
+        if (nodes.containsKey(defCand)) return defCand;
+        if (nodes.containsKey("heading:" + ref)) return "heading:" + ref;
+        return null;
     }
 
     private void addProjectStructuralNodes(List<Path> files) {
@@ -241,6 +283,41 @@ public final class GraphPreprocessor {
                 edges.add(new Edge(node.id(), ancestor, "appears_in", Map.of()));
             }
         }
+
+        addCrossVolumeEdges();
+    }
+
+    private void addCrossVolumeEdges() {
+        var conceptToNodes = new LinkedHashMap<String, Set<String>>();
+        for (var n : nodes.values()) {
+            if (n.type().equals("def") && !n.file().isEmpty()) {
+                conceptToNodes.computeIfAbsent(n.name(), k -> new LinkedHashSet<>()).add(n.id());
+            }
+        }
+
+        for (var e : conceptToNodes.entrySet()) {
+            var nodeIds = new ArrayList<>(e.getValue());
+            if (nodeIds.size() < 2) continue;
+            var topDirs = new LinkedHashSet<String>();
+            for (var id : nodeIds) {
+                var n = nodes.get(id);
+                if (n == null) continue;
+                var f = n.file();
+                var top = f.contains("/") ? f.substring(0, f.indexOf('/')) : f;
+                topDirs.add(top);
+            }
+            if (topDirs.size() < 2) continue;
+
+            var first = nodeIds.getFirst();
+            for (int i = 1; i < nodeIds.size(); i++) {
+                var second = nodeIds.get(i);
+                if (!first.equals(second)) {
+                    edges.add(new Edge(first, second, "shares_concept", Map.of(
+                        "concept", e.getKey()
+                    )));
+                }
+            }
+        }
     }
 
     private Set<String> walkIncludesUp(String fileNode, Map<String, Set<String>> dag) {
@@ -281,6 +358,12 @@ public final class GraphPreprocessor {
 
     private void phase4DependencyExtract(List<Path> files) throws IOException {
         var refPattern = Pattern.compile("@([a-zA-Z][a-zA-Z0-9_-]+(?:[.:@][a-zA-Z][a-zA-Z0-9_-]+)*)");
+        var knownPrefixes = Set.of("def:", "thm:", "lem:", "prop:", "cor:", "axm:", "asm:",
+                "proof:", "rem:", "ex:", "ki:", "cex:", "obs:",
+                "hyp:", "mech:", "bio:", "drug:", "trt:", "sx:", "cit:",
+                "causal:", "model:", "var:", "spec:", "prot:", "pat:",
+                "fig:", "tab:", "sym:", "ch:", "sec:", "subsec:", "vol:", "part:",
+                "heading:");
 
         for (var file : files) {
             var content = Files.readString(file);
@@ -290,22 +373,35 @@ public final class GraphPreprocessor {
             while (matcher.find()) {
                 var ref = matcher.group(1);
                 String fullRef = null;
-                for (var prefix : List.of("def:", "thm:", "lem:", "prop:", "cor:", "axm:", "asm:",
-                        "proof:", "rem:", "ex:", "ki:", "cex:", "obs:",
-                        "hyp:", "mech:", "bio:", "drug:", "trt:", "sx:", "cit:",
-                        "causal:", "model:", "var:", "spec:", "prot:", "pat:",
-                        "fig:", "tab:", "sym:", "ch:", "sec:", "subsec:", "vol:", "part:")) {
-                    var candidate = prefix + ref;
-                    if (nodes.containsKey(candidate)) {
-                        fullRef = candidate;
-                        break;
+
+                if (nodes.containsKey(ref)) {
+                    fullRef = ref;
+                } else {
+                    for (var prefix : knownPrefixes) {
+                        var candidate = prefix + ref;
+                        if (nodes.containsKey(candidate)) {
+                            fullRef = candidate;
+                            break;
+                        }
                     }
                 }
-                if (fullRef == null) {
-                    var candidate = "def:" + ref;
-                    if (nodes.containsKey(candidate)) fullRef = candidate;
+
+                if (fullRef == null && ref.contains(":")) {
+                    var prefixCheck = ref.contains(":") ? ref.substring(0, ref.indexOf(':') + 1) : "";
+                    if (knownPrefixes.contains(prefixCheck)) {
+                        fullRef = ref;
+                    }
                 }
-                if (fullRef == null) continue;
+
+                if (fullRef == null) {
+                    var defCand = "def:" + ref;
+                    if (!nodes.containsKey(defCand)) {
+                        var line = contentBeforeLine(content, matcher.start());
+                        nodes.put(defCand, new Node(defCand, "def", ref, relPath, String.valueOf(line),
+                            new LinkedHashMap<>(Map.of("line", String.valueOf(line), "file", relPath, "name", ref, "auto", "true"))));
+                    }
+                    fullRef = defCand;
+                }
 
                 var sourceNode = findParentNodeForFile(relPath);
                 if (sourceNode != null && !sourceNode.equals(fullRef)) {
@@ -316,6 +412,78 @@ public final class GraphPreprocessor {
                 }
             }
         }
+
+        addDefinesEdges();
+    }
+
+    private void addDefinesEdges() {
+        var defFileMap = new LinkedHashMap<String, String>();
+        for (var n : nodes.values()) {
+            if (n.type().equals("def") && !isCitationKey(n.name()) && !n.file().isEmpty()) {
+                defFileMap.putIfAbsent(n.name(), n.file());
+            }
+        }
+
+        var citToDef = new LinkedHashMap<String, Set<String>>();
+        for (var citNode : nodes.values()) {
+            if (!citNode.type().equals("def") || !isCitationKey(citNode.name())) continue;
+            var citFile = citNode.file();
+            if (citFile.isEmpty()) continue;
+
+            for (var e : defFileMap.entrySet()) {
+                var defName = e.getKey();
+                var defFile = e.getValue();
+                var defNodeId = findNodeId(defName, defFile);
+                if (defNodeId == null) continue;
+
+                if (citFile.equals(defFile) || fileIncludes(citFile, defFile)) {
+                    citToDef.computeIfAbsent(citNode.id(), k -> new LinkedHashSet<>()).add(defNodeId);
+                }
+            }
+        }
+
+        for (var e : citToDef.entrySet()) {
+            for (var defId : e.getValue()) {
+                edges.add(new Edge(e.getKey(), defId, "defines", Map.of()));
+            }
+        }
+    }
+
+    private boolean fileIncludes(String parentRelPath, String childRelPath) {
+        var parentId = "file:" + pathToNode(parentRelPath);
+        var childId = "file:" + pathToNode(childRelPath);
+        return includesTransitively(parentId, childId, new HashSet<>());
+    }
+
+    private boolean includesTransitively(String from, String to, Set<String> visited) {
+        if (from.equals(to)) return true;
+        if (!visited.add(from)) return false;
+        for (var dep : includeTree.getOrDefault(from, List.of())) {
+            if (includesTransitively(dep, to, visited)) return true;
+        }
+        return false;
+    }
+
+    private String findNodeId(String name, String file) {
+        for (var n : nodes.values()) {
+            if (n.type().equals("def") && n.name().equals(name) && n.file().equals(file)) {
+                return n.id();
+            }
+        }
+        return null;
+    }
+
+    private List<String> findLabelsInFile(String relPath) {
+        var result = new ArrayList<String>();
+        for (var n : nodes.values()) {
+            if (n.file().equals(relPath)) result.add(n.id());
+        }
+        return result;
+    }
+
+    private boolean isCitationKey(String name) {
+        return name.length() > 10 && Character.isLowerCase(name.charAt(0))
+            && name.matches("[a-z]+[0-9]{4}[a-zA-Z].*");
     }
 
     private String findParentNodeForFile(String relPath) {
