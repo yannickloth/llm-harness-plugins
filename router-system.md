@@ -1,422 +1,234 @@
-# OpenCode Router System — Design Document
+# Tier Router — Design Document
 
-## 1. Overview
+Cross-platform plugin that intercepts user prompts, classifies reasoning complexity, reformulates with SOTA prompt engineering criteria, detects ambiguity, and dispatches to the cheapest sufficient model tier. Shared Java 25 core with three backends: Claude Code (hooks), OpenCode (tools), Pi (tools).
 
-**Problem:** Every LLM prompt in a coding assistant consumes tokens at the same model tier. Simple mechanical tasks (typo fixes, rename, format) burn Sonnet/Opus quota. Complex reasoning tasks fail on cheap models. Without a routing layer, we either overspend or underdeliver.
-
-**Solution:** A router plugin that intercepts every user prompt before it reaches the LLM, classifies it by complexity/risk/domain, optionally reformulates it, and dispatches it to the appropriate model tier — `haiku-general` (mechanical), `sonnet-general` (judgment), `opus-general` (deep reasoning), or `fable-general` (future lightweight tier).
-
-**Scope:** OpenCode only. Claude Code already has `infolead-claude-subscription-router` at `~/code/claude-router-system/`. This document designs the OpenCode equivalent.
-
-## 2. Architecture
+## Architecture
 
 ```
 User Prompt
     │
     ▼
-┌─────────────────────────────────────────────┐
-│ OpenCode Plugin: Hook on UserPromptSubmit    │
-│  1. Intercept raw prompt                     │
-│  2. Classify: mechanical / judgment / deep   │
-│  3. Reformulate prompt (style enforcement)   │
-│  4. Inject routing directive into context    │
-│  5. Main agent reads directive → Task tool   │
-│     spawns correct tier agent                │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Backend: Claude Code (UserPromptSubmit) / OpenCode (tools)   │
+│  Pi (tools)                                                   │
+│  → calls Java 25 RouterCli via stdin piping                  │
+└──────────────────────────────────────────────────────────────┘
     │
     ▼
-┌──────────────────────────────────────────────┐
-│ Routing Engine (Java ≥ 25, no Python)        │
-│  - Keyword + pattern classification          │
-│  - Optional LLM-based semantic match         │
-│  - Returns: tier + confidence + reason       │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ RouterEngine.java (10-step pipeline)                          │
+│  (1) ambiguity → classify + ask user                         │
+│  (2) meta-routing → escalate                                 │
+│  (3) complexity signal → escalate                            │
+│  (4) bulk destructive → escalate                             │
+│  (5) file op, no path → escalate                             │
+│  (6) agent def edit → escalate                               │
+│  (7) multiple objectives → escalate                          │
+│  (8) creation/design → escalate                              │
+│  (9) keyword tier match → direct (≥0.8) or sonnet verify     │
+│ (10) no match → escalate                                     │
+└──────────────────────────────────────────────────────────────┘
+    │
+    ├─ Classifier.java   — 8 escalation triggers + 4-tier keyword match
+    └─ Reformatter.java  — SOTA prompt rewriting + ambiguity detection
     │
     ▼
-┌──────────────────────────────────────────────┐
-│ Prompt Reformatter                           │
-│  - Strips AI-style patterns (bold headers,   │
-│    excessive lists, em-dash abuse)            │
-│  - Applies project-specific writing style    │
-│  - Injects: conciseness, no preamble, etc.   │
-└──────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────┐
-│ Dispatcher → Task tool spawns tier agent     │
-│  haiku-general  ── mechanical (1x cost)      │
-│  sonnet-general ── judgment (10x cost)       │
-│  opus-general   ── deep logic (75x cost)     │
-│  fable-general  ── future ultra-light        │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Directive injected into LLM context                          │
+│  DIRECT → Task tool spawns fable/haiku/sonnet/opus-general   │
+│  ESCALATE → Task tool spawns sonnet-general (router)         │
+│  CLARIFY → agent asks user, re-processes                     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## 3. Tier Agent Definitions
+## File Structure
 
-Four general agents, one per reasoning tier. Each is a standalone agent definition file in `.claude/agents/` (or the OpenCode equivalent agents directory) with responsibilities, tools, safety protocols, and escalation rules.
-
-### 3.1 `haiku-general` — Mechanical Tier
-
-```yaml
-model: haiku
-tools: Read, Edit, Write, Bash, Glob, Grep, Task
-cost: 1x
+```
+tier-router/
+├── src/main/java/eu/infolead/llmhp/router/
+│   ├── RouterCli.java       # CLI: classify, route, rewrite, ambiguity
+│   ├── RouterEngine.java    # 10-step classification pipeline
+│   ├── Classifier.java      # 8 escalation triggers + keyword tier match
+│   ├── Reformatter.java     # Prompt rewriting + ambiguity questions
+│   ├── RoutingResult.java   # record: decision, tier, reason, confidence, prompt
+│   ├── Decision.java        # DIRECT | ESCALATE
+│   └── Tier.java            # FABLE | HAIKU | SONNET | OPUS + relativeCost()
+├── agents/                   # Agent definition .md files
+│   ├── fable-general.md     # Ultra-light: close brackets, add semicolons
+│   ├── haiku-general.md     # Mechanical: typos, format, rename, sort
+│   ├── sonnet-general.md    # Judgment: analyze, implement, refactor, review
+│   └── opus-general.md      # Deep: proofs, formal verification, math
+├── hooks/
+│   ├── hooks.json           # Claude Code: UserPromptSubmit + lifecycle
+│   └── user-prompt-submit.sh # Main interception hook
+├── opencode/index.ts        # OpenCode: 3 tools
+├── pi/index.ts              # Pi: 3 tools
+├── prompts/README.md        # Plugin documentation
+└── .claude-plugin/plugin.json
 ```
 
-**Responsibilities:**
-- Simple find-replace
-- Pattern matching and basic transforms
-- File operations with explicit paths
-- Straightforward code modifications
-- No judgment calls
+## Tier Agents
 
-**Safety protocols:**
-- Verify file path is explicit before modification
-- Read file before modifying
-- Confirm change is mechanical and unambiguous
-- Never delete files based on patterns
-- Never interpret vague instructions
+| Tier | Model | Relative Cost | Use When |
+|------|-------|---------------|----------|
+| fable-general | fable | 0.25x | Trivial: close brackets, add semicolons, append/prepend |
+| haiku-general | haiku | 1x | Mechanical: fix typos, format code, rename, sort imports, lint |
+| sonnet-general | sonnet | ~12x | Judgment: analyze, implement, refactor, review, coordinate |
+| opus-general | opus | ~75x | Deep reasoning: prove theorems, formal verification, math |
 
-**Escalation:** "This task requires judgment. Please re-route to sonnet-general."
+Each agent defines responsibilities, safety protocols, and escalation rules. See `agents/*.md`.
 
-### 3.2 `sonnet-general` — Judgment Tier
+## Classification Pipeline (10 steps)
 
-```yaml
-model: sonnet
-tools: Read, Edit, Write, Bash, Glob, Grep, Task
-cost: ~10x
+Stops at first match. Steps 1–8 escalate complex/risky/ambiguous requests; step 9 matches keywords; step 10 is the fallback escalate.
+
+### Step 1: Ambiguity Detection
+
+Catches vague prompts before execution. Matches: `fix the bug`, `update the config`, `make it better`, `optimize the database`, `improve the code`, `clean this up`, `refactor this`. Skips if file path or extension present.
+
+Generates context-specific clarification questions:
+- "fix the bug" → "Which component? (login flow, auth, token refresh, permissions?)"
+- "update the config" → "Which config file? (app.json, database.yml, nginx.conf?)"
+- etc.
+
+### Steps 2–8: Escalation Triggers
+
+| # | Trigger | Keywords | Confidence |
+|---|---------|----------|------------|
+| 2 | Meta-routing | "which agent", "how should i route", "route this to", "delegate to", "what model", "which tier" | 0.9 |
+| 3 | Complexity | "complex", "subtle", "nuanced", "judgment", "trade-off", "best approach", "design", "architecture", "should I", "which is better", "recommend", "decide", "strategy" | 1.0 |
+| 4 | Bulk destructive | "delete"/"remove"/"drop" + "all"/"multiple"/"*"/"every" | 1.0 |
+| 5 | File op, no path | "edit"/"modify"/"change"/"update"/"delete"/"remove" without explicit file path AND not followed by abstract noun ("modify the plan" → skip) | 0.9 |
+| 6 | Agent def edit | ".claude/agents" + edit/modify/update/delete/remove | 1.0 |
+| 7 | Multiple objectives | ≥2 conjunctions: " and ", ", then ", " after ", " before ", ";" | 0.9 |
+| 8 | Creation/design | "new"/"create"/"design"/"build"/"implement" — unless "new file <path>" | 0.85 |
+
+### Step 9: Keyword Tier Match
+
+Priority: Haiku → Opus → Sonnet → Fable.
+
+| Tier | Keywords (regex) | Requires file path? |
+|------|------------------|---------------------|
+| Haiku | `fix\s+(typo\|spelling\|syntax)`, `format\s+(code\|file)`, `lint\s+`, `rename\s+\w+\s+\w*\s*to\s+\w+`, `add\s+(semicolon\|comma\|bracket\|import)`, `remove\s+(trailing\s+whitespace\|unused)`, `correct\s+(spelling\|typo)`, `sort\s+(imports\|lines)` | Yes |
+| Opus | `prove`, `formalize`, `verify correctness`, `mathematical`, `theorem`, `algorithm design`, `proof` | No |
+| Sonnet | `analyze`, `implement`, `refactor`, `integrate`, `review`, `optimize`, `debug`, `investigate` | No |
+| Fable | `\b(add\|close)\s+(semicolon\|bracket\|paren\|brace)\b`, `\b(append\|prepend)\b` | Yes |
+
+Confidence formulas (per tier):
+```
+fable: count(keywords) > 0 → 0.9, else 0.0
+haiku: count(keywords) > 0 → min(0.9, 0.6 + count*0.1), else 0.5
+sonnet: count(keywords) > 0 → min(0.95, 0.65 + count*0.1), else 0.0
+opus: count(keywords) > 0 → min(0.95, 0.7 + count*0.1), else 0.0
 ```
 
-**Responsibilities:**
-- Multi-step tasks requiring planning
-- Analysis and interpretation
-- Cross-referencing multiple sources
-- Coordination between components
-- Judgment and trade-off evaluation
-- Default for most general-purpose work
-- Destructive operations (verify intent, assess scope, check value)
+### Step 10: Fallback Escalate
 
-**Escalation:** Delegate to opus-general for deep logical analysis, proofs, high-stakes decisions. Delegate to project agents for specialized tasks.
+No keyword match → escalate to sonnet-general for intelligent routing.
 
-### 3.3 `opus-general` — Deep Reasoning Tier
-
-```yaml
-model: opus
-tools: Read, Edit, Write, Bash, Glob, Grep, Task
-cost: ~75x
-```
-
-**Responsibilities:**
-- Mathematical proofs and derivations
-- Complex logical analysis
-- Detecting circular reasoning or subtle flaws
-- Multi-factor decision analysis
-- High-stakes operations with significant consequences
-
-**Cost awareness:** ~75x more expensive than Haiku. Optimize for efficiency. Delegate simpler sub-tasks to cheaper models.
-
-### 3.4 `fable-general` — Ultra-Light Tier (Future)
-
-```yaml
-model: fable  # not yet available; speculative
-tools: Read, Edit, Write, Bash, Glob, Grep
-cost: ~0.25x  # targeted
-```
-
-**Responsibilities:**
-- Trivial completions (close bracket, add semicolon)
-- Exact string matches where no context needed
-- Grep/Glob result formatting
-- Single-line edits with explicit content
-
-**Rationale:** Haiku is overkill for tasks needing sub-Haiku reasoning. When a suitably cheap+fast model emerges, fable-general provides the floor tier.
-
-## 4. Classification Engine
-
-### 4.1 Two-Pass Architecture
-
-| Pass | Engine | Cost | Purpose |
-|------|--------|------|---------|
-| **Pre-router** | Keyword/regex patterns | ~zero | 60-70% of requests — mechanical classification |
-| **Full router** | LLM (haiku model) | ~$0.0003/req | When pre-router confidence < 0.8 — semantic understanding |
-
-### 4.2 Pre-Router: Mechanical Escalation Checklist
-
-Eight pattern-based triggers. ANY match → escalate to sonnet-tier routing. Adapted from `routing_core.py` (`~/code/claude-router-system/plugins/.../implementation/routing_core.py`).
-
-| # | Trigger | Keywords / Patterns | Confidence |
-|---|---------|---------------------|------------|
-| 1 | Complexity signals | "complex", "best", "should I", "recommend", "design", "architecture", "strategy", "trade-off", "judgment" | 1.0 |
-| 2 | Bulk destructive | "delete"/"remove"/"drop" + "all"/"multiple"/"*"/"every" | 1.0 |
-| 3 | File op, no path | "edit"/"modify"/"change"/"update" without explicit file path | 0.9 |
-| 4 | Agent definition edit | ".claude/agents" + edit/modify/update | 1.0 |
-| 5 | Multiple objectives | ≥2 conjunctions: "and"/", then"/"after"/"before"/";" | 0.9 |
-| 6 | Creation/design | "new"/"create"/"design"/"build"/"implement" — unless "new file <explicit_path>" | 0.85 |
-| 7 | No agent match | Agent keyword matching confidence < 0.8 | 1.0 |
-| 8 | Meta-routing | "router", "routing", "agent", "delegate" | 0.9 |
-
-### 4.3 Keyword-Based Agent Matching
-
-Fallback when LLM routing disabled. Tiered priority:
-
-**Haiku keywords (high confidence, explicit file required):**
-- `fix typo/spelling/syntax`, `format code/file`, `lint`, `rename X to Y`, `add semicolon/comma/bracket/import`, `remove trailing whitespace/unused`, `correct spelling/typo`, `sort imports/lines`
-
-**Sonnet keywords (reasoning required):**
-- `analyze`, `implement`, `refactor`, `integrate`, `review`, `optimize`, `debug`, `investigate`
-
-**Opus keywords (complex reasoning):**
-- `prove`, `formalize`, `verify correctness`, `mathematical`, `theorem`, `algorithm design`
-
-### 4.4 LLM-Based Semantic Matching
-
-When `ROUTER_USE_LLM=1`: sends request to haiku model with agent descriptions, returns `{agent, confidence}` JSON. Falls back to keyword matching on failure, timeout (10s), or bad JSON.
-
-### 4.5 Confidence → Action Matrix
+### Confidence → Action Matrix
 
 | Confidence | Action |
 |------------|--------|
-| ≥ 0.8 | Direct route to matched agent |
-| 0.5–0.8 | Route to sonnet-general for verification |
-| < 0.5 | Escalate to full router |
+| ≥ 0.8 | Direct route to matched tier agent |
+| 0.7–0.8 | Route to sonnet-general for verification |
+| < 0.7 | Escalate (handled by earlier triggers or step 10) |
 
-## 5. Prompt Reformulation
+## Prompt Reformulation
 
-Every prompt passing through the router gets reformulated before reaching the executing agent. This ensures output quality and prevents AI-style prose patterns.
+Sourced from Anthropic's official prompt engineering documentation (clarity, context, specificity, XML structuring, conciseness directive, uncertainty permission, output format constraints).
 
-### 5.1 Enforced Concision Prefix
+### Pre-Dispatch Rewrites
 
-Prepended to every prompt:
+| Input Pattern | Rewrite |
+|---------------|---------|
+| "can you ..." / "could you ..." / "would you ..." | Strip opener, capitalize |
+| "I want ..." / "I need ..." / "help me ..." | Strip opener, capitalize |
+| "maybe ..." / "perhaps ..." / "possibly ..." | Strip opener, capitalize |
+| "I'm trying to ..." / "I am trying to ..." | Strip opener, capitalize |
+| "—" repeated 2+ times | `"; "` |
+| " — " (single with whitespace) | `", "` |
+| "the relationship:" | "Specifically," |
+| "This is not X—it's Y" | "Rather than X, Y" |
 
-```
-Be concise. Answer directly. Minimize output tokens.
-Do NOT use bold headers, bullet lists for exposition, excessive
-em-dashes, or dramatic section titles. Write in flowing prose.
-```
+### Tier-Specific Suffixes
 
-### 5.2 AI-Style Pattern Stripping
-
-From `~/code/health-me-cfs/.claude/writing-style.md`. The reformatter flags and rewrites:
-
-| Anti-pattern | Rewrite to |
-|-------------|------------|
-| Itemized lists with bold headers | Flowing prose paragraphs |
-| Bold paragraph headers: `**Header.** Content` | Integrate topic into natural paragraph flow |
-| `\begin{enumerate}` for exposition | Reserve for sequential steps only |
-| Colon + list: "The relationship:" then items | Integrate examples into prose |
-| Dramatic section titles | Descriptive, complete phrases |
-| Excessive em-dashes | Semicolons, periods, commas |
-| Repetitive sentence openings | Vary structure |
-| Short punchy declaratives in sequence | Vary sentence length |
-| "This is not X—it is Y" | Rephrase naturally |
-
-### 5.3 Style Enforcement by Agent Tier
-
-| Tier | Style Rule Override |
+| Tier | Appended Directives |
 |------|---------------------|
-| Haiku | Max concision; output in ≤ 3 lines; no preamble |
-| Sonnet | Standard style guide; use transition phrases |
-| Opus | Full style guide; rigorous reasoning chains; executive summaries for complex output |
+| Fable | Conciseness |
+| Haiku | Conciseness + Uncertainty permission |
+| Sonnet | Conciseness + Output format |
+| Opus | Conciseness + Output format + Uncertainty permission |
 
-### 5.4 Per-Project Style Overrides
+### Directives
 
-Projects provide `.claude/writing-style.md` for domain-specific rules (e.g., academic/LaTeX, medical writing, API docs). THe reformatter checks for project-specific style and merges with defaults.
+```
+CONCISENESS: "Be concise. Answer directly. Minimize output tokens.
+  Do NOT use bold headers, bullet lists for exposition, excessive em-dashes,
+  or dramatic section titles. Write in flowing prose. Respond only to what
+  was asked — no preamble, no postamble."
 
-## 6. Probabilistic Router (Phase 2)
+OUTPUT: "REQUIRED OUTPUT: Return usable results — direct results OR file
+  path OR action summary with specifics. Never complete silently."
 
-From `~/code/claude-router-system/.../agents/probabilistic-router.md`. Optimistically routes HIGH-confidence requests to Haiku, validates results, and auto-escalates on failure. Enables 35-40% additional quota savings.
-
-### 6.1 Confidence Classification
-
-| Level | Threshold | Action |
-|-------|-----------|--------|
-| HIGH | > 90% | Try Haiku first; automated validation |
-| MEDIUM | 70-90% | Try Haiku; automated + user-approval validation |
-| LOW | < 70% | Route directly to Sonnet |
-
-### 6.2 HIGH Confidence Signals
-
-`trailing whitespace`, `format`, `indent`, `fix typo`, `sort imports`, `remove unused`, `add missing`, `find all`, `grep`, `count occurrences`, `add semicolon`, `close bracket`
-
-### 6.3 MEDIUM Confidence Signals
-
-`rename`, `extract`, `add type hint`, `add docstring`, `move function`, `copy file`, `create simple`
-
-### 6.4 LOW Confidence Signals (Force Sonnet)
-
-`design`, `architect`, `refactor`, `improve`, `optimize`, `fix bug`, `help me choose`, `which approach`, `best practice`, `complex`
-
-### 6.5 Validation Strategy
-
-| Confidence | Automated Checks | Manual Check |
-|------------|-----------------|--------------|
-| HIGH | Syntax, build, diff | None |
-| MEDIUM | Syntax, build, diff | Show diff to user |
-| LOW | N/A (skip Haiku) | N/A |
-
-**Validation checks:**
-1. Syntax: run language linter on modified files
-2. Build: run build command
-3. Test: run affected tests
-4. Diff: verify changes match request scope
-
-**Escalation on failure:** Haiku → Sonnet, including failure details.
-
-## 7. Cost Models
-
-### 7.1 Model Pricing (Claude)
-
-| Model | Input ($/MTok) | Output ($/MTok) | Relative Cost |
-|-------|---------------|-----------------|---------------|
-| Fable (future) | ~0.06 | ~0.30 | ~0.25x |
-| Haiku | 0.25 | 1.25 | 1x |
-| Sonnet | 3.00 | 15.00 | ~10-12x |
-| Opus | 15.00 | 75.00 | ~60-75x |
-
-### 7.2 Propose-Review Break-Even
-
-| Pattern | Break-Even |
-|---------|------------|
-| Haiku propose → Sonnet review | Haiku success rate > 60% |
-| Sonnet propose → Opus review | Sonnet success rate > 67% |
-
-### 7.3 Expected Savings
-
-| Scenario | Without Router | With Router | Savings |
-|----------|---------------|-------------|---------|
-| 60% mechanical tasks | All Sonnet | Haiku for mechanical 60% | ~55% |
-| + probabilistic routing | — | Additional 35-40% on remaining | ~70% total |
-
-## 8. Strategy Advisor (Phase 2)
-
-From `~/code/claude-router-system/.../agents/strategy-advisor.md`. After router selects agent, strategy-advisor determines execution pattern by analyzing: volume, mechanical score, verifiability, and context homogeneity.
-
-### 8.1 Execution Strategies
-
-| Strategy | When |
-|----------|------|
-| `direct-haiku` | Read-only, no changes possible |
-| `direct-sonnet` | Judgment required |
-| `direct-opus` | Deep reasoning, no cheaper alternative |
-| `propose-review` | Haiku proposes → Sonnet reviews (saves money if haiku success > 60%) |
-| `draft-then-evaluate` | Haiku batch-drafts N items → Sonnet evaluates in 1 message |
-| `draft-then-evaluate-partitioned` | Above, partitioned by context boundaries |
-
-### 8.2 Mechanical Score
-
-0.0 (pure judgment) to 1.0 (fully mechanical):
-
-| Task | Score |
-|------|-------|
-| Exact pattern replacement | 1.0 |
-| Syntax fixes (compiler-verified) | 0.9 |
-| Reference/label updates | 0.8 |
-| Formatting, organization | 0.5 |
-| Style improvements | 0.3 |
-| Pure judgment | 0.1 |
-
-### 8.3 Verifiability
-
-**Easy (cheap review):** compiler verification, pattern matching, automated tests, diff review.
-**Hard (expensive review):** requires re-reading all content, judgment calls, deep logical analysis.
-
-### 8.4 Context Homogeneity
-
-Tasks sharing context → batch-evaluate efficiently. Homogeneous → `draft-then-evaluate`. Heterogeneous → partition or direct execute.
-
-## 9. Implementation Plan
-
-### 9.1 Phase 1: Core Router Plugin (1-2 weeks)
-
-| Task | Description |
-|------|-------------|
-| 1. Plugin scaffold | OpenCode plugin with `UserPromptSubmit` hook, TypeScript |
-| 2. Routing engine | Java 25 port of `routing_core.py` — keyword patterns + escalation triggers |
-| 3. Agent definitions | `haiku-general`, `sonnet-general`, `opus-general`, `fable-general` `.md` files |
-| 4. opencode.json config | `agent` section mapping tier names to models |
-| 5. Routing directive injection | `<routing-recommendation>` block injected into context |
-| 6. Basic reformatter | Concision prefix + list → prose conversion |
-
-### 9.2 Phase 2: Smart Routing (1-2 weeks)
-
-| Task | Description |
-|------|-------------|
-| 7. LLM-based matching | When `ROUTER_USE_LLM=1`, use haiku for semantic agent matching |
-| 8. Probabilistic router | Optimistic Haiku with validation + auto-escalation |
-| 9. Strategy advisor | Cost-aware execution strategy selection |
-| 10. Domain configs | Per-project `.yaml` domain definitions (software-dev, latex-research, etc.) |
-
-### 9.3 Phase 3: Optimization (ongoing)
-
-| Task | Description |
-|------|-------------|
-| 11. Metrics tracking | Route decisions, success rates, costs saved → `.jsonl` log |
-| 12. Adaptive thresholds | Tune confidence thresholds from metrics |
-| 13. Fable tier | When ultra-cheap model available, add fable-general |
-| 14. Prompt reformatter v2 | AI-style pattern detection with stripper agent |
-
-## 10. Configuration Example
-
-### `opencode.json` agent section
-
-```json
-{
-  "agent": {
-    "haiku-general": {
-      "model": "anthropic/claude-haiku-4",
-      "description": "Mechanical tasks: fix typos, format code, rename, simple edits. No judgment.",
-      "mode": "subagent"
-    },
-    "sonnet-general": {
-      "model": "anthropic/claude-sonnet-4",
-      "description": "Judgment tasks: analyze, implement, refactor, review, debug. Default tier.",
-      "mode": "subagent"
-    },
-    "opus-general": {
-      "model": "anthropic/claude-opus-4",
-      "description": "Deep reasoning: proofs, formal verification, architecture decisions, math.",
-      "mode": "subagent"
-    },
-    "fable-general": {
-      "model": "anthropic/claude-fable-4",
-      "description": "Ultra-light: trivial completions, exact matches, single-line edits.",
-      "mode": "subagent"
-    }
-  }
-}
+UNCERTAINTY: "If uncertain or missing info, say so explicitly.
+  Never invent facts or fabricate output."
 ```
 
-## 11. IVP Analysis
+## Backends
+
+### Claude Code (hook-based, full interception)
+
+`hooks/user-prompt-submit.sh` intercepts every `UserPromptSubmit` event:
+
+1. Calls Java `ambiguity` → if ambiguous, injects `<routing-recommendation>` with clarification directive
+2. Calls Java `route` → classifies + rewrites
+3. Extracts JSON fields (fallback to `escalate/sonnet` on failure)
+4. Logs metrics to `.tier-router/metrics/<date>.jsonl` (atomic append with flock)
+5. Injects `<routing-recommendation>` directive into Claude's context
+
+The main agent reads the directive and must obey it (enforced by `Router System` rules in project's CLAUDE.md).
+
+### OpenCode (tool-based)
+
+`opencode/index.ts` registers 3 tools:
+- `classify-prompt` — classify + rewrite a prompt string
+- `rewrite-prompt` — rewrite for a specific tier
+- `check-ambiguity` — detect ambiguity, return clarification questions
+
+All call Java `RouterCli` via Bun shell with stdin piping (no shell injection). OpenCode does not currently expose a `UserPromptSubmit`-equivalent hook, so prompt interception via directive injection is not yet available.
+
+### Pi (tool-based)
+
+`pi/index.ts` registers the same 3 tools. Calls Java via `pi.exec()` with stdin piping.
+
+## IVP Analysis
 
 | Component | Change Driver | Artifact |
 |-----------|--------------|----------|
-| Router (tier classification) | Task complexity taxonomy | User intent patterns observed in practice |
-| Reformatter | Writing style conventions | `.claude/writing-style.md` |
-| haiku-general | Haiku model capabilities | Model provider release notes |
-| sonnet-general | Sonnet model capabilities | Model provider release notes |
-| opus-general | Opus model capabilities | Model provider release notes |
-| Strategy advisor | API pricing models, cost optimization | Provider pricing page |
-| Probabilistic router | Validation methodology, model reliability | Success rate metrics |
+| Classifier (escalation triggers + keywords) | Task complexity taxonomy | Observed user intent patterns |
+| Reformatter | Prompt engineering best practices | Anthropic prompt engineering docs |
+| fable-general | Fable model capabilities | Model release notes |
+| haiku-general | Haiku model capabilities | Model release notes |
+| sonnet-general | Sonnet model capabilities | Model release notes |
+| opus-general | Opus model capabilities | Model release notes |
+| user-prompt-submit.sh | Claude Code plugin hook API | Claude Code plugin spec |
+| opencode/index.ts | OpenCode plugin SDK | @opencode-ai/plugin |
+| pi/index.ts | Pi plugin SDK | @pi-ai/plugin |
 
-Router logic and agent capabilities are IVP-separated: changing model pricing never requires editing an agent definition; changing model capabilities never requires editing routing rules.
+**IVP Compliance:** Changing model pricing never requires editing an agent definition. Changing model capabilities never requires editing routing rules. Each backend (OpenCode/Pi/Claude Code) varies independently. The shared Java core varies with classification logic only.
 
-## 12. Reference Implementation
+## Reference Implementation
 
-The Claude Code router system at `~/code/claude-router-system/` serves as the reference. Key files:
+The Claude Code router at `~/code/claude-router-system/` served as the initial reference. The tier-router improves on it by:
+- Eliminating Python (Java 25 only)
+- Adding SOTA prompt reformulation (not present in original)
+- Adding ambiguity detection with clarification questions
+- Supporting three backends (not just Claude Code)
+- Tighter IVP boundaries (classifier/reformatter/backends separated)
 
-| File | Purpose |
-|------|---------|
-| `.../hooks/user-prompt-submit.sh` | Shell hook that calls `routing_core.py`, injects `<routing-recommendation>` |
-| `.../implementation/routing_core.py` | Pre-router: 8 mechanical escalation triggers + keyword/LLM agent matching |
-| `.../implementation/probabilistic_router.py` | Optimistic Haiku execution with validation + auto-escalation |
-| `.../agents/router.md` | Sonnet-tier intelligent router: domain classification, risk assessment, delegation |
-| `.../agents/haiku-pre-router.md` | Haiku-tier cost-optimized first-pass router |
-| `.../agents/probabilistic-router.md` | Confidence classification + validation-based optimistic routing |
-| `.../agents/strategy-advisor.md` | Cost-aware execution strategy selection |
-| `.../agents/haiku-general.md` | Mechanical tier agent definition |
-| `.../agents/sonnet-general.md` | Judgment tier agent definition |
-| `.../agents/opus-general.md` | Deep reasoning tier agent definition |
-| `.../config/domains/latex-research.yaml` | Domain-specific routing config example |
-| `.../adaptive-orchestration.yaml.example` | Threshold + pattern customization |
+## Costs
 
-The existing codebase at `~/code/ivp-book-series/` and `~/code/health-me-cfs/` demonstrates the agent tier system in production with 180+ specialized agents, description-based delegation, and model escalation rules — but no prompt interception or reformulation layer. The `~/code/health-me-cfs/.claude/writing-style.md` and `~/code/health-me-cfs/.claude/prompts/research-ai-prose-patterns.md` provide the prompt rewriting reference.
+Classification runs locally (Java, zero-cost). No model is consumed for routing unless `ROUTER_USE_LLM` is enabled (not yet implemented). Sub-millisecond latency.
+
+Expected savings: ~55% with baseline routing (60% of tasks are mechanical and routed to Haiku instead of Sonnet). ~70% with probabilistic routing (Phase 2, not yet implemented).
