@@ -10,7 +10,6 @@ description: Prompt-intercepting multi-tier router that classifies user requests
    - Conciseness directive (critical for Opus 5+)
    - Output format constraint ("Return usable results")
    - Uncertainty permission ("If unsure, say so")
-   - Action directive ("Implement, don't just suggest")
    - Strips AI-style anti-patterns (em-dash abuse, weak openers, template language)
 4. **Ambiguity check**: Detects vague requests ("fix the bug", "update the config") and asks clarification before routing
 5. **Dispatch**: Injects `<routing-recommendation>` directive into context → main agent spawns correct tier agent
