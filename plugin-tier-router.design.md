@@ -16,7 +16,9 @@ User Prompt
     │
     ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ RouterEngine.route() — 10-step classification pipeline       │
+│ RouterEngine — 10-step classification pipeline                   │
+│  route() = classify only. routeWithRewrite() = classify + rewrite │
+│  (Claude Code hook uses routeWithRewrite. Pi uses classify.)      │
 │  (1) ambiguity → DIRECT to sonnet with clarification Qs      │
 │  (2) meta-routing → ESCALATE                                 │
 │  (3) complexity signal → ESCALATE                            │
@@ -27,17 +29,17 @@ User Prompt
 │  (8) creation/design → ESCALATE                              │
 │  (9) keyword tier match → DIRECT (≥0.8) or sonnet verify     │
 │ (10) no match → ESCALATE                                     │
+│                                                              │
+│  Internally: Classifier.java (escalation + keyword match)    │
+│  Reformatter.java (ambiguity at step 1 and rewrite for step 9)│
+│  Ambiguity runs INSIDE route(), before all escalation checks  │
 └──────────────────────────────────────────────────────────────┘
-    │
-    ├─ Classifier.java   — 8 escalation triggers + 4-tier keyword match
-    └─ Reformatter.java  — ambiguity detection (step 1) + post-classification prompt rewrite
     │
     ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ routeWithRewrite() — post-classification prompt rewrite       │
-│  Reformatter.rewrite() applies pre-dispatch rewrites +       │
-│  tier-specific directives for DIRECT cases.                   │
-│  Ambiguous/ESCALATE prompts pass through unmodified.          │
+│ Post-classification: for DIRECT cases, Reformatter.rewrite() │
+│ applies pre-dispatch edits + tier-specific directives.        │
+│ ESCALATE and ambiguous cases pass through unmodified.        │
 └──────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -202,7 +204,7 @@ UNCERTAINTY: "If uncertain or missing info, say so explicitly.
 
 `hooks/user-prompt-submit.sh` intercepts every `UserPromptSubmit` event:
 
-1. Calls Java `ambiguity` → if ambiguous, injects `<routing-recommendation>` with clarification directive
+1. Checks ambiguity via Java `ambiguity` command → if ambiguous, injects `<routing-recommendation>` with clarification directive and exits early (avoids full classification cost). Ambiguity is also re-checked inside `route()` as step 1 of the pipeline — the shell-level check is a fast-path optimization.
 2. Calls Java `route` → classifies + rewrites
 3. Extracts JSON fields (fallback to `escalate/sonnet` on failure)
 4. Logs metrics to `.tier-router/metrics/<date>.jsonl` (atomic append with flock)
@@ -212,14 +214,14 @@ The main agent reads the directive and must obey it (enforced by `Router System`
 
 Additional lifecycle hooks track subagent execution for metrics:
 - `SubagentStart` / `SubagentStop` — log which agent was spawned and duration
-- `SessionStart` / `SessionEnd` — session state bookkeeping
-- `PreToolUse` (Write/Edit) — write approval gate
+- `SessionStart` / `SessionEnd` — placeholder hooks (reserved for future state management)
+- `PreToolUse` (Write/Edit) — write approval gate (placeholder)
 
 ### OpenCode (tool-based)
 
 `opencode/index.ts` registers 3 tools:
-- `classify-prompt` — classify + rewrite a prompt string
-- `rewrite-prompt` — rewrite for a specific tier
+- `classify-prompt` — classify + rewrite a prompt string (calls `RouterCli route`, which includes rewriting)
+- `rewrite-prompt` — rewrite for a specific tier without classification
 - `check-ambiguity` — detect ambiguity, return clarification questions
 
 All call Java `RouterCli` via Bun shell with stdin piping (no shell injection). OpenCode does not currently expose a `UserPromptSubmit`-equivalent hook, so full prompt interception with automatic directive injection is only available on Claude Code. On OpenCode and Pi, the tools can be invoked manually for classification and rewriting; the user or agent must explicitly call `classify-prompt` to get routing decisions.
@@ -232,8 +234,8 @@ All call Java `RouterCli` via Bun shell with stdin piping (no shell injection). 
 
 | Component | Change Driver | Artifact |
 |-----------|--------------|----------|
-| Classifier (escalation triggers + keywords) | Task complexity taxonomy | Observed user intent patterns |
-| Reformatter | Prompt engineering best practices | Anthropic prompt engineering docs |
+| Classifier (escalation triggers + keywords) | Task complexity taxonomy | Anthropic model capability tiers + ai-patterns Routing pattern (ch23) |
+| Reformatter | Prompt engineering best practices | Anthropic prompt engineering documentation |
 | fable-general | Fable model capabilities | Model release notes |
 | haiku-general | Haiku model capabilities | Model release notes |
 | sonnet-general | Sonnet model capabilities | Model release notes |
@@ -255,6 +257,6 @@ The Claude Code router at `~/code/claude-router-system/` served as the initial r
 
 ## Costs
 
-Classification runs locally (Java, zero-cost). No model is consumed for routing unless `ROUTER_USE_LLM` is enabled (not yet implemented). Sub-millisecond latency.
+Classification runs locally (Java, zero-cost). No model is consumed for routing. Sub-millisecond latency.
 
 Expected savings: ~55% with baseline routing (60% of tasks are mechanical and routed to Haiku instead of Sonnet). ~70% with probabilistic routing (Phase 2, not yet implemented).
