@@ -18,7 +18,7 @@ User Prompt
 ┌──────────────────────────────────────────────────────────────┐
 │ RouterEngine — 10-step classification pipeline                   │
 │  route() = classify only. routeWithRewrite() = classify + rewrite │
-│  (Claude Code hook uses routeWithRewrite. Pi uses classify.)      │
+│  Production: Claude Code+OpenCode → routeWithRewrite. Pi → route. │
 │  (1) ambiguity → DIRECT to sonnet with clarification Qs      │
 │  (2) meta-routing → ESCALATE                                 │
 │  (3) complexity signal → ESCALATE                            │
@@ -99,10 +99,14 @@ Catches vague prompts before execution. Matches: `fix the bug`, `update the conf
 
 Returns `Decision.DIRECT` with tier `SONNET` and confidence `0.3` — the low confidence signals to the directive generator that clarification is needed rather than normal execution.
 
-Generates context-specific clarification questions:
-- "fix the bug" → "Which component? (login flow, auth, token refresh, permissions?)"
-- "update the config" → "Which config file? (app.json, database.yml, nginx.conf?)"
-- etc.
+Generates context-specific clarification questions for 7 patterns:
+- "fix the bug" → "Which component? (login flow, auth, token refresh, permissions?)" + "What is the specific symptom or error?"
+- "update the config" → "Which config file? (app.json, database.yml, nginx.conf?)" + "What change? (add field, modify value, remove setting?)"
+- "make it better" → "Better in what way? (performance, UX, code quality, error handling?)"
+- "optimize the database" → "What aspect? (query speed, storage size, indexes?)" + "Constraints? (can modify schema? add indexes?)"
+- "improve the code" / "refactor this" → "What specific improvement? (performance, readability, architecture, test coverage?)"
+- "clean this up" → "What to clean? (unused files, dead code, formatting, duplicate logic?)"
+- Default: "Could you clarify the scope and specific goal?"
 
 ### Steps 2–8: Escalation Triggers
 
@@ -112,7 +116,7 @@ Generates context-specific clarification questions:
 | 3 | Complexity | "complex", "subtle", "nuanced", "judgment", "trade-off", "best approach", "design", "architecture", "should I", "which is better", "recommend", "decide", "strategy" | 1.0 |
 | 4 | Bulk destructive | "delete"/"remove"/"drop" + "all"/"multiple"/"*"/"every" | 1.0 |
 | 5 | File op, no path | "edit"/"modify"/"change"/"update"/"delete"/"remove" without explicit file path AND not followed by abstract noun ("modify the plan" → skip) | 0.9 |
-| 6 | Agent def edit | ".claude/agents" + edit/modify/update/delete/remove | 1.0 |
+| 6 | Agent def edit | ".claude/agents" + edit/modify/change/update/delete/remove | 1.0 |
 | 7 | Multiple objectives | ≥2 conjunctions: " and ", ", then ", " after ", " before ", ";" | 0.9 |
 | 8 | Creation/design | "new"/"create"/"design"/"build"/"implement" — unless "new file <path>" | 0.85 |
 
@@ -125,7 +129,7 @@ Priority: Haiku → Opus → Sonnet → Fable.
 | Haiku | `fix\s+(typo\|spelling\|syntax)`, `format\s+(code\|file)`, `lint\s+`, `rename\s+\w+\s+\w*\s*to\s+\w+`, `add\s+(semicolon\|comma\|bracket\|import)`, `remove\s+(trailing\s+whitespace\|unused)`, `correct\s+(spelling\|typo)`, `sort\s+(imports\|lines)` | Yes |
 | Opus | `prove`, `formalize`, `verify correctness`, `mathematical`, `theorem`, `algorithm design`, `proof` | No |
 | Sonnet | `analyze`, `implement`, `refactor`, `integrate`, `review`, `optimize`, `debug`, `investigate` | No |
-| Fable | `\b(add\|close)\s+(semicolon\|bracket\|paren\|brace)\b`, `\b(append\|prepend)\b` | Yes |
+| Fable | `\b(add\|close)\s+(semicolon\|bracket\|paren\|brace)\b` (case-insensitive), `\b(append\|prepend)\b` | Yes |
 
 Confidence formulas (per tier). Capped at tier-specific ceilings to avoid overconfidence from single-keyword matches:
 
@@ -148,7 +152,7 @@ No keyword match → escalate to sonnet-general for intelligent routing.
 |------------|--------|
 | ≥ 0.8 | Direct route to matched tier agent |
 | 0.7–0.8 | Route to sonnet-general for verification |
-| < 0.7 | Escalate (handled by earlier triggers or step 10) |
+| < 0.7 | Escalate via step 10 (fallback — no tier matched with sufficient confidence) |
 
 ## Prompt Reformulation
 
@@ -224,7 +228,11 @@ Additional lifecycle hooks track subagent execution for metrics:
 - `rewrite-prompt` — rewrite for a specific tier without classification
 - `check-ambiguity` — detect ambiguity, return clarification questions
 
-All call Java `RouterCli` via Bun shell with stdin piping (no shell injection). OpenCode does not currently expose a `UserPromptSubmit`-equivalent hook, so full prompt interception with automatic directive injection is only available on Claude Code. On OpenCode and Pi, the tools can be invoked manually for classification and rewriting; the user or agent must explicitly call `classify-prompt` to get routing decisions.
+All call Java `RouterCli` via Bun shell with stdin piping (no shell injection). OpenCode does not currently expose a `UserPromptSubmit`-equivalent hook, so full prompt interception with automatic directive injection is only available on Claude Code. On OpenCode and Pi, the tools can be invoked manually for classification and rewriting.
+
+Tool behavior differs between backends:
+- OpenCode `classify-prompt` calls `RouterCli route` → returns rewritten prompt
+- Pi `classify-prompt` calls `RouterCli classify` → returns classification only (raw prompt)
 
 ### Pi (tool-based)
 
@@ -259,4 +267,4 @@ The Claude Code router at `~/code/claude-router-system/` served as the initial r
 
 Classification runs locally (Java, zero-cost). No model is consumed for routing. Sub-millisecond latency.
 
-Expected savings: ~55% with baseline routing (60% of tasks are mechanical and routed to Haiku instead of Sonnet). ~70% with probabilistic routing (Phase 2, not yet implemented).
+Expected savings (estimate, not measured): ~55% with baseline routing if ~60% of tasks classify as mechanical (routed to Haiku instead of Sonnet). ~70% with probabilistic routing (Phase 2, not yet implemented).
