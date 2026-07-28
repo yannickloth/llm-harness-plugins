@@ -1,0 +1,56 @@
+project:
+  name: ivp-book-series
+  description: >-
+    IVP Books — formal content with theorems, definitions, proofs, lemmas, corollaries
+
+label_rules:
+  - regex: '#\(?([a-zA-Z][a-zA-Z0-9_-]+)\)?'
+    type: label_raw
+  - regex: '== ([\w\s-]+)'
+    type: heading
+  - regex: '<([a-zA-Z][a-zA-Z0-9_-]+)>'
+    type: def
+  - regex: '\\[([a-zA-Z][a-zA-Z0-9_-]+)\\]'
+    type: structural
+
+edge_rules:
+  - from: thm
+    to: def
+    type: depends_on
+    description: "Theorem depends on definition"
+  - from: prop
+    to: def
+    type: depends_on
+    description: "Proposition depends on definition"
+  - from: cor
+    to: thm
+    type: depends_on
+    description: "Corollary depends on parent theorem"
+  - from: lem
+    to: thm
+    type: serves_as_lemma
+    description: "Lemma serves theorem"
+  - from: proof
+    to: thm
+    type: proves
+    description: "Proof proves theorem"
+
+naming_conventions:
+  proof→thm: ["proves"]
+  proof→prop: ["proves"]
+  proof→cor: ["proves"]
+  proof→lem: ["proves"]
+  lem→thm: ["serves_as_lemma"]
+  lem→prop: ["serves_as_lemma"]
+
+structural_prefixes:
+  - prj
+  - vol
+  - part
+  - ch
+  - sec
+  - subsec
+  - file
+  - fig
+  - tab
+  - sym

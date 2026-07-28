@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/kg-context overview \"${CLAUDE_PROJECT_DIR}/graph.json\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Grep|Glob|Find|Ls|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/kg-context subgraph \"${CLAUDE_PROJECT_DIR}/graph.json\" \"${CLAUDE_TOOL_INPUT}\" 1"
+          }
+        ]
+      }
+    ]
+  }
+}

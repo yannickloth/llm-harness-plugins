@@ -1,0 +1,54 @@
+project:
+  name: health-me-cfs
+  description: >-
+    ME/CFS biological modeling — hypotheses, mechanisms, biomarkers, treatments, citations
+
+label_rules:
+  - regex: '#\(?([a-zA-Z][a-zA-Z0-9_-]+)\)?'
+    type: label_raw
+  - regex: '@([a-zA-Z][a-zA-Z0-9_-]+(?:[.:@][a-zA-Z][a-zA-Z0-9_-]+)*)'
+    type: ref
+  - regex: '<([a-zA-Z][a-zA-Z0-9_-]+)>'
+    type: def
+
+edge_rules:
+  - from: hyp
+    to: mech
+    type: depends_on
+    description: "Hypothesis depends on mechanism"
+  - from: mech
+    to: mech
+    type: depends_on
+    description: "Mechanism depends on mechanism"
+  - from: drug
+    to: mech
+    type: targets
+    description: "Drug targets mechanism"
+  - from: trt
+    to: mech
+    type: targets
+    description: "Treatment targets mechanism"
+  - from: bio
+    to: var
+    type: measured_by
+    description: "Biomarker measures variable"
+
+naming_conventions:
+  drug→mech: ["targets"]
+  trt→mech: ["targets"]
+  bio→var: ["measured_by"]
+  causal→mech: ["causes"]
+  causal→var: ["causes"]
+
+structural_prefixes:
+  - prj
+  - vol
+  - part
+  - ch
+  - sec
+  - subsec
+  - file
+  - fig
+  - tab
+  - pat
+  - prot

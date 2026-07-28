@@ -34,6 +34,12 @@
       "description": "LaTeX-specific tools — syntax fixer, formatting-fixer, xref checker, citation checker, production readiness, figure captions, index auditor, notation checker. 8 agents across 8 subskills.",
       "source": "./latex-toolkit",
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/latex-toolkit"
+    },
+    {
+      "name": "knowledge-graph",
+      "description": "Build-time knowledge graph from Typst source — deterministic derivation, Leiden community detection, GraphRAG-style hierarchical retrieval, cross-project (IVP + ME/CFS), auto-injected agent context",
+      "source": "./knowledge-graph",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/knowledge-graph"
     }
   ]
 }

@@ -1,59 +1,49 @@
 ---
 name: review-convergence
-description: Generic review-fix convergence loop — orchestrates specialized review/audit skills to zero findings (2 consecutive clean rounds). Metaskill: requires one or more specific review skills to be called.
-argument-hint: <skill-name> [<file-scope>]
+description: Meta-skill — review-fix loop to zero findings (2 consecutive clean rounds). Parameterized by reviewer/criteria list.
+argument-hint: <reviewer-or-criterion> [<scope>]
 ---
 
 # Review Convergence
 
-Iterative review-fix loop until convergence (two consecutive zero-finding rounds) or max rounds. Metaskill — MUST be used with one or more domain-specific review/audit skills.
+Meta-skill. Runs review-fix rounds until 2 consecutive zero-finding rounds or max 10 rounds.
 
-## Arguments
+## Parameters
 
-- `$ARGUMENTS` — skill name(s) to invoke + optional file scope (e.g., `review-chapter src/main/chapter-3`, `review-adversarial CLAUDE.md`)
-- **Guard:** empty/blank → ask user which review skill(s) to run; do not start without specified skills
-- **Guard:** skill not found → report; do not run
+`$ARGUMENTS` = space-separated list of reviewers/criteria + optional scope.
+
+Each reviewer is either:
+- A named skill (`/review-typst`, `/review-style`, `/review-formalism`)
+- A named agent (from `.claude/agents/`)
+- An ad-hoc criterion in quotes: `"check for NPEs"` / `"audit boundary conditions"` / `"find dead code"`
+- A project-relative file/glob to scope reviews to
+
+**Guards:**
+- Empty `$ARGUMENTS` → ask what to review; do not proceed
+- Skill/agent not found → report; halt
 
 ## Protocol
 
-Per round (R1, R2, ...):
+Per round:
 
-1. **INVOKE** — For each specified review skill, invoke it with the file scope. The called skill determines its own audit criteria and fix strategy.
-
-2. **COLLECT** — Gather findings from all invoked skills. Count total findings (critical + major + minor).
-
-3. **FIX** — Apply all unambiguous fixes reported by the invoked skills.
-
-4. **VERIFY** — If any invoked skill specifies a validation step (build, lint, tests), run it now. Verification failure → stop and report.
-
-5. **REPORT:**
-   ```
-   Round RN: X findings from Y skills — fixed
-   By skill: skill-A: A1 findings, skill-B: B1 findings
-   ```
-
-6. **DECIDE:**
+1. **REVIEW** — apply each specified reviewer/criterion against scope. Collect findings (severity + location + description + fix).
+2. **FIX** — apply unambiguous fixes. Ambiguous/conflicting → flag, skip.
+3. **VERIFY** — if build/lint/test is relevant to the scope, run it. Failure → halt.
+4. **REPORT** — `Round RN: N findings (A from reviewer-1, B from reviewer-2) — fixed`
+5. **DECIDE:**
    - findings > 0 AND round < 10 → next round
-   - findings = 0 → increment consecutive-clean counter (resets to 0 on any round with findings > 0)
-     - counter < 2 → next round (confirmation pass)
-     - counter ≥ 2 → declare convergence; stop
-   - round = 10 AND findings > 0 → stop; report remaining findings for human review
+   - findings = 0 → if prior round also 0 → **converged**; else next round (confirmation pass)
+   - round ≥ 10 AND findings > 0 → halt; report stranded findings
 
-**Convergence = 2 consecutive rounds of 0 findings across ALL invoked skills.**
+**Convergence = 2 consecutive rounds of 0 findings.**
 
 ## Checkpoint
 
-Every 3 rounds → write continuation checkpoint to `tmp/review-checkpoint-convergence.md`:
-- Invoked skills + file scope + current round
-- Cumulative findings by skill
-- Remaining known issues
-- Exact next steps to resume
+Every 3 rounds → `tmp/review-checkpoint-convergence.md`: round, reviewers, cumulative findings, stranded issues, resume steps.
 
 ## Constraints
 
-- Do NOT invent content or factual claims
-- Do NOT add content beyond what is needed to fix a finding
-- Do NOT refactor code that is not broken
-- Unsure about a finding → flag for human review; do not change
-- Respect each invoked skill's own constraints
-- A single clean round is insufficient — require two consecutive zero-finding rounds
+- Only fix what a reviewer flags — no drive-by refactors
+- Unsure → flag, don't change
+- No invented content/claims
+- Defer to each reviewer's own constraints

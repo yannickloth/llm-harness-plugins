@@ -51,6 +51,7 @@ run_tests() {
 
 compile_plugin "agentmem"
 compile_plugin "agentinsights"
+compile_plugin "knowledge-graph"
 
 cat > "$SCRIPT_DIR/agentmem/bin/memorysystem" << 'RUNNER'
 #!/usr/bin/env bash
