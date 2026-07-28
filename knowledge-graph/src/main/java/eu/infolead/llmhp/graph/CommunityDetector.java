@@ -14,8 +14,12 @@ public final class CommunityDetector {
     ) {}
 
     public static CommunityResult detect(Graph graph, long seed) {
+        return detect(graph, seed, 1.0);
+    }
+
+    public static CommunityResult detect(Graph graph, long seed, double resolution) {
         var adj = buildUndirectedAdjacency(graph);
-        var leiden = new LeidenAlgorithm(adj, seed);
+        var leiden = new LeidenAlgorithm(adj, seed, resolution);
         var partition = leiden.run();
 
         var communities = new LinkedHashMap<String, List<String>>();
@@ -113,11 +117,13 @@ public final class CommunityDetector {
         private final Map<String, Set<String>> adj;
         private final long seed;
         private final Random rng;
+        private final double resolution;
 
-        LeidenAlgorithm(Map<String, Set<String>> adj, long seed) {
+        LeidenAlgorithm(Map<String, Set<String>> adj, long seed, double resolution) {
             this.adj = adj;
             this.seed = seed;
             this.rng = new Random(seed);
+            this.resolution = resolution;
         }
 
         Map<String, String> run() {
@@ -180,8 +186,8 @@ public final class CommunityDetector {
                 if (e.getValue().equals(targetCom)) total_tar += adj.getOrDefault(e.getKey(), Set.of()).size();
             }
 
-            double expected_cur = (double) k_i * total_cur / (2.0 * totalEdges);
-            double expected_tar = (double) k_i * total_tar / (2.0 * totalEdges);
+            double expected_cur = resolution * (double) k_i * total_cur / (2.0 * totalEdges);
+            double expected_tar = resolution * (double) k_i * total_tar / (2.0 * totalEdges);
 
             double moveDelta = (sigma_tar - sigma_cur) - (expected_tar - expected_cur);
             return moveDelta / (2.0 * totalEdges);

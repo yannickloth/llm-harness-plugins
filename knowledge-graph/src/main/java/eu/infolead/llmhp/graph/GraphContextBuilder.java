@@ -6,6 +6,7 @@ import eu.infolead.llmhp.graph.types.*;
 public final class GraphContextBuilder {
 
     private static final int MAX_CONTEXT_TOKENS = 4000;
+    private static final int TC_MAX_DEPTH = 10;
 
     private GraphContextBuilder() {}
 
@@ -25,7 +26,7 @@ public final class GraphContextBuilder {
             }
         }
 
-        var allDeps = graph.reverseTransitiveClosure(label);
+        var allDeps = graph.reverseTransitiveClosure(label, TC_MAX_DEPTH);
         allDeps.remove(label);
         var sharedDeps = new ArrayList<String>();
         var localDeps = new ArrayList<String>();
@@ -50,7 +51,7 @@ public final class GraphContextBuilder {
             sb.append("\n");
         }
 
-        var dependents = graph.transitiveClosure(label);
+        var dependents = graph.transitiveClosure(label, TC_MAX_DEPTH);
         dependents.remove(label);
         if (!dependents.isEmpty()) {
             sb.append("  Used by (").append(dependents.size()).append(" nodes): ");

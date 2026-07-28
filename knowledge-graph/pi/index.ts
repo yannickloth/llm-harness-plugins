@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join, isAbsolute, resolve } from "node:path"
 
 const MAX_INJECT = 6000
@@ -53,10 +53,12 @@ export default function kgPi(pi: any) {
       const text = result.stdout.toString().trim() || result.stderr.toString().trim()
       if (!text) return undefined
 
+      const raw = readFileSync(join(pluginDir, "prompts", "agent-prompt.md"), "utf-8")
+      const agentPrompt = raw.replace("<plugin-dir>", pluginDir)
       const msgs = [...event.messages]
       msgs.push({
         role: "user" as const,
-        content: [{ type: "text" as const, text: "# Knowledge Graph\n\n" + text }],
+        content: [{ type: "text" as const, text: agentPrompt + "\n---\n" + text }],
       })
       return { messages: msgs }
     }

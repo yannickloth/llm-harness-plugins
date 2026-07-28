@@ -1,5 +1,5 @@
 ---
-description: Query the knowledge graph — transitive-closure, topo-sort, cycles, community-summaries, contradictions, impact analysis, diff, community rating
+description: Query the knowledge graph — transitive-closure, topo-sort, cycles, community-summaries, contradictions, impact, quality, validate
 argument-hint: [query]
 allowed-tools: Bash(java:*)
 ---

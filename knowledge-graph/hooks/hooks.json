@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/kg-context overview \"${CLAUDE_PROJECT_DIR}/graph.json\""
+            "command": "(sed \"s|<plugin-dir>|${CLAUDE_PLUGIN_ROOT}|g\" \"${CLAUDE_PLUGIN_ROOT}/prompts/agent-prompt.md\"; echo \"---\"; \"${CLAUDE_PLUGIN_ROOT}\"/bin/kg-context overview \"${CLAUDE_PROJECT_DIR}/graph.json\")"
           }
         ]
       }

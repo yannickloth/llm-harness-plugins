@@ -18,6 +18,8 @@ public final class GraphQueryEngine {
     }
 
     public static void save(Graph graph, Path outputFile) throws IOException {
+        var parent = outputFile.getParent();
+        if (parent != null) Files.createDirectories(parent);
         Files.writeString(outputFile, toJsonString(graph));
     }
 
@@ -158,8 +160,7 @@ public final class GraphQueryEngine {
         if (root.hasKey("communities")) {
             var comObj = root.getObject("communities");
             for (var k : comObj.keys()) {
-                var list = new ArrayList<String>();
-                for (var v : comObj.getArray(k)) list.add(v.asValue());
+                var list = comObj.getArray(k).stream().map(JsonValue::asValue).toList();
                 communities.put(k, list);
             }
         }
@@ -225,8 +226,15 @@ public final class GraphQueryEngine {
                                     case 'b' -> sb.append('\b');
                                     case 'f' -> sb.append('\f');
                                     case 'u' -> {
+                                        if (i + 5 > json.length()) {
+                                            throw new RuntimeException("Truncated \\u escape at position " + i);
+                                        }
                                         var hex = json.substring(i + 1, i + 5);
-                                        sb.append((char) Integer.parseInt(hex, 16));
+                                        try {
+                                            sb.append((char) Integer.parseInt(hex, 16));
+                                        } catch (NumberFormatException e) {
+                                            throw new RuntimeException("Invalid \\u escape: \\u" + hex + " at position " + i);
+                                        }
                                         i += 4;
                                     }
                                     default -> sb.append(ec);
@@ -258,7 +266,7 @@ public final class GraphQueryEngine {
     enum TokenType { LBRACE, RBRACE, LBRACKET, RBRACKET, COLON, COMMA, STRING, VALUE }
     record Token(TokenType type, String value) {}
 
-    static class JsonParser {
+    static final class JsonParser {
         private final List<Token> tokens;
         private int pos;
 
@@ -348,6 +356,7 @@ public final class GraphQueryEngine {
     }
 
     public static String queryTransitiveClosure(Graph graph, String label) {
+        if (label == null || label.isEmpty()) return "Error: label/scope required for transitive-closure";
         var closure = graph.transitiveClosure(label);
         var sb = new StringBuilder();
         sb.append("Transitive closure of: ").append(label).append("\n");
@@ -395,6 +404,7 @@ public final class GraphQueryEngine {
     }
 
     public static String queryCommunity(Graph graph, String label) {
+        if (label == null || label.isEmpty()) return "Error: label required for community-summary";
         var hCom = findCommunity(graph, label);
         if (hCom == null) return "No community found for: " + label;
         var summary = graph.communitySummaries().getOrDefault(hCom, "");
@@ -442,14 +452,13 @@ public final class GraphQueryEngine {
     }
 
     public static String querySubgraph(Graph graph, String label, int depth) {
+        if (label == null || label.isEmpty()) return "Error: label required for subgraph";
         var startLabels = resolveStartLabels(graph, label);
         if (startLabels.isEmpty()) {
             return "No nodes found for: " + label;
         }
 
-        var labels = new LinkedHashSet<String>();
-        labels.addAll(startLabels);
-
+        var labels = new LinkedHashSet<>(startLabels);
         for (int i = 0; i < depth; i++) {
             var newLabels = new LinkedHashSet<String>();
             for (var l : labels) {
@@ -530,6 +539,7 @@ public final class GraphQueryEngine {
     }
 
     public static String queryImpact(Graph graph, String nodeId) {
+        if (nodeId == null || nodeId.isEmpty()) return "Error: label required for impact";
         var forward = graph.transitiveClosure(nodeId);
         var backward = graph.reverseTransitiveClosure(nodeId);
         var sb = new StringBuilder();
@@ -547,5 +557,114 @@ public final class GraphQueryEngine {
             if (n != null) sb.append("  [").append(n.type()).append("] ").append(id).append("\n");
         }
         return sb.toString();
+    }
+
+    public static String computeQualityMetrics(Graph graph) {
+        var sb = new StringBuilder();
+        sb.append("GRAPH QUALITY METRICS [").append(graph.project()).append("]\n\n");
+
+        var totalNodes = graph.nodes().size();
+        var totalEdges = graph.edges().size();
+        var contentNodes = graph.nodes().values().stream()
+            .filter(n -> !n.type().equals("file") && !n.type().equals("project")).count();
+        var fileNodes = graph.nodes().values().stream()
+            .filter(n -> n.type().equals("file")).count();
+
+        sb.append(String.format("  Entity coverage: %d entities across %d files (avg %.1f/file)\n",
+            contentNodes, fileNodes, fileNodes > 0 ? (double) contentNodes / fileNodes : 0));
+
+        double density = contentNodes > 0 ? (double) totalEdges / contentNodes : 0;
+        sb.append(String.format("  Relationship density: %.2f edges/entity (%d edges, %d entities)\n",
+            density, totalEdges, contentNodes));
+
+        if (!graph.communities().isEmpty()) {
+            double modularity = computeModularity(graph);
+            sb.append(String.format("  Community coherence (modularity): %.5f (%d communities)\n",
+                modularity, graph.communities().size()));
+
+            var sizeDist = new int[6];
+            for (var c : graph.communities().values()) {
+                var sz = Math.min(c.size() / 5, 5);
+                sizeDist[sz]++;
+            }
+            sb.append("  Community size distribution:\n");
+            sb.append(String.format("    1-4: %d\n", sizeDist[0]));
+            sb.append(String.format("    5-9: %d\n", sizeDist[1]));
+            sb.append(String.format("    10-14: %d\n", sizeDist[2]));
+            sb.append(String.format("    15-19: %d\n", sizeDist[3]));
+            sb.append(String.format("    20-24: %d\n", sizeDist[4]));
+            sb.append(String.format("    25+: %d\n", sizeDist[5]));
+
+            var emptySummaries = graph.communitySummaries().values().stream()
+                .filter(s -> s.isEmpty() || s.length() < 5).count();
+            sb.append(String.format("  Summary quality: %d/%d communities with non-trivial summaries\n",
+                graph.communitySummaries().size() - (int) emptySummaries, graph.communitySummaries().size()));
+        }
+
+        sb.append(String.format("\n  Total nodes: %d\n", totalNodes));
+        sb.append(String.format("  Total edges: %d\n", totalEdges));
+
+        return sb.toString();
+    }
+
+    private static double computeModularity(Graph graph) {
+        var adj = new LinkedHashMap<String, Set<String>>();
+        for (var e : graph.edges()) {
+            if (!e.type().equals("depends_on")) continue;
+            adj.computeIfAbsent(e.source(), k -> new LinkedHashSet<>()).add(e.target());
+            adj.computeIfAbsent(e.target(), k -> new LinkedHashSet<>()).add(e.source());
+        }
+        for (var node : graph.nodes().keySet()) adj.putIfAbsent(node, Set.of());
+
+        var totalEdges = adj.values().stream().mapToInt(Set::size).sum() / 2;
+        if (totalEdges == 0) return 0;
+
+        double modularity = 0;
+        for (var c : graph.communities().values()) {
+            var memberSet = new HashSet<>(c);
+            long internal = 0;
+            long totalDeg = 0;
+            for (var node : c) {
+                totalDeg += adj.getOrDefault(node, Set.of()).size();
+                for (var nbr : adj.getOrDefault(node, Set.of())) {
+                    if (memberSet.contains(nbr)) internal++;
+                }
+            }
+            internal /= 2;
+            modularity += (double) internal / totalEdges
+                - Math.pow((double) totalDeg / (2.0 * totalEdges), 2);
+        }
+        return modularity;
+    }
+
+    public static List<String> validateSchema(Graph graph) {
+        var issues = new ArrayList<String>();
+
+        var danglingRefs = 0;
+        for (var e : graph.edges()) {
+            if (!graph.nodes().containsKey(e.source())) {
+                danglingRefs++;
+                if (issues.size() < 30) issues.add("Dangling source: " + e.source() + " --[" + e.type() + "]--> " + e.target());
+            }
+            if (!graph.nodes().containsKey(e.target())) {
+                danglingRefs++;
+                if (issues.size() < 30) issues.add("Dangling target: " + e.source() + " --[" + e.type() + "]--> " + e.target());
+            }
+        }
+        if (danglingRefs > 0) issues.add("Total dangling references: " + danglingRefs);
+
+        for (var n : graph.nodes().values()) {
+            if (n.id().isBlank()) issues.add("Empty node ID");
+            if (n.type().isBlank()) issues.add("Empty type for node: " + n.id());
+        }
+
+        var nodeFiles = new LinkedHashMap<String, java.util.List<String>>();
+        for (var n : graph.nodes().values()) {
+            if (!n.file().isEmpty()) {
+                nodeFiles.computeIfAbsent(n.file(), k -> new ArrayList<>()).add(n.id());
+            }
+        }
+
+        return issues;
     }
 }

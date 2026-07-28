@@ -72,8 +72,9 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         const ctxText = await $`java --class-path ${classesDir} ${mainClass} overview ${gf}`.nothrow().text()
         if (!ctxText.trim()) return
 
-        const header = "# Knowledge Graph\n\nGraph context auto-injected. Use `kg-query` to explore further.\n\n"
-        await injectContext(client, sessionId, header + ctxText)
+        const raw = await $`cat ${path.join(pluginDir, "prompts", "agent-prompt.md")}`.nothrow().text()
+        const header = raw.replace("<plugin-dir>", pluginDir)
+        await injectContext(client, sessionId, header + "\n---\n" + ctxText)
         console.log("[knowledge-graph] injected graph context into session", sessionId)
       } catch (e) {
         console.error("[knowledge-graph] session.created injection failed:", (e as Error).message)

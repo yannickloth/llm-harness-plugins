@@ -16,6 +16,12 @@ public final class GraphPreprocessor {
     private final Map<String, List<String>> includeReverse = new LinkedHashMap<>();
     private final List<Pattern> labelPatterns = new ArrayList<>();
 
+    private static final Pattern REF_PATTERN_1B = Pattern.compile("[@<]([a-zA-Z][a-zA-Z0-9_-]+(?:[.:@][a-zA-Z][a-zA-Z0-9_-]+)*)[>]?");
+    private static final Pattern INCLUDE_PATTERN = Pattern.compile("#(include|import)\\s+\"([^\"]+)\"");
+    private static final Pattern REF_PATTERN_2 = Pattern.compile("@([a-zA-Z][a-zA-Z0-9_-]+(?:[.:@][a-zA-Z][a-zA-Z0-9_-]+)*)");
+    private static final Pattern NAMING_CONV_PATTERN = Pattern.compile("^([a-zA-Z_]+→[a-zA-Z_]+):\\s*\\[(.+)\\]$");
+    private static final Pattern STRUCTURAL_PREFIX_PATTERN = Pattern.compile("^\\s*-\\s*\"?([a-zA-Z_]+)\"?$");
+
     public GraphPreprocessor(ProjectConfig config, Path projectRoot) {
         this.config = config;
         this.projectRoot = projectRoot;
@@ -33,6 +39,7 @@ public final class GraphPreprocessor {
         phase4DependencyExtract(allTypFiles);
         phase5NamedRelations();
         phase6CrossReferenceExpand();
+        phase7EntityResolution();
 
         var adj = new HashMap<String, List<String>>();
         var revAdj = new HashMap<String, List<String>>();
@@ -101,6 +108,15 @@ public final class GraphPreprocessor {
                         }
                         props.put("name", name);
                         nodes.put(fullId, new Node(fullId, rule.type(), name, relPath, String.valueOf(line), props));
+                    } else {
+                        var existing = nodes.get(fullId);
+                        var existingFiles = existing.property("files");
+                        var updatedFiles = existingFiles.isEmpty() ? existing.file() + ";; " + relPath
+                            : existingFiles + ";; " + relPath;
+                        var merged = new LinkedHashMap<>(existing.properties());
+                        merged.put("files", updatedFiles);
+                        nodes.put(fullId, new Node(fullId, existing.type(), existing.name(),
+                            existing.file(), existing.line(), merged));
                     }
                     rawLabels.add(fullId);
                 }
@@ -111,13 +127,11 @@ public final class GraphPreprocessor {
     }
 
     private void phase1bReferenceScan(List<Path> files) throws IOException {
-        var refPattern = Pattern.compile("[@<]([a-zA-Z][a-zA-Z0-9_-]+(?:[.:@][a-zA-Z][a-zA-Z0-9_-]+)*)[>]?");
-
         for (var file : files) {
             var content = Files.readString(file);
             var relPath = projectRoot.relativize(file).toString();
 
-            var matcher = refPattern.matcher(content);
+            var matcher = REF_PATTERN_1B.matcher(content);
             while (matcher.find()) {
                 var ref = matcher.group(1);
                 var resolvedNode = resolveReference(ref);
@@ -207,13 +221,11 @@ public final class GraphPreprocessor {
     }
 
     private void phase2IncludeResolve(List<Path> files) throws IOException {
-        var includePattern = Pattern.compile("#(include|import)\\s+\"([^\"]+)\"");
-
         for (var file : files) {
             var content = Files.readString(file);
             var relPath = projectRoot.relativize(file).toString();
             var fileNode = "file:" + pathToNode(relPath);
-            var matcher = includePattern.matcher(content);
+            var matcher = INCLUDE_PATTERN.matcher(content);
 
             while (matcher.find()) {
                 var included = matcher.group(2).trim();
@@ -357,7 +369,6 @@ public final class GraphPreprocessor {
     }
 
     private void phase4DependencyExtract(List<Path> files) throws IOException {
-        var refPattern = Pattern.compile("@([a-zA-Z][a-zA-Z0-9_-]+(?:[.:@][a-zA-Z][a-zA-Z0-9_-]+)*)");
         var knownPrefixes = Set.of("def:", "thm:", "lem:", "prop:", "cor:", "axm:", "asm:",
                 "proof:", "rem:", "ex:", "ki:", "cex:", "obs:",
                 "hyp:", "mech:", "bio:", "drug:", "trt:", "sx:", "cit:",
@@ -368,7 +379,7 @@ public final class GraphPreprocessor {
         for (var file : files) {
             var content = Files.readString(file);
             var relPath = projectRoot.relativize(file).toString();
-            var matcher = refPattern.matcher(content);
+            var matcher = REF_PATTERN_2.matcher(content);
 
             while (matcher.find()) {
                 var ref = matcher.group(1);
@@ -558,6 +569,75 @@ public final class GraphPreprocessor {
         edges.addAll(expandedEdges);
     }
 
+    private void phase7EntityResolution() {
+        var canonicalNodes = new LinkedHashMap<String, Node>();
+        var aliases = new LinkedHashMap<String, List<String>>();
+
+        for (var n : nodes.values()) {
+            if (isStructuralNode(n)) {
+                canonicalNodes.put(n.id(), n);
+                continue;
+            }
+            var key = n.type() + "::" + n.name();
+            var existing = canonicalNodes.get(key);
+            if (existing == null) {
+                canonicalNodes.put(key, n);
+                aliases.computeIfAbsent(n.id(), k -> new ArrayList<>()).add(n.id());
+            } else {
+                aliases.computeIfAbsent(existing.id(), k -> new ArrayList<>()).add(n.id());
+            }
+        }
+
+        var mergedEdges = new LinkedHashSet<String>();
+        for (var e : aliases.entrySet()) {
+            var canonicalId = e.getKey();
+            for (var aliasId : e.getValue()) {
+                if (aliasId.equals(canonicalId)) continue;
+                for (int i = 0; i < edges.size(); i++) {
+                    var edge = edges.get(i);
+                    var newSrc = edge.source().equals(aliasId) ? canonicalId : edge.source();
+                    var newTgt = edge.target().equals(aliasId) ? canonicalId : edge.target();
+                    if (!newSrc.equals(edge.source()) || !newTgt.equals(edge.target())) {
+                        edges.set(i, new Edge(newSrc, newTgt, edge.type(), edge.properties()));
+                    }
+                }
+            }
+        }
+        edges.removeIf(edge -> edge.source().equals(edge.target()));
+
+        var deduped = new LinkedHashSet<String>();
+        edges.removeIf(edge -> !deduped.add(edge.source() + "→" + edge.target() + "#" + edge.type()));
+
+        var resolved = new LinkedHashMap<String, Node>();
+        for (var e : canonicalNodes.entrySet()) {
+            var node = e.getValue();
+            var aliasList = aliases.getOrDefault(node.id(), List.of());
+            if (aliasList.size() > 1) {
+                var allFiles = aliasList.stream().map(id -> {
+                    var n = nodes.get(id);
+                    return n != null ? n.file() : "";
+                }).filter(f -> !f.isEmpty()).distinct().sorted().toList();
+                var mergedProps = new LinkedHashMap<>(node.properties());
+                mergedProps.put("files", String.join(";; ", allFiles));
+                resolved.put(node.id(), new Node(node.id(), node.type(), node.name(),
+                    node.file(), node.line(), mergedProps));
+            } else {
+                resolved.put(node.id(), node);
+            }
+        }
+
+        nodes.clear();
+        nodes.putAll(resolved);
+        System.err.println("[entity-resolution] canonicalized " + canonicalNodes.size()
+            + " nodes from " + resolved.size() + " (aliases resolved)");
+    }
+
+    private boolean isStructuralNode(Node n) {
+        return n.type().equals("file") || n.type().equals("project")
+            || n.type().equals("volume") || n.type().equals("chapter")
+            || n.type().equals("section") || n.type().equals("subsection");
+    }
+
     private String pathToNode(String path) {
         return path.replaceAll("[^a-zA-Z0-9_/.-]", "_").replace("/", "_").replace(".", "_");
     }
@@ -589,8 +669,8 @@ public final class GraphPreprocessor {
             switch (section) {
                 case "project" -> {
                     var entry = parseKeyValue(trimmed);
-                    if (entry != null && entry.getKey().equals("name"))
-                        project = entry.getValue();
+                    if (entry != null && entry.key().equals("name"))
+                        project = entry.value();
                 }
                 case "label_rules", "edge_rules" -> {
                     if (trimmed.startsWith("-")) {
@@ -598,14 +678,14 @@ public final class GraphPreprocessor {
                         currentMap.clear();
                         var rest = trimmed.substring(1).strip();
                         var entry = parseKeyValue(rest);
-                        if (entry != null) currentMap.put(entry.getKey(), entry.getValue());
+                        if (entry != null) currentMap.put(entry.key(), entry.value());
                     } else {
                         var entry = parseKeyValue(trimmed);
-                        if (entry != null) currentMap.put(entry.getKey(), entry.getValue());
+                        if (entry != null) currentMap.put(entry.key(), entry.value());
                     }
                 }
                 case "naming_conventions" -> {
-                    var match = Pattern.compile("^([a-zA-Z_]+→[a-zA-Z_]+):\\s*\\[(.+)\\]$").matcher(trimmed);
+                    var match = NAMING_CONV_PATTERN.matcher(trimmed);
                     if (match.find()) {
                         var rel = match.group(1);
                         var types = match.group(2).replace("\"", "").split(",\\s*");
@@ -613,7 +693,7 @@ public final class GraphPreprocessor {
                     }
                 }
                 case "structural_prefixes" -> {
-                    var match = Pattern.compile("^\\s*-\\s*\"?([a-zA-Z_]+)\"?$").matcher(trimmed);
+                    var match = STRUCTURAL_PREFIX_PATTERN.matcher(trimmed);
                     if (match.find()) structuralPrefixes.add(match.group(1));
                 }
             }
@@ -645,7 +725,7 @@ public final class GraphPreprocessor {
         }
     }
 
-    private static AbstractMap.SimpleEntry<String, String> parseKeyValue(String line) {
+    private static KeyValue parseKeyValue(String line) {
         var colonIdx = line.indexOf(':');
         if (colonIdx < 0) return null;
         var key = line.substring(0, colonIdx).strip();
@@ -662,6 +742,13 @@ public final class GraphPreprocessor {
 
         if (value.startsWith(">-") || value.startsWith(">") || value.startsWith("|")) return null;
 
-        return new AbstractMap.SimpleEntry<>(key, value);
+        return new KeyValue(key, value);
+    }
+
+    private record KeyValue(String key, String value) {}
+
+    static KeyValue toKeyValue(Map<String, String> map, String key) {
+        var value = map.get(key);
+        return value != null ? new KeyValue(key, value) : null;
     }
 }

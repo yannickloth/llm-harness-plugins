@@ -21,29 +21,51 @@ public record Graph(
     }
 
     public Set<String> transitiveClosure(String startId) {
+        return transitiveClosure(startId, Integer.MAX_VALUE);
+    }
+
+    public Set<String> transitiveClosure(String startId, int maxDepth) {
         var visited = new LinkedHashSet<String>();
         var queue = new ArrayDeque<String>();
+        if (startId == null || !nodes.containsKey(startId)) return visited;
+        visited.add(startId);
         queue.add(startId);
-        while (!queue.isEmpty()) {
-            var id = queue.poll();
-            if (!visited.add(id)) continue;
-            for (var n : adjacency.getOrDefault(id, List.of())) {
-                if (!visited.contains(n)) queue.add(n);
+        for (int depth = 0; depth < maxDepth && !queue.isEmpty(); depth++) {
+            var next = new ArrayDeque<String>();
+            for (var id : queue) {
+                for (var n : adjacency.getOrDefault(id, List.of())) {
+                    if (!visited.contains(n)) {
+                        visited.add(n);
+                        next.add(n);
+                    }
+                }
             }
+            queue = next;
         }
         return visited;
     }
 
     public Set<String> reverseTransitiveClosure(String startId) {
+        return reverseTransitiveClosure(startId, Integer.MAX_VALUE);
+    }
+
+    public Set<String> reverseTransitiveClosure(String startId, int maxDepth) {
         var visited = new LinkedHashSet<String>();
         var queue = new ArrayDeque<String>();
+        if (startId == null || !nodes.containsKey(startId)) return visited;
+        visited.add(startId);
         queue.add(startId);
-        while (!queue.isEmpty()) {
-            var id = queue.poll();
-            if (!visited.add(id)) continue;
-            for (var n : reverseAdjacency.getOrDefault(id, List.of())) {
-                if (!visited.contains(n)) queue.add(n);
+        for (int depth = 0; depth < maxDepth && !queue.isEmpty(); depth++) {
+            var next = new ArrayDeque<String>();
+            for (var id : queue) {
+                for (var n : reverseAdjacency.getOrDefault(id, List.of())) {
+                    if (!visited.contains(n)) {
+                        visited.add(n);
+                        next.add(n);
+                    }
+                }
             }
+            queue = next;
         }
         return visited;
     }
@@ -78,28 +100,47 @@ public record Graph(
     }
 
     public List<List<String>> findCycles() {
+        var seen = new HashSet<String>();
         var cycles = new ArrayList<List<String>>();
         for (var node : nodes.keySet()) {
             var path = new ArrayList<String>();
             var visited = new HashSet<String>();
-            findCyclesDfs(node, node, path, visited, cycles, 50);
+            findCyclesDfs(node, node, path, visited, cycles, seen, 50);
         }
         return cycles;
     }
 
     private void findCyclesDfs(String start, String current, List<String> path,
-            Set<String> visited, List<List<String>> cycles, int maxDepth) {
+            Set<String> visited, List<List<String>> cycles, Set<String> seen, int maxDepth) {
         if (path.size() > maxDepth) return;
         path.add(current);
         visited.add(current);
         for (var next : adjacency.getOrDefault(current, List.of())) {
-            if (next.equals(start) && path.size() > 2) {
-                cycles.add(new ArrayList<>(path));
+            if (next.equals(start) && path.size() >= 2) {
+                var cycle = canonicalCycle(path);
+                var key = String.join("→", cycle);
+                if (seen.add(key)) cycles.add(new ArrayList<>(cycle));
             } else if (!visited.contains(next)) {
-                findCyclesDfs(start, next, path, visited, cycles, maxDepth);
+                findCyclesDfs(start, next, path, visited, cycles, seen, maxDepth);
             }
         }
         path.removeLast();
         visited.remove(current);
+    }
+
+    private static List<String> canonicalCycle(List<String> path) {
+        var minIdx = 0;
+        var minVal = path.get(0);
+        for (int i = 1; i < path.size(); i++) {
+            if (path.get(i).compareTo(minVal) < 0) {
+                minIdx = i;
+                minVal = path.get(i);
+            }
+        }
+        var result = new ArrayList<String>(path.size());
+        for (int i = 0; i < path.size(); i++) {
+            result.add(path.get((minIdx + i) % path.size()));
+        }
+        return result;
     }
 }
