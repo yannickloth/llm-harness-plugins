@@ -40,6 +40,12 @@
       "description": "Build-time knowledge graph from Typst source — deterministic derivation, Leiden community detection, GraphRAG-style hierarchical retrieval, cross-project (IVP + ME/CFS), auto-injected agent context",
       "source": "./knowledge-graph",
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/knowledge-graph"
+    },
+    {
+      "name": "tier-router",
+      "description": "Multi-tier prompt router — intercepts prompts, classifies by reasoning complexity, reformulates with SOTA prompt engineering criteria, dispatches to cheapest sufficient model tier (fable/haiku/sonnet/opus-general). Detects ambiguity and asks for clarification before executing.",
+      "source": "./tier-router",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/tier-router"
     }
   ]
 }
