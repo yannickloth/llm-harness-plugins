@@ -2,10 +2,11 @@
 # UserPromptSubmit Hook — Tier Router integration
 #
 # Intercepts EVERY user prompt before Claude processes it.
-# 1. Classifies: mechanical → haiku, judgment → sonnet, deep → opus, trivial → fable
-# 2. Reformulates with SOTA prompt engineering criteria
-# 3. Detects ambiguity and asks for clarification
-# 4. Injects <routing-recommendation> directive into Claude's context
+# 1. Checks budget circuit-breaker — if exhausted, inject exit directive
+# 2. Classifies: mechanical → haiku, judgment → sonnet, deep → opus, trivial → fable
+# 3. Reformulates with SOTA prompt engineering criteria
+# 4. Detects ambiguity and asks for clarification
+# 5. Injects <routing-recommendation> directive into Claude's context
 #
 # Trigger: UserPromptSubmit
 # Change Driver: prompt-routing-logic
@@ -34,6 +35,32 @@ fi
 
 TIMESTAMP=$(date -Iseconds)
 REQUEST_HASH=$(echo -n "$USER_REQUEST" | sha256sum | cut -d' ' -f1 | head -c16)
+
+PROJECT_ROOT=$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd || echo "unknown")
+METRICS_DIR="$PROJECT_ROOT/.tier-router/metrics"
+
+# Step 0: Budget circuit-breaker check
+if [ -f "$METRICS_DIR/.budget-exhausted" ]; then
+    echo "[tier-router] Budget exhausted — injecting exit directive" >&2
+    cat <<'BUDGET_EOF'
+<routing-recommendation request-hash="budget-exhausted">
+ROUTING DIRECTIVE — SESSION BUDGET EXHAUSTED. Mandatory action required.
+
+Decision: EXHAUSTED
+Reason: Cumulative token spend has reached the session budget ceiling. Further work in this session would exceed the cost limit.
+
+ACTION INSTRUCTIONS:
+- You MUST NOT execute any further tool calls or spawn subagents
+- You MUST NOT handle this request — no file reads, no edits, no Task tool invocations
+- You MUST summarize what has been accomplished so far
+- You MUST list any remaining tasks that were NOT completed
+- You MUST advise the user to start a new session to continue work
+- You MUST NOT ask clarifying questions — just summarize and exit
+- Execute immediately with no hesitation
+</routing-recommendation>
+BUDGET_EOF
+    exit 0
+fi
 
 # Step 1: Check ambiguity — if ambiguous, inject clarification request
 AMBIGUITY=$(java --class-path "$CLASSES_DIR" "$MAIN_CLASS" ambiguity 2>/dev/null <<< "$USER_REQUEST" || echo "clear")
@@ -76,8 +103,6 @@ echo "[tier-router] Reason: $REASON" >&2
 echo "[tier-router] Confidence: $CONFIDENCE" >&2
 
 # Metrics log (atomic append)
-PROJECT_ROOT=$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd || echo "unknown")
-METRICS_DIR="$PROJECT_ROOT/.tier-router/metrics"
 mkdir -p "$METRICS_DIR"
 TODAY=$(date +%Y-%m-%d)
 

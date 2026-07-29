@@ -1,0 +1,9 @@
+{
+  "name": "semantic-cache",
+  "description": "Semantic response cache — embeds prompts locally (no API call), stores responses with WAL atomicity, and returns cached responses on near-duplicate prompts. File-change-based invalidation. 15–30% of coding-agent prompts are near-duplicates.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": { "name": "infolead" },
+  "repository": "https://github.com/infolead/llm-harness-plugins",
+  "tags": ["cache", "semantic-cache", "cost-optimization", "local-embedding", "deduplication"]
+}

@@ -46,6 +46,12 @@
       "description": "Multi-tier prompt router — intercepts prompts, classifies by reasoning complexity, reformulates with SOTA prompt engineering criteria, dispatches to cheapest sufficient model tier (fable/haiku/sonnet/opus-general). Detects ambiguity and asks for clarification before executing.",
       "source": "./tier-router",
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/tier-router"
+    },
+    {
+      "name": "semantic-cache",
+      "description": "Semantic response cache — embeds prompts locally (no API call), stores responses with WAL atomicity, returns cached responses on near-duplicate prompts. File-change-based invalidation. 15–30% of coding-agent prompts are near-duplicates.",
+      "source": "./semantic-cache",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/semantic-cache"
     }
   ]
 }

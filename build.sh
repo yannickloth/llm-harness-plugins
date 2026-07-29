@@ -33,14 +33,19 @@ run_tests() {
 
     echo "--- Running $NAME tests ---"
     local ALL_PASSED=true
-    for testfile in "$TEST_CLASSES_DIR"/eu/infolead/llmhp/insights/*Test.class; do
-        if [ ! -f "$testfile" ]; then continue; fi
-        local basename
-        basename=$(basename "$testfile" .class)
-        local fqn="eu.infolead.llmhp.insights.${basename}"
+    local found=0
+    while IFS= read -r -d '' testfile; do
+        found=$((found + 1))
+        local relpath="${testfile#"$TEST_CLASSES_DIR/"}"
+        relpath="${relpath%.class}"
+        local fqn="${relpath//\//.}"
         echo "  $fqn"
         java --class-path "${CLASSES_DIR}:${TEST_CLASSES_DIR}" "$fqn" || ALL_PASSED=false
-    done
+    done < <(find "$TEST_CLASSES_DIR" -name '*Test.class' -print0 2>/dev/null || true)
+    if [ "$found" -eq 0 ]; then
+        echo "  No test classes found."
+        return 0
+    fi
     if [ "$ALL_PASSED" = true ]; then
         echo "$NAME tests: PASSED"
     else
@@ -52,6 +57,8 @@ run_tests() {
 compile_plugin "agentmem"
 compile_plugin "agentinsights"
 compile_plugin "knowledge-graph"
+compile_plugin "tier-router"
+compile_plugin "semantic-cache"
 
 cat > "$SCRIPT_DIR/agentmem/bin/memorysystem" << 'RUNNER'
 #!/usr/bin/env bash
@@ -68,3 +75,4 @@ echo "Runner: $SCRIPT_DIR/agentmem/bin/memorysystem"
 echo "Runner: $SCRIPT_DIR/agentinsights/bin/insights"
 
 run_tests "agentinsights"
+run_tests "semantic-cache"
