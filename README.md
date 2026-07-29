@@ -49,13 +49,39 @@ No build step — compiled Java is committed. Two install options:
 git submodule add https://github.com/infolead/llm-harness-plugins.git
 ```
 
-Add to your project's `opencode.json`:
+Add to your project's `opencode.json`. **Order matters** — plugins are loaded sequentially and some depend on earlier plugins:
 
 ```json
 {
-  "plugin": ["./llm-harness-plugins/agentmem/opencode/index.ts"]
+  "plugin": [
+    "./llm-harness-plugins/guardrail-chain/opencode/index.ts",
+    "./llm-harness-plugins/agentmem/opencode/index.ts",
+    "./llm-harness-plugins/semantic-cache/opencode/index.ts",
+    "./llm-harness-plugins/tier-router/opencode/index.ts",
+    "./llm-harness-plugins/agentinsights/opencode/index.ts",
+    "./llm-harness-plugins/knowledge-graph/opencode/index.ts",
+    "./llm-harness-plugins/prompt-registry/opencode/index.ts",
+    "./llm-harness-plugins/typst-toolkit/opencode/index.ts",
+    "./llm-harness-plugins/latex-toolkit/opencode/index.ts",
+    "./llm-harness-plugins/general-skills/opencode/index.ts"
+  ]
 }
 ```
+
+| # | Plugin | Must load before... | Reason |
+|---|--------|--------------------|--------|
+| 1 | `guardrail-chain` | `agentmem` | `agentmem` imports `GuardrailPipeline` for pre-write security scanning |
+| 2 | `agentmem` | `semantic-cache`, `agentinsights` | Creates `.agentmem/` root dir; `tier-router` reads its `MEMORY.md` |
+| 3 | `semantic-cache` | — | Writes to `.agentmem/cache/`; planned cache for `tier-router` |
+| 4 | `tier-router` | — | Reads `agentmem`'s `MEMORY.md` for routing signals |
+| 5 | `agentinsights` | — | Writes reports to `.agentmem/insights/` |
+| 6 | `knowledge-graph` | — | Typst-derived graph; conceptually downstream of `typst-toolkit` |
+| 7 | `prompt-registry` | — | Manages prompt templates across all plugins |
+| 8 | `typst-toolkit` | — | Format-bound skills |
+| 9 | `latex-toolkit` | — | Format-bound skills |
+| 10 | `general-skills` | — | Generic audit agents, load last |
+
+Hard dependency: `guardrail-chain` → `agentmem`. Rest is soft layering.
 
 Restart OpenCode. The plugin loads and registers four tools.
 
