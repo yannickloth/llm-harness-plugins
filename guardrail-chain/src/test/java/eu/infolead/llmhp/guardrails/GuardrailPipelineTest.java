@@ -62,6 +62,7 @@ public final class GuardrailPipelineTest {
 
     static void testGoogleTokens() {
         var scanner = new SecretScanner();
+        // Synthetic test key matching Google API key format — not a real secret
         var r1 = scanner.scan("AIzaSyB4dQxVp8KmNz9Wr2JfLtR6hMc5vUaXwYg");
         check(r1 instanceof GuardResult.Block, "Google API key detected");
 
