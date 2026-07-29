@@ -9,11 +9,10 @@ const classesDir = path.join(agentmemDir, "build", "classes")
 const mainClass = "eu.infolead.llmhp.memory.MemorySystemCli"
 
 const DREAM_INTERVAL_MS = 24 * 60 * 60 * 1000
-const KEEPER_DEBOUNCE_MS = 60_000
-let lastKeeperRun = 0
 let lastDreamRun = 0
 let injectedSessionId: string | null = null
 const injectedScopes = new Set<string>()
+let flaggedTurnCount = 0
 
 function memDir(directory: string, worktree?: string): string {
   return worktree ? path.join(worktree, ".agentmem") : path.join(directory, ".agentmem")
@@ -77,15 +76,38 @@ function handleFileEditScoped(client: ReturnType<Parameters<Plugin>[0]["client"]
   }).catch(() => {})
 }
 
-function trySpawnKeeper(mdir: string, client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string) {
-  const now = Date.now()
-  if (now - lastKeeperRun <= KEEPER_DEBOUNCE_MS) return
-  if (!existsSync(mdir)) return
-  const lastWrite = path.join(mdir, ".last-write")
-  let mtime = 0
-  try { mtime = statSync(lastWrite).mtimeMs } catch {}
-  if (now - mtime <= 15_000) return
-  lastKeeperRun = now
+async function classifyMessage(text: string): Promise<boolean> {
+  const prompt = `Classify whether this message contains information worth remembering across sessions. Answer YES or NO only.
+
+Memory-worthy signals:
+- User states a preference, correction, or constraint ("always do X", "never do Y", "that's wrong")
+- A non-obvious decision with rationale is being discussed
+- Something surprising happens (expected X, got Y)
+- References to external systems, tools, or processes outside the codebase
+- Project deadlines, scope changes, or architectural decisions
+
+NOT memory-worthy:
+- Simple questions ("what does X do?", "run the tests")
+- Mechanical requests ("edit this file", "commit these changes")
+- Greetings, acknowledgments, clarifications of the current task
+- Anything derivable from current code or git history
+
+User message: "${text.replace(/"/g, '\\"').slice(0, 800)}"
+
+Answer (YES/NO):`
+
+  try {
+    const result = await $`echo ${Bun.escapeForShell(prompt)} | \
+      opencode run --model deepseek/deepseek-v4-flash --agent memory-keeper \
+      --print -- \
+      "Answer YES or NO only, based on the prompt in stdin."`.nothrow().text()
+    return result.trim().toUpperCase().startsWith("YES")
+  } catch {
+    return false
+  }
+}
+
+function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string) {
   const keeper = Bun.spawn(
     ["opencode", "run", "--agent", "memory-keeper",
      "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
@@ -117,13 +139,15 @@ function trySpawnDreamer(mdir: string) {
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
-  console.log("[agentmem] plugin active — 6 tools + auto-injection hooks")
+  console.log("[agentmem] plugin active — 6 tools + classifier + auto-injection hooks")
   const root = rootDir(directory, worktree)
 
   return {
     event: async ({ event }) => {
       switch (event.type) {
         case "session.created": {
+          flaggedTurnCount = 0
+          injectedScopes.clear()
           const sid = event.properties?.sessionID
           if (!sid) return
           const mdir = memDir(directory, worktree)
@@ -157,11 +181,23 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         }
         case "session.idle": {
           const mdir = path.join(root, ".agentmem")
-          trySpawnKeeper(mdir, client, root)
+          if (flaggedTurnCount > 0) {
+            flaggedTurnCount = 0
+            spawnKeeper(client, root)
+          }
           trySpawnDreamer(mdir)
           break
         }
       }
+    },
+
+    "chat.message": async (input, output) => {
+      const text = output.parts?.map((p: any) => p.text ?? "").join(" ") ?? ""
+      if (!text || text.length < 20) return
+      const memo = classifyMessage(text)
+      memo.then(interesting => {
+        if (interesting) flaggedTurnCount++
+      }).catch(() => {})
     },
 
     "tool.execute.after": (input, output) => {
