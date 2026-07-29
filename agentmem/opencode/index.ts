@@ -1,79 +1,22 @@
 import type { Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
-import { existsSync, readdirSync, statSync, readFileSync } from "fs"
+import { existsSync, statSync } from "fs"
+import { loadMemIndex, collectTopicFiles, collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
 
 const agentmemDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(agentmemDir, "build", "classes")
 const mainClass = "eu.infolead.llmhp.memory.MemorySystemCli"
 
-const MAX_INJECT_LENGTH = 8000
-const FILE_TOOLS = new Set(["read", "grep", "glob", "edit", "write", "find", "ls"])
+const DREAM_INTERVAL_MS = 24 * 60 * 60 * 1000
+const KEEPER_DEBOUNCE_MS = 60_000
+let lastKeeperRun = 0
+let lastDreamRun = 0
 
 function memDir(context: { worktree?: string; directory: string }): string {
   return context.worktree
     ? path.join(context.worktree, ".agentmem")
     : path.join(context.directory, ".agentmem")
-}
-
-function loadMemIndex(memDirPath: string): string | null {
-  const f = path.join(memDirPath, "MEMORY.md")
-  if (!existsSync(f)) return null
-  const content = readFileSync(f, "utf-8").trim()
-  if (!content) return null
-  return content.length > MAX_INJECT_LENGTH
-    ? content.slice(0, MAX_INJECT_LENGTH) + "\n... [truncated]"
-    : content
-}
-
-function collectScopedMem(cwd: string, projectRoot: string): string[] {
-  const results: string[] = []
-  let current = cwd
-  while (current.startsWith(projectRoot)) {
-    const memFile = path.join(current, "MEMORY.md")
-    if (existsSync(memFile) && current !== path.join(projectRoot, ".agentmem")) {
-      const content = readFileSync(memFile, "utf-8").trim()
-      if (content) {
-        const relDir = path.relative(projectRoot, current) || "root"
-        results.push(`### Scoped memory: ${relDir}\n${content}`)
-      }
-    }
-    if (current === projectRoot) break
-    current = path.dirname(current)
-  }
-  return results
-}
-
-function collectTopicFiles(memDirPath: string): string {
-  if (!existsSync(memDirPath)) return ""
-  const parts: string[] = []
-  const entries = readdirSync(memDirPath)
-    .filter(e => e.endsWith(".md") && e !== "MEMORY.md" && e !== "REVIEW.md")
-    .sort()
-  for (const entry of entries) {
-    const filePath = path.join(memDirPath, entry)
-    if (!statSync(filePath).isFile()) continue
-    const content = readFileSync(filePath, "utf-8")
-    const combined = `\n<!-- memory: ${entry} -->\n${content}`
-    parts.push(combined)
-  }
-  const full = parts.join("\n")
-  return full.length > MAX_INJECT_LENGTH
-    ? full.slice(0, MAX_INJECT_LENGTH) + "\n... [truncated]"
-    : full
-}
-
-function extractFilePathFromToolInput(input: Record<string, unknown>): string | null {
-  if (typeof input.filePath === "string") return input.filePath
-  if (typeof input.file_path === "string") return input.file_path
-  if (typeof input.query === "object" && input.query) {
-    const q = input.query as Record<string, unknown>
-    if (typeof q.path === "string") return q.path
-    if (typeof q.directory === "string") return q.directory
-  }
-  if (typeof input.target_directory === "string") return input.target_directory
-  if (typeof input.path === "string") return input.path
-  return null
 }
 
 let injectedSessionId: string | null = null
@@ -210,6 +153,49 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
       }
     },
 
+    "session.idle": async () => {
+      const mdir = path.join(root, ".agentmem")
+      const now = Date.now()
+
+      if (now - lastKeeperRun > KEEPER_DEBOUNCE_MS) {
+        if (!existsSync(mdir)) return
+        const lastWrite = path.join(mdir, ".last-write")
+        const mtime = (() => {
+          try { return statSync(lastWrite).mtimeMs } catch { return 0 }
+        })()
+        if (now - mtime > 15_000) {
+          lastKeeperRun = now
+          const keeper = Bun.spawn(
+            ["opencode", "run", "--agent", "memory-keeper",
+             "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+             "Extract non-derivable learnings from the most recent conversation and persist them to .agentmem/."],
+            { stdout: "pipe", stderr: "pipe" }
+          )
+          const kill = setTimeout(() => { try { keeper.kill() } catch {} }, 120_000)
+          try {
+            await new Response(keeper.stdout).text()
+            if (injectedSessionId) await reinjectMemory(client, injectedSessionId, root)
+          } finally { clearTimeout(kill) }
+        }
+      }
+
+      if (now - lastDreamRun > DREAM_INTERVAL_MS) {
+        if (!existsSync(mdir)) return
+        const lockResult = await $`java --class-path ${classesDir} ${mainClass} lock-check ${mdir}`.nothrow().text()
+        if (lockResult.trim() === "FREE") {
+          lastDreamRun = now
+          const dreamer = Bun.spawn(
+            ["opencode", "run", "--agent", "memory-dreamer",
+             "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+             "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
+            { stdout: "pipe", stderr: "pipe" }
+          )
+          const kill = setTimeout(() => { try { dreamer.kill() } catch {} }, 300_000)
+          try { await new Response(dreamer.stdout).text() } finally { clearTimeout(kill) }
+        }
+      }
+    },
+
     tool: {
       "save-memory": tool({
         description: "Save a project learning to persistent memory. Two-step protocol: write topic file with frontmatter, then add index pointer to MEMORY.md.",
@@ -231,9 +217,10 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
           const cmd = [
             "java", "--class-path", classesDir,
             mainClass, "save", mdir,
-            args.name, args.description, args.type, args.who,
-            args.context, args.confidence, args.content, args.hook,
+            args.name, args.description, args.type,
             args.subtype ?? "--",
+            args.who, args.context, args.confidence,
+            args.content, args.hook,
             args.contradicts ?? "--",
             args.guard_trigger ?? "--"
           ]
@@ -278,6 +265,41 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
             ?? context.directory
           const result = await $`java --class-path ${classesDir} ${mainClass} bootstrap ${mdir} ${repoPath}`.nothrow().text()
           return result.trim()
+        },
+      }),
+
+      "prune-memories": tool({
+        description: "List memory files eligible for pruning based on decay curves. Returns prune candidates.",
+        args: {
+          type: tool.schema.string().optional().describe("Filter by memory type (user|feedback|project|reference)"),
+        },
+        async execute(args, context) {
+          const mdir = memDir(context)
+          const result = await $`java --class-path ${classesDir} ${mainClass} lifecycle-prune ${mdir}`.nothrow().text()
+          return result.trim()
+        },
+      }),
+
+      "dream": tool({
+        description: "Run memory consolidation. Merges, deduplicates, prunes, and links memories.",
+        args: {},
+        async execute(_args, context) {
+          const mdir = memDir(context)
+          const lockResult = await $`java --class-path ${classesDir} ${mainClass} lock-check ${mdir}`.nothrow().text()
+          if (lockResult.trim() !== "FREE") return "Dream already in progress (lock busy)."
+          // NOTE: lock-check → spawn race is advisory here (soft lock).
+          // Concurrent dreams won't corrupt data (write-ahead log + per-file atomic renames).
+          const dreamer = Bun.spawn(
+            ["opencode", "run", "--agent", "memory-dreamer",
+             "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+             "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
+            { stdout: "pipe", stderr: "pipe" }
+          )
+          const kill = setTimeout(() => { try { dreamer.kill() } catch {} }, 300_000)
+          try {
+            const out = await new Response(dreamer.stdout).text()
+            return out.trim() || "Dream complete."
+          } finally { clearTimeout(kill) }
         },
       }),
     },

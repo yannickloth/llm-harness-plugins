@@ -1,6 +1,7 @@
 package eu.infolead.llmhp.memory;
 
 import eu.infolead.llmhp.memory.types.Confidence;
+import eu.infolead.llmhp.memory.types.FrontmatterParser;
 import eu.infolead.llmhp.memory.types.ModelTier;
 
 import java.io.*;
@@ -45,7 +46,7 @@ public final class MemoryLifecycle {
                  .forEach(f -> {
                      try {
                          var raw = Files.readString(f);
-                         var fm = parseFrontmatter(raw);
+                         var fm = FrontmatterParser.parse(raw);
                          var type = fm.getOrDefault("type", "project");
                          var conf = Confidence.fromString(fm.getOrDefault("confidence", "medium"));
                          var tier = parseTier(fm.get("model_tier"));
@@ -90,16 +91,4 @@ public final class MemoryLifecycle {
         catch (IllegalArgumentException e) { return ModelTier.UNKNOWN; }
     }
 
-    static Map<String, String> parseFrontmatter(String raw) {
-        var result = new LinkedHashMap<String, String>();
-        var lines = raw.split("\n");
-        if (lines.length == 0 || !lines[0].trim().equals("---")) return result;
-        for (int i = 1; i < lines.length; i++) {
-            var line = lines[i].trim();
-            if (line.equals("---")) break;
-            var colon = line.indexOf(':');
-            if (colon > 0) result.put(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
-        }
-        return result;
-    }
 }

@@ -16,9 +16,9 @@ public class MemorySystemCli {
             case "save" -> {
                 var input = new MemoryStore.SaveInput(
                     args[2], args[3], args[4],
-                    strOpt(args, 10),
-                    args[5], args[6], args[7],
-                    args[8], args[9],
+                    strOpt(args, 5),
+                    args[6], args[7], args[8],
+                    args[9], args[10],
                     strOpt(args, 11),
                     strOpt(args, 12),
                     strOpt(args, 13));
@@ -162,6 +162,68 @@ public class MemorySystemCli {
             case "path-validate" -> PathValidator.validate(Path.of(args[2]), memDir);
             case "path-validate-name" -> PathValidator.validateName(args[2]);
 
+            case "tiered-inject" -> {
+                var projectRoot = Path.of(args.length > 2 ? args[2] : ".");
+                var tiers = new LinkedHashSet<Path>();
+                var teamShared = Path.of("/etc/agentmem/shared");
+                var global = Path.of(System.getProperty("user.home"), ".agentmem", "global");
+                var projectMem = projectRoot.resolve(".agentmem");
+                String projKey;
+                try {
+                    projKey = projectRoot.toRealPath().toString().replace("/", "_");
+                } catch (IOException e) {
+                    projKey = projectRoot.toAbsolutePath().normalize().toString().replace("/", "_");
+                }
+                var personal = Path.of(System.getProperty("user.home"), ".agentmem", projKey);
+
+                for (var t : new Path[]{teamShared, global, projectMem, personal}) {
+                    var idx = t.resolve("MEMORY.md");
+                    if (Files.exists(idx)) tiers.add(t);
+                }
+
+                var sb = new StringBuilder();
+                for (var t : tiers) {
+                    var tierLabel = t.toString().replace(System.getProperty("user.home"), "~");
+                    var indexPath = t.resolve("MEMORY.md");
+                    if (Files.exists(indexPath)) {
+                        var indexContent = Files.readString(indexPath).trim();
+                        if (!indexContent.isEmpty()) {
+                            sb.append("### Tier: ").append(tierLabel).append("\n");
+                            sb.append(indexContent).append("\n\n");
+                        }
+                    }
+                    try (var files = Files.list(t)) {
+                        files.filter(f -> f.getFileName().toString().endsWith(".md")
+                            && !f.getFileName().toString().equals("MEMORY.md")
+                            && !f.getFileName().toString().equals("REVIEW.md"))
+                            .sorted()
+                            .forEach(f -> {
+                                try {
+                                    var content = Files.readString(f);
+                                    var truncated = content.length() > 4000
+                                        ? content.substring(0, 4000) + "\n... [truncated]"
+                                        : content;
+                                    sb.append("<!-- memory: ").append(f.getFileName()).append(" -->\n");
+                                    sb.append(truncated).append("\n\n");
+                                } catch (IOException ignored) {}
+                            });
+                    }
+                }
+                if (sb.isEmpty()) { System.out.println("{}"); return; }
+                var contextText = sb.toString();
+                var escaped = contextText
+                    .replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t");
+                var cap = Math.min(escaped.length(), 12000);
+                System.out.print("{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"");
+                System.out.print(escaped.substring(0, cap));
+                System.out.print("\"}}");
+                System.out.println();
+            }
+
             default -> { System.err.println("Unknown: " + cmd); System.exit(1); }
         }
     }
@@ -179,8 +241,8 @@ public class MemorySystemCli {
             guardrail-match guardrail-list
             scoped-resolve digest-episode
             model-tier model-trust model-record model-correct
-            review sync-delta bootstrap migrate inject
-            path-validate path-validate-name
+            review sync-delta bootstrap migrate inject scoped-inject
+            tiered-inject path-validate path-validate-name
             """);
     }
 

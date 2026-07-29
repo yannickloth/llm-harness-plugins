@@ -1,5 +1,7 @@
 package eu.infolead.llmhp.memory;
 
+import eu.infolead.llmhp.memory.types.FrontmatterParser;
+
 import java.io.*;
 import java.nio.file.*;
 import java.time.*;
@@ -31,7 +33,7 @@ public final class ReviewGenerator {
         var needsReview = 0;
         for (var f : newOrChanged) {
             try {
-                var fm = parseFrontmatter(Files.readString(f));
+                var fm = FrontmatterParser.parse(Files.readString(f));
                 var conf = fm.getOrDefault("confidence", "medium");
                 var name = f.getFileName().toString();
                 var desc = fm.getOrDefault("description", "");
@@ -49,18 +51,5 @@ public final class ReviewGenerator {
 
         Files.writeString(memDir.resolve("REVIEW.md"), sb.toString());
         System.out.println(sb.toString());
-    }
-
-    static Map<String, String> parseFrontmatter(String raw) {
-        var result = new LinkedHashMap<String, String>();
-        var lines = raw.split("\n");
-        if (lines.length == 0 || !lines[0].trim().equals("---")) return result;
-        for (int i = 1; i < lines.length; i++) {
-            var line = lines[i].trim();
-            if (line.equals("---")) break;
-            var colon = line.indexOf(':');
-            if (colon > 0) result.put(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
-        }
-        return result;
     }
 }

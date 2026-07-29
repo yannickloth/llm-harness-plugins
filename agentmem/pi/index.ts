@@ -1,14 +1,10 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
-import { isAbsolute, join } from "node:path"
-
-const MAX_INJECT = 8000
-const TARGET_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"])
+import { join } from "node:path"
+import { loadMemIndex, collectTopicFiles, collectScopedMem, extractFilePathFromToolInput, resolveAbsolute, FILE_TOOLS } from "../shared/memory-helpers"
 
 const JAVA_CLASS = "eu.infolead.llmhp.memory.MemorySystemCli"
 
 function findAgentmemDir(): string {
   const self = import.meta.dir
-  // Walk up to find the agentmem root (parent of pi/ directory)
   return join(self, "..")
 }
 
@@ -16,7 +12,7 @@ function reinject(pi: any, root: string) {
   const mdir = join(root, ".agentmem")
   const index = loadMemIndex(mdir)
   if (!index) return
-  const topics = loadTopicFiles(mdir)
+  const topics = collectTopicFiles(mdir)
   pi.sendMessage({
     customType: "agentmem-update",
     content: "# Persistent Project Memory\n**UPDATED** — new memories just saved.\n\n" + index + "\n" + topics,
@@ -29,59 +25,6 @@ interface ToolCtx { cwd: string; signal: AbortSignal | undefined }
 
 function memDir(projectRoot: string): string {
   return join(projectRoot, ".agentmem")
-}
-
-function loadMemIndex(mdir: string): string | null {
-  const f = join(mdir, "MEMORY.md")
-  if (!existsSync(f)) return null
-  const content = readFileSync(f, "utf-8").trim()
-  if (!content) return null
-  return content.length > MAX_INJECT ? content.slice(0, MAX_INJECT) + "\n... [truncated]" : content
-}
-
-function loadTopicFiles(mdir: string): string {
-  if (!existsSync(mdir)) return ""
-  const parts: string[] = []
-  const entries = readdirSync(mdir)
-    .filter(e => e.endsWith(".md") && e !== "MEMORY.md" && e !== "REVIEW.md")
-    .sort()
-  for (const entry of entries) {
-    const fp = join(mdir, entry)
-    if (!statSync(fp).isFile()) continue
-    const content = readFileSync(fp, "utf-8")
-    const combined = `\n<!-- memory: ${entry} -->\n${content}`
-    parts.push(combined)
-  }
-  const full = parts.join("\n")
-  return full.length > MAX_INJECT ? full.slice(0, MAX_INJECT) + "\n... [truncated]" : full
-}
-
-function collectScoped(cwd: string, projectRoot: string): string[] {
-  const results: string[] = []
-  let current = cwd
-  while (current.length >= projectRoot.length && current.startsWith(projectRoot)) {
-    const memFile = join(current, "MEMORY.md")
-    if (existsSync(memFile) && current !== join(projectRoot, ".agentmem")) {
-      const content = readFileSync(memFile, "utf-8").trim()
-      if (content) {
-        const relDir = current === projectRoot ? "root" : current.slice(projectRoot.length + 1) || "root"
-        results.push(`### Scoped memory: ${relDir}\n${content}`)
-      }
-    }
-    if (current === projectRoot) break
-    current = join(current, "..")
-  }
-  return results
-}
-
-function resolveFilePath(input: Record<string, unknown>): string | null {
-  if (typeof input.path === "string" && input.path.length > 0) return input.path
-  return null
-}
-
-function resolveAbsolute(cwd: string, rawPath: string): string {
-  if (isAbsolute(rawPath)) return rawPath
-  return join(cwd, rawPath)
 }
 
 let projectRoot = ""
@@ -112,7 +55,7 @@ export default function agentmemPi(pi: any) {
       memInjectDone = true
       const mdir = memDir(root)
       const index = loadMemIndex(mdir)
-      const topics = loadTopicFiles(mdir)
+      const topics = collectTopicFiles(mdir)
       const blocks: string[] = []
       if (index) blocks.push("# Persistent Project Memory\n\n" + index)
       if (topics) blocks.push(topics)
@@ -128,7 +71,7 @@ export default function agentmemPi(pi: any) {
     }
 
     // Every turn: walk project root for scoped MEMORY.md files
-    const scoped = collectScoped(ctx.cwd, root)
+    const scoped = collectScopedMem(ctx.cwd, root)
     if (scoped.length === 0) return undefined
 
     const msgs = [...event.messages]
@@ -142,15 +85,15 @@ export default function agentmemPi(pi: any) {
   pi.on("tool_result", (event: any, ctx: any) => {
     // For built-in file tools: inject scoped memory
     const root = projectRoot || ctx.cwd
-    if (!TARGET_TOOLS.has(event.toolName)) return undefined
+    if (!FILE_TOOLS.has(event.toolName)) return undefined
 
-    const filePath = resolveFilePath(event.input ?? {})
+    const filePath = extractFilePathFromToolInput(event.input ?? {})
     if (!filePath) return undefined
 
     const abs = resolveAbsolute(ctx.cwd, filePath)
     if (!abs.startsWith(root)) return undefined
 
-    const scoped = collectScoped(abs, root)
+    const scoped = collectScopedMem(abs, root)
     if (scoped.length === 0) return undefined
 
     const scopedBlock = "## Scoped Memory for " + filePath + "\n" + scoped.join("\n")
@@ -181,10 +124,10 @@ export default function agentmemPi(pi: any) {
       const guardTrigger = String(params.guard_trigger ?? "--")
       const args = [
         "java", "--class-path", classpath, JAVA_CLASS, "save", mdir,
-        name, desc, type, who, context, confidence, content, hook,
-        subtype, contradicts, guardTrigger,
+        name, desc, type, subtype, who, context, confidence, content, hook,
+        contradicts, guardTrigger,
       ]
-      const result = Bun.spawnSync(["sh", "-c", args.join(" ")])
+      const result = Bun.spawnSync(args)
       const output = result.stdout.toString().trim() || result.stderr.toString().trim()
       if (result.exitCode !== 0) return { content: [{ type: "text", text: "ERROR: " + output }], isError: true }
       reinject(pi, root)
