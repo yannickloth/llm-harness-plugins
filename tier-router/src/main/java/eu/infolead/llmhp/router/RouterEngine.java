@@ -72,7 +72,7 @@ final class RouterEngine {
             }
         }
 
-        // Step 1: Ambiguity detection — ask user to clarify
+        // Step 1: Ambiguity detection — ask user to clarify (runs before LLM classification)
         if (reformatter.needsUserClarification(trimmed)) {
             if (forceEscalate) {
                 return result(Decision.ESCALATE, null,
@@ -88,40 +88,53 @@ final class RouterEngine {
             );
         }
 
-        // Step 2: Meta-routing — handle by router
+        // Step 2: LLM classification (primary)
+        var llmResult = LlmClassifier.classify(trimmed);
+        if (llmResult != null) {
+            var reason = llmResult.reason();
+            if (llmResult.decision() == Decision.ESCALATE) {
+                return result(Decision.ESCALATE, null, reason + memoryHint, llmResult.confidence(), trimmed);
+            }
+            if (forceEscalate && matchedSignal != null) {
+                return result(Decision.ESCALATE, null,
+                    "LLM routed but user is learning %s — escalating for judgment".formatted(matchedSignal.domain()) + memoryHint,
+                    matchedSignal.confidence(), trimmed);
+            }
+            return result(llmResult.decision(), llmResult.tier(), reason + memoryHint, llmResult.confidence(), trimmed);
+        }
+
+        // Step 3 (fallback): Keyword-based classification
+
+        // Meta-routing — handle by router
         if (classifier.isMetaRouting(trimmed)) {
             return result(Decision.ESCALATE, null, "Meta-routing request" + memoryHint, 0.9, trimmed);
         }
 
-        // Step 3: Complexity signal
+        // Complexity signal
         if (classifier.hasComplexitySignal(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "Complexity keyword detected (design, architecture, judgment, etc.)" + memoryHint,
-                COMPLEXITY_CONFIDENCE, trimmed);
+                "Complexity keyword detected" + memoryHint, COMPLEXITY_CONFIDENCE, trimmed);
         }
 
-        // Step 4: Bulk destructive
+        // Bulk destructive
         if (classifier.isBulkDestructive(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "Bulk destructive operation requires judgment" + memoryHint,
-                BULK_DESTRUCTIVE_CONFIDENCE, trimmed);
+                "Bulk destructive operation requires judgment" + memoryHint, BULK_DESTRUCTIVE_CONFIDENCE, trimmed);
         }
 
-        // Step 5: File operation without path
+        // File operation without path
         if (classifier.isFileOpWithoutPath(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "File operation without explicit path needs file discovery" + memoryHint,
-                SOFT_SIGNAL_CONFIDENCE, trimmed);
+                "File operation without explicit path needs file discovery" + memoryHint, SOFT_SIGNAL_CONFIDENCE, trimmed);
         }
 
-        // Step 6: Agent definition modification
+        // Agent definition modification
         if (classifier.modifiesAgentFiles(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "Agent definition changes require careful judgment" + memoryHint,
-                COMPLEXITY_CONFIDENCE, trimmed);
+                "Agent definition changes require careful judgment" + memoryHint, COMPLEXITY_CONFIDENCE, trimmed);
         }
 
-        // Step 7: Multiple objectives
+        // Multiple objectives
         long objectives = classifier.countObjectives(trimmed);
         if (objectives >= 2) {
             return result(Decision.ESCALATE, null,
@@ -129,14 +142,14 @@ final class RouterEngine {
                 SOFT_SIGNAL_CONFIDENCE, trimmed);
         }
 
-        // Step 8: Creation task
+        // Creation task
         if (classifier.isCreationTask(trimmed)) {
             return result(Decision.ESCALATE, null,
                 "Creation/design task requires planning and judgment" + memoryHint,
                 CREATION_CONFIDENCE, trimmed);
         }
 
-        // Step 9: Keyword-based tier matching
+        // Keyword-based tier matching
         var tier = classifier.keywordMatch(trimmed);
         if (tier != null) {
             double confidence = classifier.keywordConfidence(trimmed, tier);
@@ -150,16 +163,16 @@ final class RouterEngine {
             }
         }
 
-        // Step 10: Memory learning signal → force escalate when no direct match
+        // Memory learning signal → force escalate when no direct match
         if (forceEscalate) {
             return result(Decision.ESCALATE, null,
                 "No tier match + user is learning %s — escalate for judgment".formatted(matchedSignal.domain()) + memoryHint,
                 matchedSignal.confidence(), trimmed);
         }
 
-        // Step 11: No match — escalate
+        // No match — escalate
         return result(Decision.ESCALATE, null,
-            "No clear tier match — needs intelligent routing" + memoryHint, 1.0, trimmed);
+            "No match in keyword fallback — needs intelligent routing" + memoryHint, 1.0, trimmed);
     }
 
     /**

@@ -84,9 +84,27 @@ REWRITTEN PROMPT: ${result.rewritten_prompt}
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
   const root = worktree ?? directory
-  console.log("[tier-router] plugin active — 3 tools (classify-prompt, rewrite-prompt, check-ambiguity)")
+  console.log("[tier-router] plugin active — 3 tools + auto-rewrite hook (chat.message)")
+
+  const rewritten = new Set<string>()
 
   return {
+    "chat.message": async (input, output) => {
+      const sessionID = input.sessionID
+      if (rewritten.has(sessionID)) return
+      rewritten.add(sessionID)
+
+      const textPart = output.parts.find(p => p.type === "text") as { id: string; sessionID: string; messageID: string; text: string } | undefined
+      if (!textPart) return
+      if (!textPart.text.trim()) return
+
+      const result = await classifyPrompt(textPart.text)
+      const directive = generateRoutingDirective(result)
+      console.log("[tier-router] rewrite", { sessionID, tier: result.tier, confidence: result.confidence })
+
+      textPart.text = directive
+    },
+
     tool: {
       "classify-prompt": tool({
         description: "Classify a prompt string into a reasoning tier (fable/haiku/sonnet/opus) with rewritten prompt. Use to test routing without executing.",
