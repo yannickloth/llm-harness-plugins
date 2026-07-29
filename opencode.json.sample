@@ -4,12 +4,20 @@
     "memory": "./agentmem/prompts/agent-prompt.md"
   },
   "plugin": [
+    "./guardrail-chain/opencode/index.ts",
     "./agentmem/opencode/index.ts",
-    "./agentinsights/opencode/index.ts"
+    "./semantic-cache/opencode/index.ts",
+    "./tier-router/opencode/index.ts",
+    "./agentinsights/opencode/index.ts",
+    "./knowledge-graph/opencode/index.ts",
+    "./prompt-registry/opencode/index.ts",
+    "./typst-toolkit/opencode/index.ts",
+    "./latex-toolkit/opencode/index.ts",
+    "./general-skills/opencode/index.ts"
   ],
   "agent": {
     "memory-keeper": {
-      "description": "Out-of-band memory curator. Extracts non-derivable learnings from conversation.",
+      "model": "openai/gpt-4.1-nano",
       "mode": "subagent",
       "steps": 5,
       "permission": {
@@ -18,7 +26,7 @@
       }
     },
     "memory-dreamer": {
-      "description": "Nightly memory consolidation. Merges, deduplicates, prunes, links.",
+      "model": "openai/gpt-4.1-nano",
       "mode": "subagent",
       "steps": 10,
       "permission": {

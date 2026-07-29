@@ -12,15 +12,16 @@ const DREAM_INTERVAL_MS = 24 * 60 * 60 * 1000
 const KEEPER_DEBOUNCE_MS = 60_000
 let lastKeeperRun = 0
 let lastDreamRun = 0
-
-function memDir(context: { worktree?: string; directory: string }): string {
-  return context.worktree
-    ? path.join(context.worktree, ".agentmem")
-    : path.join(context.directory, ".agentmem")
-}
-
 let injectedSessionId: string | null = null
 const injectedScopes = new Set<string>()
+
+function memDir(directory: string, worktree?: string): string {
+  return worktree ? path.join(worktree, ".agentmem") : path.join(directory, ".agentmem")
+}
+
+function rootDir(directory: string, worktree?: string): string {
+  return worktree ?? directory
+}
 
 async function reinjectMemory(client: ReturnType<Parameters<Plugin>[0]["client"]>, sessionId: string, root: string) {
   const mdir = path.join(root, ".agentmem")
@@ -44,156 +45,131 @@ async function reinjectMemory(client: ReturnType<Parameters<Plugin>[0]["client"]
   }
 }
 
-export default async ({ project, client, $, directory, worktree }: Parameters<Plugin>[0]) => {
-  console.log("[agentmem] plugin active — 4 tools + auto-injection hooks")
-  const root = worktree ?? directory
+function handleScopedInject(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, filePath: string) {
+  const sessionId = injectedSessionId
+  if (!sessionId) return
+  const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath)
+  if (!absPath.startsWith(root)) return
+  const scoped = collectScopedMem(absPath, root)
+  if (scoped.length === 0) return
+  const dedupKey = absPath + "|" + scoped.length
+  if (injectedScopes.has(dedupKey)) return
+  injectedScopes.add(dedupKey)
+  client.session.prompt({
+    path: { id: sessionId },
+    body: { noReply: true, parts: [{ type: "text", text: "## Scoped Memory for current file/operation\n" + scoped.join("\n") }] },
+  }).catch(() => {})
+}
+
+function handleFileEditScoped(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, file: string) {
+  const sessionId = injectedSessionId
+  if (!sessionId) return
+  const absPath = path.isAbsolute(file) ? file : path.resolve(root, file)
+  if (!absPath.startsWith(root)) return
+  const scoped = collectScopedMem(absPath, root)
+  if (scoped.length === 0) return
+  const dedupKey = absPath + "|edit"
+  if (injectedScopes.has(dedupKey)) return
+  injectedScopes.add(dedupKey)
+  client.session.prompt({
+    path: { id: sessionId },
+    body: { parts: [{ type: "text", text: "## Scoped Memory for edited file\n" + scoped.join("\n") }], noReply: true },
+  }).catch(() => {})
+}
+
+function trySpawnKeeper(mdir: string, client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string) {
+  const now = Date.now()
+  if (now - lastKeeperRun <= KEEPER_DEBOUNCE_MS) return
+  if (!existsSync(mdir)) return
+  const lastWrite = path.join(mdir, ".last-write")
+  let mtime = 0
+  try { mtime = statSync(lastWrite).mtimeMs } catch {}
+  if (now - mtime <= 15_000) return
+  lastKeeperRun = now
+  const keeper = Bun.spawn(
+    ["opencode", "run", "--agent", "memory-keeper",
+     "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+     "Extract non-derivable learnings from the most recent conversation and persist them to .agentmem/."],
+    { stdout: "pipe", stderr: "pipe" }
+  )
+  const kill = setTimeout(() => { try { keeper.kill() } catch {} }, 120_000)
+  new Response(keeper.stdout).text().then(() => {
+    clearTimeout(kill)
+    if (injectedSessionId) reinjectMemory(client, injectedSessionId, root)
+  }).catch(() => { clearTimeout(kill) })
+}
+
+function trySpawnDreamer(mdir: string) {
+  const now = Date.now()
+  if (now - lastDreamRun <= DREAM_INTERVAL_MS) return
+  if (!existsSync(mdir)) return
+  lastDreamRun = now
+  const lockCheck = Bun.spawnSync(["java", "--class-path", classesDir, mainClass, "lock-check", mdir])
+  if (lockCheck.stdout.toString().trim() !== "FREE") return
+  const dreamer = Bun.spawn(
+    ["opencode", "run", "--agent", "memory-dreamer",
+     "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+     "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
+    { stdout: "pipe", stderr: "pipe" }
+  )
+  const kill = setTimeout(() => { try { dreamer.kill() } catch {} }, 300_000)
+  new Response(dreamer.stdout).text().then(() => clearTimeout(kill)).catch(() => clearTimeout(kill))
+}
+
+export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  console.log("[agentmem] plugin active — 6 tools + auto-injection hooks")
+  const root = rootDir(directory, worktree)
 
   return {
-    "session.created": async (input: { properties?: { session?: { id?: string } } }) => {
-      const sessionId = input?.properties?.session?.id
-      if (!sessionId) return
-
-      const mdir = path.join(root, ".agentmem")
-      const memIndex = loadMemIndex(mdir)
-      if (!memIndex) return
-
-      const topicFiles = collectTopicFiles(mdir)
-
-      const context = [
-        "# Persistent Project Memory",
-        "",
-        "These memories persist across sessions. They are ALREADY IN your context — you do NOT need to read them again.",
-        "Use `save-memory` to persist new learnings.",
-        "",
-        memIndex,
-        topicFiles,
-      ].join("\n")
-
-      try {
-        await client.session.prompt({
-          path: { id: sessionId },
-          body: {
-            noReply: true,
-            parts: [{ type: "text", text: context }],
-          },
-        })
-        injectedSessionId = sessionId
-        console.log("[agentmem] injected memory into session", sessionId)
-      } catch (e) {
-        console.error("[agentmem] session.created injection failed:", (e as Error).message)
-      }
-    },
-
-    "tool.execute.after": async (event: {
-      tool: string
-      input: Record<string, unknown>
-      output: Record<string, unknown>
-      context?: { sessionID?: string }
-    }) => {
-      if (!FILE_TOOLS.has(event.tool)) return
-
-      const filePath = extractFilePathFromToolInput(event.input)
-      if (!filePath) return
-
-      const sessionId = event.context?.sessionID ?? injectedSessionId
-      if (!sessionId) return
-
-      const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath)
-      if (!absPath.startsWith(root)) return
-
-      const scoped = collectScopedMem(absPath, root)
-      if (scoped.length === 0) return
-
-      const context = [
-        "## Scoped Memory for current file/operation",
-        scoped.join("\n"),
-      ].join("\n")
-
-      const dedupKey = absPath + "|" + context.length
-      if (injectedScopes.has(dedupKey)) return
-      injectedScopes.add(dedupKey)
-
-      try {
-        await client.session.prompt({
-          path: { id: sessionId },
-          body: {
-            noReply: true,
-            parts: [{ type: "text", text: context }],
-          },
-        })
-      } catch (e) {
-        // silently ignore — best-effort injection
-      }
-    },
-
-    "file.edited": async (input: { file: string }) => {
-      const sessionId = injectedSessionId
-      if (!sessionId) return
-
-      const absPath = path.isAbsolute(input.file) ? input.file : path.resolve(root, input.file)
-      if (!absPath.startsWith(root)) return
-
-      const scoped = collectScopedMem(absPath, root)
-      if (scoped.length === 0) return
-
-      const dedupKey = absPath + "|edit"
-      if (injectedScopes.has(dedupKey)) return
-      injectedScopes.add(dedupKey)
-
-      try {
-        await client.session.prompt({
-          path: { id: sessionId },
-          body: {
-            parts: [{ type: "text", text: "## Scoped Memory for edited file\n" + scoped.join("\n") }],
-            noReply: true,
-          },
-        })
-      } catch (e) {
-        // silently ignore
-      }
-    },
-
-    "session.idle": async () => {
-      const mdir = path.join(root, ".agentmem")
-      const now = Date.now()
-
-      if (now - lastKeeperRun > KEEPER_DEBOUNCE_MS) {
-        if (!existsSync(mdir)) return
-        const lastWrite = path.join(mdir, ".last-write")
-        const mtime = (() => {
-          try { return statSync(lastWrite).mtimeMs } catch { return 0 }
-        })()
-        if (now - mtime > 15_000) {
-          lastKeeperRun = now
-          const keeper = Bun.spawn(
-            ["opencode", "run", "--agent", "memory-keeper",
-             "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
-             "Extract non-derivable learnings from the most recent conversation and persist them to .agentmem/."],
-            { stdout: "pipe", stderr: "pipe" }
-          )
-          const kill = setTimeout(() => { try { keeper.kill() } catch {} }, 120_000)
+    event: async ({ event }) => {
+      switch (event.type) {
+        case "session.created": {
+          const sid = event.properties?.sessionID
+          if (!sid) return
+          const mdir = memDir(directory, worktree)
+          const memIndex = loadMemIndex(mdir)
+          if (!memIndex) return
+          const topicFiles = collectTopicFiles(mdir)
+          const context = [
+            "# Persistent Project Memory",
+            "",
+            "These memories persist across sessions. They are ALREADY IN your context — you do NOT need to read them again.",
+            "Use `save-memory` to persist new learnings.",
+            "",
+            memIndex,
+            topicFiles,
+          ].join("\n")
           try {
-            await new Response(keeper.stdout).text()
-            if (injectedSessionId) await reinjectMemory(client, injectedSessionId, root)
-          } finally { clearTimeout(kill) }
+            await client.session.prompt({
+              path: { id: sid },
+              body: { noReply: true, parts: [{ type: "text", text: context }] },
+            })
+            injectedSessionId = sid
+            console.log("[agentmem] injected memory into session", sid)
+          } catch (e) {
+            console.error("[agentmem] session.created injection failed:", (e as Error).message)
+          }
+          break
+        }
+        case "file.edited": {
+          handleFileEditScoped(client, root, event.properties?.file ?? "")
+          break
+        }
+        case "session.idle": {
+          const mdir = path.join(root, ".agentmem")
+          trySpawnKeeper(mdir, client, root)
+          trySpawnDreamer(mdir)
+          break
         }
       }
+    },
 
-      if (now - lastDreamRun > DREAM_INTERVAL_MS) {
-        if (!existsSync(mdir)) return
-        const lockResult = await $`java --class-path ${classesDir} ${mainClass} lock-check ${mdir}`.nothrow().text()
-        if (lockResult.trim() === "FREE") {
-          lastDreamRun = now
-          const dreamer = Bun.spawn(
-            ["opencode", "run", "--agent", "memory-dreamer",
-             "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
-             "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
-            { stdout: "pipe", stderr: "pipe" }
-          )
-          const kill = setTimeout(() => { try { dreamer.kill() } catch {} }, 300_000)
-          try { await new Response(dreamer.stdout).text() } finally { clearTimeout(kill) }
-        }
-      }
+    "tool.execute.after": (input, output) => {
+      if (!FILE_TOOLS.has(input.tool)) return
+      const filePath = extractFilePathFromToolInput(input.args ?? {})
+      if (!filePath) return
+      if (input.sessionID) injectedSessionId = input.sessionID
+      handleScopedInject(client, root, filePath)
     },
 
     tool: {
@@ -213,7 +189,7 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
           guard_trigger: tool.schema.string().optional(),
         },
         async execute(args, context) {
-          const mdir = memDir(context)
+          const mdir = memDir(context.directory, context.worktree)
           const cmd = [
             "java", "--class-path", classesDir,
             mainClass, "save", mdir,
@@ -236,7 +212,7 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
           name: tool.schema.string().describe("Memory file name (with or without .md extension)"),
         },
         async execute(args, context) {
-          const mdir = memDir(context)
+          const mdir = memDir(context.directory, context.worktree)
           const result = await $`java --class-path ${classesDir} ${mainClass} delete ${mdir} ${args.name}`.nothrow().text()
           if (injectedSessionId) await reinjectMemory(client, injectedSessionId, root)
           return result.trim()
@@ -247,7 +223,7 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
         description: "Check memory directory health: dangling pointers, orphans, index size.",
         args: {},
         async execute(_args, context) {
-          const mdir = memDir(context)
+          const mdir = memDir(context.directory, context.worktree)
           const result = await $`java --class-path ${classesDir} ${mainClass} quality-health ${mdir}`.nothrow().text()
           return result.trim()
         },
@@ -259,10 +235,8 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
           repo_path: tool.schema.string().optional(),
         },
         async execute(args, context) {
-          const mdir = memDir(context)
-          const repoPath = args.repo_path
-            ?? context.worktree
-            ?? context.directory
+          const mdir = memDir(context.directory, context.worktree)
+          const repoPath = args.repo_path ?? context.worktree ?? context.directory
           const result = await $`java --class-path ${classesDir} ${mainClass} bootstrap ${mdir} ${repoPath}`.nothrow().text()
           return result.trim()
         },
@@ -273,8 +247,8 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
         args: {
           type: tool.schema.string().optional().describe("Filter by memory type (user|feedback|project|reference)"),
         },
-        async execute(args, context) {
-          const mdir = memDir(context)
+        async execute(_args, context) {
+          const mdir = memDir(context.directory, context.worktree)
           const result = await $`java --class-path ${classesDir} ${mainClass} lifecycle-prune ${mdir}`.nothrow().text()
           return result.trim()
         },
@@ -284,11 +258,9 @@ export default async ({ project, client, $, directory, worktree }: Parameters<Pl
         description: "Run memory consolidation. Merges, deduplicates, prunes, and links memories.",
         args: {},
         async execute(_args, context) {
-          const mdir = memDir(context)
-          const lockResult = await $`java --class-path ${classesDir} ${mainClass} lock-check ${mdir}`.nothrow().text()
-          if (lockResult.trim() !== "FREE") return "Dream already in progress (lock busy)."
-          // NOTE: lock-check → spawn race is advisory here (soft lock).
-          // Concurrent dreams won't corrupt data (write-ahead log + per-file atomic renames).
+          const mdir = memDir(context.directory, context.worktree)
+          const result = Bun.spawnSync(["java", "--class-path", classesDir, mainClass, "lock-check", mdir])
+          if (result.stdout.toString().trim() !== "FREE") return "Dream already in progress (lock busy)."
           const dreamer = Bun.spawn(
             ["opencode", "run", "--agent", "memory-dreamer",
              "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
