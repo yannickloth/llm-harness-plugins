@@ -1,0 +1,10 @@
+{
+  "name": "guardrail-chain",
+  "description": "Shared guardrail pipeline — pre/post execution filters across plugins. Secret scanning, path traversal defense, prompt injection detection, size bounds. Configurable per-plugin: which filters apply, severity (warn/block).",
+  "version": "1.0.0",
+  "author": {
+    "name": "infolead"
+  },
+  "repository": "https://github.com/infolead/llm-harness-plugins",
+  "tags": ["security", "guardrails", "validation", "filtering"]
+}

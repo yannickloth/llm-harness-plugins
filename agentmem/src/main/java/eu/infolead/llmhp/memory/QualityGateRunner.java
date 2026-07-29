@@ -15,11 +15,6 @@ public final class QualityGateRunner {
     public record Warning(String message) implements GateResult {}
     public record Rejected(String message) implements GateResult {}
 
-    static final Pattern SECRET_PATTERNS = Pattern.compile(
-        "sk-[a-zA-Z0-9]{20,}|-----BEGIN|AKIA[A-Z0-9]{16}|ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{22,}|xox[bprs]-[a-zA-Z0-9-]+",
-        Pattern.CASE_INSENSITIVE
-    );
-
     public static void validate(Path memDir, String name, String type, String who,
                                  String context, String hook, String content) throws IOException {
         var errors = new ArrayList<GateResult>();
@@ -133,8 +128,10 @@ public final class QualityGateRunner {
 
     static GateResult gate7Secrets(String content) {
         if (content == null) return new Passed("OK");
-        var m = SECRET_PATTERNS.matcher(content);
-        if (m.find()) return new Rejected("Secret detected — never store credentials in memory");
+        var result = new eu.infolead.llmhp.guardrails.SecretScanner().scan(content);
+        if (result instanceof eu.infolead.llmhp.guardrails.types.GuardResult.Block b) {
+            return new Rejected("Secret detected — " + b.message());
+        }
         return new Passed("OK");
     }
 }

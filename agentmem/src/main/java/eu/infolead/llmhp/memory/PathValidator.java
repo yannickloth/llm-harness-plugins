@@ -6,35 +6,28 @@ import java.util.Set;
 
 public final class PathValidator {
 
+    private static final eu.infolead.llmhp.guardrails.PathValidator DELEGATE =
+        new eu.infolead.llmhp.guardrails.PathValidator();
+
     public static void validateName(String name) {
-        if (!name.matches("[a-zA-Z0-9_-]+")) {
-            throw new IllegalArgumentException("REJECTED: name must match [a-zA-Z0-9_-]+");
+        var r = DELEGATE.validateName(name);
+        if (r instanceof eu.infolead.llmhp.guardrails.types.GuardResult.Block b) {
+            throw new IllegalArgumentException("REJECTED: " + b.message());
         }
     }
 
     public static void validate(Path targetPath, Path memDir) throws IOException {
-        var mem = memDir.toRealPath();
-
-        if (Files.exists(targetPath)) {
-            var real = targetPath.toRealPath();
-            if (Files.isSymbolicLink(targetPath) && !real.startsWith(mem)) {
-                throw new SecurityException("REJECTED: symlink points outside memory directory");
-            }
-        } else {
-            var parent = targetPath.toAbsolutePath().getParent();
-            if (parent == null) throw new IOException("Cannot resolve parent");
-            if (!Files.exists(parent)) Files.createDirectories(parent);
-            if (!parent.toRealPath().startsWith(mem)) {
-                throw new SecurityException("REJECTED: target outside memory directory");
-            }
+        var r = DELEGATE.validate(targetPath, memDir);
+        if (r instanceof eu.infolead.llmhp.guardrails.types.GuardResult.Block b) {
+            throw new SecurityException("REJECTED: " + b.message());
         }
-
-        var protectedFiles = Set.of(
+        var protFiles = Set.of(
             ".entities.json", ".consolidate-lock", ".sync-state.json",
             ".entities-graph.json", ".model-trust.json"
         );
-        if (protectedFiles.contains(targetPath.getFileName().toString())) {
-            throw new SecurityException("REJECTED: cannot overwrite protected file: " + targetPath.getFileName());
+        var r2 = DELEGATE.validateProtectedFiles(targetPath, protFiles);
+        if (r2 instanceof eu.infolead.llmhp.guardrails.types.GuardResult.Block b2) {
+            throw new SecurityException("REJECTED: " + b2.message());
         }
     }
 }

@@ -4,8 +4,8 @@ Patterns → plugins crosswalk + new plugin candidates + changes for existing pl
 Analysis date: 2026-07-29. Last updated: 2026-07-29.
 Source: _GenAI Design Patterns_ catalog (6 parts, ~30 patterns, 7 candidates) × 7 plugins.
 
-**Status**: 4/18 done (22%) — ✅ `budget-circuit-breaker` + `semantic-cache` + `tier-router:session-budget` + `tier-router:user-memory→routing`
-| New plugins: 2/7 ✅  |  Existing changes: 2/25 ✅  |  Total: 4/32
+**Status**: 6/18 done (33%) — ✅ `budget-circuit-breaker` + `semantic-cache` + `tier-router:session-budget` + `tier-router:user-memory→routing` + `agentmem:extract-guardrail-pipeline` + `guardrail-chain`
+| New plugins: 3/7 ✅  |  Existing changes: 3/25 ✅  |  Total: 6/32
 
 ---
 
@@ -93,7 +93,7 @@ opencode/index.ts             # Plugin: register prompt-pull, prompt-test tools
 hooks/hooks.json              # SessionStart → pull current versions
 ```
 
-### ❌ 2.4 guardrail-chain — Guardrail Chain (Pt V, ch29) + Guardrail-First (ch31)
+### ✅ 2.4 guardrail-chain — Guardrail Chain (Pt V, ch29) + Guardrail-First (ch31) — **DONE** (2026-07-29)
 
 | Property | Detail |
 |----------|--------|
@@ -177,13 +177,13 @@ src/main/java/eu/infolead/llmhp/router/
 
 | # | Change | Priority | Effort | Book pattern | Status |
 |---|--------|----------|--------|-------------|--------|
-| 1 | **Extract guardrail logic to shared pipeline** | High | Medium | Guardrail Chain (Pt V) | ❌ |
-| | Currently: `SaveMemoryTool.java` embeds secret scanning + path validation + name regex. After: call `GuardrailPipeline.java` (plugin #2.4) before any write. agentmem keeps its own quality gates (7 structural gates) but delegates security gates. | | | | |
+| 1 | **Extract guardrail logic to shared pipeline** | High | Medium | Guardrail Chain (Pt V) | ✅ |
+| | `MemoryStore.save()` calls `GuardrailPipeline.runPreWrite()` before write. `PathValidator.java` delegates to guardrail-chain. `QualityGateRunner.gate7Secrets` delegates to `SecretScanner`. agentmem keeps its own quality gates (7 structural gates) but delegates security gates. | | | | |
 | 2 | **Add `rejected_approach` memory subtype** | Medium | Low | B.6 Null-Branch Reporting | ❌ |
 | | New subtype under `project` type. Body structure: What was tried → Why it was rejected → What was tried instead. Memory-keeper prompt updated. Dreamer aggregates: "3 sessions rejected approach X." | | | | |
 | 3 | **Cross-project contradiction detection** | Medium | Low | B.3 Comparison-Adjusted Acceptance | ❌ |
 | | Dreamer currently detects contradictions within a project. Extend to cross-project (shared MEMORY.md tier): "fact X is true in project A, false in project B." Flag in dream summary. | | | | |
-| 4 | **User memory → tier-router signal** | Medium | Low | Routing (Pt IV) | ❌ |
+| 4 | **User memory → tier-router signal** | Medium | Low | Routing (Pt IV) | ✅ |
 | | If user memories say "I'm learning Rust," tier-router reads this at session start and escalates Rust-related prompts. Single-file dependency: tier-router's `RouterEngine.java` reads `MEMORY.md` on session start. | | | | |
 | 5 | **Bootstrap from agentinsights facets** | Low | Medium | Observability (Pt IV) → Memory | ❌ |
 | | agentinsights extracts session facets (goals, friction, satisfaction). Memory-keeper consumes these as seed signals: "you were frustrated by tool errors in sessions X, Y, Z" → `feedback` memory. | | | | |
@@ -284,8 +284,8 @@ Rank  Plugin/Change                         Effort  Benefit  Depends on         
   2   semantic-cache (new)                   Low     High     .agentmem/ WAL pattern       ✅
   3   tier-router: session budget (#3.4.1)   Low     High     budget-circuit-breaker       ✅
    4   tier-router: user memory → routing     Low     Med      agentmem                     ✅
-  5   agentmem: extract guardrail pipeline   Med     Med      guardrail-chain              ❌
-  6   guardrail-chain (new)                  Med     Med      agentmem guards              ❌
+  5   agentmem: extract guardrail pipeline   Med     Med      guardrail-chain              ✅
+  6   guardrail-chain (new)                  Med     Med      agentmem guards              ✅
   7   prompt-registry (new)                  Med     Med      none                         ❌
   8   agentmem: rejected_approach subtype    Low     Med      none                         ❌
   9   agentinsights: rejected-branch sec.    Med     Med      agentmem #8                  ❌

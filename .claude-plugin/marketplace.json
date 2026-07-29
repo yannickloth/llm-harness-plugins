@@ -52,6 +52,12 @@
       "description": "Semantic response cache — embeds prompts locally (no API call), stores responses with WAL atomicity, returns cached responses on near-duplicate prompts. File-change-based invalidation. 15–30% of coding-agent prompts are near-duplicates.",
       "source": "./semantic-cache",
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/semantic-cache"
+    },
+    {
+      "name": "guardrail-chain",
+      "description": "Shared guardrail pipeline — pre/post execution filters across plugins. Secret scanning, path traversal defense, prompt injection detection, size bounds. Configurable per-plugin: which filters apply, severity (warn/block).",
+      "source": "./guardrail-chain",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/guardrail-chain"
     }
   ]
 }

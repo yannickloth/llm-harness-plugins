@@ -1,6 +1,8 @@
 package eu.infolead.llmhp.memory;
 
 import eu.infolead.llmhp.memory.types.ModelTier;
+import eu.infolead.llmhp.guardrails.GuardrailPipeline;
+import eu.infolead.llmhp.guardrails.types.GuardConfig;
 
 import java.io.*;
 import java.nio.channels.FileChannel;
@@ -31,7 +33,22 @@ public final class MemoryStore {
     public static void save(Path memDir, SaveInput input) throws Exception {
         Files.createDirectories(memDir);
         var target = memDir.resolve(input.name() + ".md");
-        PathValidator.validate(target, memDir);
+
+        var protFiles = Set.of(
+            ".entities.json", ".consolidate-lock", ".sync-state.json",
+            ".entities-graph.json", ".model-trust.json"
+        );
+        var pipeline = new GuardrailPipeline(GuardConfig.all());
+        var guardResult = pipeline.runPreWrite(input.content(), target, memDir, protFiles);
+        if (guardResult.blocked()) {
+            for (var b : guardResult.blocks()) {
+                System.err.println("GUARDRAIL BLOCKED: %s — %s".formatted(b.source(), b.message()));
+            }
+            throw new SecurityException("guardrail-chain blocked memory write");
+        }
+        for (var w : guardResult.warns()) {
+            System.err.println("GUARDRAIL WARN: %s — %s".formatted(w.source(), w.message()));
+        }
 
         checkIndexSize(memDir);
 
@@ -46,6 +63,15 @@ public final class MemoryStore {
         }
 
         var fullContent = frontmatter + "\n" + body + "\n";
+
+        var fullScanResult = pipeline.runPreWrite(fullContent, target, memDir, protFiles);
+        if (fullScanResult.blocked()) {
+            for (var b : fullScanResult.blocks()) {
+                System.err.println("GUARDRAIL BLOCKED: %s — %s".formatted(b.source(), b.message()));
+            }
+            throw new SecurityException("guardrail-chain blocked memory write (secrets in assembled content)");
+        }
+
         Files.writeString(tmpFile, fullContent);
         try (var ch = FileChannel.open(tmpFile, StandardOpenOption.WRITE)) { ch.force(true); }
         Files.move(tmpFile, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
