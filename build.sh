@@ -76,6 +76,7 @@ compile_plugin "agentinsights"
 compile_plugin "knowledge-graph"
 compile_plugin "tier-router"
 compile_plugin "semantic-cache"
+compile_plugin "prompt-registry"
 
 cat > "$SCRIPT_DIR/agentmem/bin/memorysystem" << 'RUNNER'
 #!/usr/bin/env bash
@@ -111,11 +112,24 @@ exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.cache.SemanticC
 RUNNER
 chmod +x "$SCRIPT_DIR/semantic-cache/bin/cachecli"
 
+cat > "$SCRIPT_DIR/prompt-registry/bin/prcli" << 'RUNNER'
+#!/usr/bin/env bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    ROOT="${CLAUDE_PLUGIN_ROOT}"
+else
+    ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.promptregistry.PromptRegistryCli "$@"
+RUNNER
+chmod +x "$SCRIPT_DIR/prompt-registry/bin/prcli"
+
 echo "Runner: $SCRIPT_DIR/agentmem/bin/memorysystem"
 echo "Runner: $SCRIPT_DIR/agentinsights/bin/insights"
 echo "Runner: $SCRIPT_DIR/semantic-cache/bin/cachecli"
 echo "Runner: $SCRIPT_DIR/guardrail-chain/bin/gcl"
+echo "Runner: $SCRIPT_DIR/prompt-registry/bin/prcli"
 
 run_tests "agentinsights"
 run_tests "semantic-cache"
 run_tests "guardrail-chain"
+run_tests "prompt-registry"

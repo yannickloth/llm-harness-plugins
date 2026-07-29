@@ -4,8 +4,8 @@ Patterns → plugins crosswalk + new plugin candidates + changes for existing pl
 Analysis date: 2026-07-29. Last updated: 2026-07-29.
 Source: _GenAI Design Patterns_ catalog (6 parts, ~30 patterns, 7 candidates) × 7 plugins.
 
-**Status**: 6/18 done (33%) — ✅ `budget-circuit-breaker` + `semantic-cache` + `tier-router:session-budget` + `tier-router:user-memory→routing` + `agentmem:extract-guardrail-pipeline` + `guardrail-chain`
-| New plugins: 3/7 ✅  |  Existing changes: 3/25 ✅  |  Total: 6/32
+**Status**: 7/18 done (39%) — ✅ `budget-circuit-breaker` + `semantic-cache` + `tier-router:session-budget` + `tier-router:user-memory→routing` + `agentmem:extract-guardrail-pipeline` + `guardrail-chain` + `prompt-registry`
+| New plugins: 4/7 ✅  |  Existing changes: 3/25 ✅  |  Total: 7/32
 
 ---
 
@@ -70,7 +70,7 @@ types/
 ├── BudgetState.java          # Record: sessionId, tokensUsed, ceiling, startTime
 ```
 
-### ❌ 2.3 prompt-registry — Prompt Registry (Pt IV, ch29)
+### ✅ 2.3 prompt-registry — Prompt Registry (Pt IV, ch29) — **DONE** (2026-07-29)
 
 | Property | Detail |
 |----------|--------|
@@ -286,8 +286,8 @@ Rank  Plugin/Change                         Effort  Benefit  Depends on         
    4   tier-router: user memory → routing     Low     Med      agentmem                     ✅
   5   agentmem: extract guardrail pipeline   Med     Med      guardrail-chain              ✅
   6   guardrail-chain (new)                  Med     Med      agentmem guards              ✅
-  7   prompt-registry (new)                  Med     Med      none                         ❌
-  8   agentmem: rejected_approach subtype    Low     Med      none                         ❌
+   7   prompt-registry (new)                  Med     Med      none                         ✅
+   8   agentmem: rejected_approach subtype    Low     Med      none                         ❌
   9   agentinsights: rejected-branch sec.    Med     Med      agentmem #8                  ❌
  10   knowledge-graph: subgraph caching      Low     Low      semantic-cache               ❌
  11   knowledge-graph: contradiction detect  Med     Med      none                         ❌

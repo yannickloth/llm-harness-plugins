@@ -58,6 +58,12 @@
       "description": "Shared guardrail pipeline — pre/post execution filters across plugins. Secret scanning, path traversal defense, prompt injection detection, size bounds. Configurable per-plugin: which filters apply, severity (warn/block).",
       "source": "./guardrail-chain",
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/guardrail-chain"
+    },
+    {
+      "name": "prompt-registry",
+      "description": "Git-backed prompt versioning — commit, pull, diff, A/B test prompt templates across plugins. SessionStart auto-pulls active versions. JSON registry with no external dependencies.",
+      "source": "./prompt-registry",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/prompt-registry"
     }
   ]
 }
