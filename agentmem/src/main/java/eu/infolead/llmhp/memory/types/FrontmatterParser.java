@@ -7,7 +7,7 @@ public final class FrontmatterParser {
 
     public static Map<String, String> parse(String raw) {
         var result = new LinkedHashMap<String, String>();
-        var lines = raw.split("\n");
+        var lines = raw.replace("\r\n", "\n").replace("\r", "\n").split("\n");
         if (lines.length == 0 || !lines[0].trim().equals("---")) return result;
         for (int i = 1; i < lines.length; i++) {
             var line = lines[i].trim();

@@ -95,7 +95,7 @@ function trySpawnKeeper(mdir: string, client: ReturnType<Parameters<Plugin>[0]["
   const kill = setTimeout(() => { try { keeper.kill() } catch {} }, 120_000)
   new Response(keeper.stdout).text().then(() => {
     clearTimeout(kill)
-    if (injectedSessionId) reinjectMemory(client, injectedSessionId, root)
+    if (injectedSessionId) reinjectMemory(client, injectedSessionId, root).catch(e => console.error("[agentmem] keeper reinject failed:", (e as Error).message))
   }).catch(() => { clearTimeout(kill) })
 }
 

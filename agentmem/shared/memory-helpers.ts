@@ -35,13 +35,14 @@ export function collectTopicFiles(memDirPath: string): string {
 
 export function collectScopedMem(cwd: string, projectRoot: string): string[] {
   const results: string[] = []
+  const rooted = projectRoot.endsWith("/") ? projectRoot : projectRoot + "/"
   let current = cwd
-  while (current.length >= projectRoot.length && current.startsWith(projectRoot)) {
+  while (current.startsWith(rooted) || current === projectRoot) {
     const memFile = join(current, "MEMORY.md")
     if (existsSync(memFile) && current !== join(projectRoot, ".agentmem")) {
       const content = readFileSync(memFile, "utf-8").trim()
       if (content) {
-        const idx = current === projectRoot ? "root" : current.slice(projectRoot.length + 1) || "root"
+        const idx = current === projectRoot ? "root" : current.slice(rooted.length) || "root"
         results.push(`### Scoped memory: ${idx}\n${content}`)
       }
     }
@@ -59,7 +60,7 @@ export function extractFilePathFromToolInput(input: Record<string, unknown>): st
     if (typeof q.path === "string") return q.path
     if (typeof q.directory === "string") return q.directory
   }
-  if (typeof input.target_directory === "string") return input.target_directory
+  if (typeof input.target_directory === "string" && (input.target_directory as string).length > 0) return input.target_directory as string
   if (typeof input.path === "string" && (input.path as string).length > 0) return input.path as string
   return null
 }
