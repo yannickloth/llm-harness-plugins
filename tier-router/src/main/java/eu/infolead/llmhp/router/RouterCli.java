@@ -11,7 +11,7 @@ final class RouterCli {
 
     void main(String[] args) throws Exception {
         if (args.length == 0) {
-            System.err.println("Usage: RouterCli <classify|route|rewrite|ambiguity|budget-check|budget-accumulate|budget-reset> [args...]");
+            System.err.println("Usage: RouterCli <classify|route|rewrite|ambiguity|budget-check|budget-accumulate|budget-reset|memory-load|memory-extract> [args...]");
             System.exit(1);
             return;
         }
@@ -49,6 +49,20 @@ final class RouterCli {
                 }
                 budgetReset(args[1], args[2]);
             }
+            case "memory-load" -> {
+                if (args.length < 3) {
+                    System.err.println("memory-load requires <agentmem-dir> <metrics-dir>");
+                    System.exit(1);
+                }
+                memoryLoad(args[1], args[2]);
+            }
+            case "memory-extract" -> {
+                if (args.length < 2) {
+                    System.err.println("memory-extract requires <agentmem-dir>");
+                    System.exit(1);
+                }
+                memoryExtract(args[1]);
+            }
             default -> {
                 System.err.println("Unknown command: " + cmd);
                 System.exit(1);
@@ -57,15 +71,25 @@ final class RouterCli {
     }
 
     private void classify() throws Exception {
+        injectSignals();
         var prompt = readStdin();
         var result = engine.route(prompt);
         System.out.println(result.toJson());
     }
 
     private void route() throws Exception {
+        injectSignals();
         var prompt = readStdin();
         var result = engine.routeWithRewrite(prompt);
         System.out.println(result.toJson());
+    }
+
+    private void injectSignals() {
+        var metricsDir = System.getenv("TIER_ROUTER_METRICS_DIR");
+        if (metricsDir != null && !metricsDir.isBlank()) {
+            var signals = MemoryReader.loadSignals(Path.of(metricsDir));
+            engine.setMemorySignals(signals);
+        }
     }
 
     private void rewrite(String tierStr) throws Exception {
@@ -90,11 +114,13 @@ final class RouterCli {
         var state = BudgetTracker.loadOrFresh(Path.of(metricsDir), sessionId);
         if (BudgetTracker.isExhausted(state)) {
             var ceiling = BudgetTracker.readCeiling();
-            System.out.println("{\"status\":\"exhausted\",\"tokensUsed\":" + state.tokensUsed() +
-                ",\"ceiling\":" + ceiling + ",\"sessionId\":\"" + state.sessionId() + "\"}");
+            System.out.printf(
+                "{\"status\":\"exhausted\",\"tokensUsed\":%d,\"ceiling\":%d,\"sessionId\":\"%s\"}%n",
+                state.tokensUsed(), ceiling, state.sessionId());
         } else {
-            System.out.println("{\"status\":\"ok\",\"tokensUsed\":" + state.tokensUsed() +
-                ",\"ceiling\":" + state.ceiling() + ",\"sessionId\":\"" + state.sessionId() + "\"}");
+            System.out.printf(
+                "{\"status\":\"ok\",\"tokensUsed\":%d,\"ceiling\":%d,\"sessionId\":\"%s\"}%n",
+                state.tokensUsed(), state.ceiling(), state.sessionId());
         }
     }
 
@@ -103,19 +129,36 @@ final class RouterCli {
         var updated = BudgetTracker.accumulate(state, tokens);
         BudgetTracker.save(Path.of(metricsDir), updated);
         var wasExhausted = state.exhausted();
-        System.out.println("{\"status\":\"" + (updated.exhausted() ? "exhausted" : "ok") +
-            "\",\"tokensUsed\":" + updated.tokensUsed() +
-            ",\"ceiling\":" + updated.ceiling() +
-            ",\"newlyExhausted\":" + (!wasExhausted && updated.exhausted()) +
-            ",\"sessionId\":\"" + updated.sessionId() + "\"}");
+        System.out.printf(
+            "{\"status\":\"%s\",\"tokensUsed\":%d,\"ceiling\":%d,\"newlyExhausted\":%s,\"sessionId\":\"%s\"}%n",
+            updated.exhausted() ? "exhausted" : "ok",
+            updated.tokensUsed(), updated.ceiling(),
+            !wasExhausted && updated.exhausted(),
+            updated.sessionId());
     }
 
     private void budgetReset(String sessionId, String metricsDir) throws Exception {
         var ceiling = BudgetTracker.readCeiling();
         var fresh = BudgetState.fresh(sessionId, ceiling);
         BudgetTracker.save(Path.of(metricsDir), fresh);
-        System.out.println("{\"status\":\"reset\",\"tokensUsed\":0,\"ceiling\":" + ceiling +
-            ",\"sessionId\":\"" + sessionId + "\"}");
+        System.out.printf(
+            "{\"status\":\"reset\",\"tokensUsed\":0,\"ceiling\":%d,\"sessionId\":\"%s\"}%n",
+            ceiling, sessionId);
+    }
+
+    private void memoryLoad(String agentmemDir, String metricsDir) throws Exception {
+        var memDir = Path.of(agentmemDir);
+        var signals = MemoryReader.extract(memDir);
+        var metricsPath = Path.of(metricsDir);
+        MemoryReader.saveSignals(metricsPath, signals);
+        System.out.printf("{\"status\":\"loaded\",\"count\":%d,\"signals\":%s}%n",
+            signals.size(), MemoryReader.toJson(signals));
+    }
+
+    private void memoryExtract(String agentmemDir) throws Exception {
+        var memDir = Path.of(agentmemDir);
+        var signals = MemoryReader.extract(memDir);
+        System.out.println(MemoryReader.toJson(signals));
     }
 
     private String readStdin() throws Exception {

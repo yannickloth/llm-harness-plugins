@@ -86,7 +86,8 @@ EOF
     exit 0
 fi
 
-# Step 2: Classify + rewrite
+# Step 2: Classify + rewrite (with memory signals if loaded)
+export TIER_ROUTER_METRICS_DIR="$METRICS_DIR"
 ROUTING_OUTPUT=$(java --class-path "$CLASSES_DIR" "$MAIN_CLASS" route 2>/dev/null <<< "$USER_REQUEST" || echo '{"decision":"escalate","tier":"sonnet","reason":"classification_failed","confidence":0.5}')
 
 # Step 3: Extract fields

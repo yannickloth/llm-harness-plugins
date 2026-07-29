@@ -71,8 +71,20 @@ exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.memory.MemorySy
 RUNNER
 chmod +x "$SCRIPT_DIR/agentmem/bin/memorysystem"
 
+cat > "$SCRIPT_DIR/semantic-cache/bin/cachecli" << 'RUNNER'
+#!/usr/bin/env bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    ROOT="${CLAUDE_PLUGIN_ROOT}"
+else
+    ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.cache.SemanticCacheCli "$@"
+RUNNER
+chmod +x "$SCRIPT_DIR/semantic-cache/bin/cachecli"
+
 echo "Runner: $SCRIPT_DIR/agentmem/bin/memorysystem"
 echo "Runner: $SCRIPT_DIR/agentinsights/bin/insights"
+echo "Runner: $SCRIPT_DIR/semantic-cache/bin/cachecli"
 
 run_tests "agentinsights"
 run_tests "semantic-cache"

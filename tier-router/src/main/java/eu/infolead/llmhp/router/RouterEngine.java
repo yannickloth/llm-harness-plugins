@@ -16,6 +16,7 @@ final class RouterEngine {
 
     private final Classifier classifier;
     private final Reformatter reformatter;
+    private List<UserMemorySignal> memorySignals = List.of();
 
     private static final double DIRECT_CONFIDENCE_THRESHOLD = 0.8;
     private static final double MEDIUM_CONFIDENCE_THRESHOLD = 0.7;
@@ -29,11 +30,16 @@ final class RouterEngine {
         this.reformatter = new Reformatter();
     }
 
+    void setMemorySignals(List<UserMemorySignal> signals) {
+        this.memorySignals = signals;
+    }
+
     /**
      * Main entry point. Analyzes the raw user prompt and returns a routing decision
      * with rewritten prompt.
      *
      * Decision procedure (in escalation order):
+     *   0. User memory signals — LEARNING domain → escalate, EXPERT → keep tier
      *   1. If ambiguous → ask user for clarification (DIRECT with empty prompt)
      *   2. If meta-routing → ESCALATE (let router agent handle it)
      *   3. If complexity signal → ESCALATE
@@ -52,48 +58,66 @@ final class RouterEngine {
         validate(prompt);
         var trimmed = prompt.strip();
 
+        // Step 0: User memory signals — LEARNING domain → escalate; else attach hint
+        var memMatches = classifier.matchUserMemorySignals(trimmed, memorySignals);
+        var memoryHint = "";
+        var forceEscalate = false;
+        Classifier.MemorySignalMatch matchedSignal = null;
+        if (!memMatches.isEmpty()) {
+            matchedSignal = memMatches.getFirst();
+            memoryHint = " [memory-hint: %s (%s) from %s]".formatted(
+                matchedSignal.domain(), matchedSignal.signal().name().toLowerCase(), matchedSignal.confidence());
+            if (matchedSignal.signal() == Signal.LEARNING) {
+                forceEscalate = true;
+            }
+        }
+
         // Step 1: Ambiguity detection — ask user to clarify
         if (reformatter.needsUserClarification(trimmed)) {
+            if (forceEscalate) {
+                return result(Decision.ESCALATE, null,
+                    "Request ambiguous" + memoryHint + " — escalate for judgment", 0.6, trimmed);
+            }
             var questions = reformatter.generateClarificationQuestions(trimmed);
             return new RoutingResult(
                 Decision.DIRECT,
                 Tier.SONNET,
-                "Request ambiguous — clarification needed: " + String.join(" | ", questions),
+                "Request ambiguous — clarification needed: " + String.join(" | ", questions) + memoryHint,
                 0.3,
-                trimmed  // Don't rewrite ambiguous prompts
+                trimmed
             );
         }
 
         // Step 2: Meta-routing — handle by router
         if (classifier.isMetaRouting(trimmed)) {
-            return result(Decision.ESCALATE, null, "Meta-routing request", 0.9, trimmed);
+            return result(Decision.ESCALATE, null, "Meta-routing request" + memoryHint, 0.9, trimmed);
         }
 
         // Step 3: Complexity signal
         if (classifier.hasComplexitySignal(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "Complexity keyword detected (design, architecture, judgment, etc.)",
+                "Complexity keyword detected (design, architecture, judgment, etc.)" + memoryHint,
                 COMPLEXITY_CONFIDENCE, trimmed);
         }
 
         // Step 4: Bulk destructive
         if (classifier.isBulkDestructive(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "Bulk destructive operation requires judgment",
+                "Bulk destructive operation requires judgment" + memoryHint,
                 BULK_DESTRUCTIVE_CONFIDENCE, trimmed);
         }
 
         // Step 5: File operation without path
         if (classifier.isFileOpWithoutPath(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "File operation without explicit path needs file discovery",
+                "File operation without explicit path needs file discovery" + memoryHint,
                 SOFT_SIGNAL_CONFIDENCE, trimmed);
         }
 
         // Step 6: Agent definition modification
         if (classifier.modifiesAgentFiles(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "Agent definition changes require careful judgment",
+                "Agent definition changes require careful judgment" + memoryHint,
                 COMPLEXITY_CONFIDENCE, trimmed);
         }
 
@@ -101,14 +125,14 @@ final class RouterEngine {
         long objectives = classifier.countObjectives(trimmed);
         if (objectives >= 2) {
             return result(Decision.ESCALATE, null,
-                "Multiple objectives (%d) require coordination".formatted(objectives),
+                "Multiple objectives (%d) require coordination".formatted(objectives) + memoryHint,
                 SOFT_SIGNAL_CONFIDENCE, trimmed);
         }
 
         // Step 8: Creation task
         if (classifier.isCreationTask(trimmed)) {
             return result(Decision.ESCALATE, null,
-                "Creation/design task requires planning and judgment",
+                "Creation/design task requires planning and judgment" + memoryHint,
                 CREATION_CONFIDENCE, trimmed);
         }
 
@@ -118,17 +142,24 @@ final class RouterEngine {
             double confidence = classifier.keywordConfidence(trimmed, tier);
             if (confidence >= DIRECT_CONFIDENCE_THRESHOLD) {
                 return result(Decision.DIRECT, tier,
-                    "High-confidence keyword match", confidence, trimmed);
+                    "High-confidence keyword match" + memoryHint, confidence, trimmed);
             } else if (confidence >= MEDIUM_CONFIDENCE_THRESHOLD) {
                 return result(Decision.DIRECT, Tier.SONNET,
-                    "Moderate confidence match — escalating to sonnet for verification",
+                    "Moderate confidence match — escalating to sonnet for verification" + memoryHint,
                     confidence, trimmed);
             }
         }
 
-        // Step 10: No match — escalate
+        // Step 10: Memory learning signal → force escalate when no direct match
+        if (forceEscalate) {
+            return result(Decision.ESCALATE, null,
+                "No tier match + user is learning %s — escalate for judgment".formatted(matchedSignal.domain()) + memoryHint,
+                matchedSignal.confidence(), trimmed);
+        }
+
+        // Step 11: No match — escalate
         return result(Decision.ESCALATE, null,
-            "No clear tier match — needs intelligent routing", 1.0, trimmed);
+            "No clear tier match — needs intelligent routing" + memoryHint, 1.0, trimmed);
     }
 
     /**

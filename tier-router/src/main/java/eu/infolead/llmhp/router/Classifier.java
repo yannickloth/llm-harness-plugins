@@ -1,5 +1,6 @@
 package eu.infolead.llmhp.router;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -63,7 +64,7 @@ final class Classifier {
             var after = lower.substring(idx + op.length()).strip();
             if (after.startsWith("the ")) {
                 var nextWord = after.substring(4).split("\\s+", 2)[0];
-                if (!nextWord.matches(".*[./\\\\].*")) continue;
+                if (nextWord.matches(".*[./\\\\].*")) continue;
             }
             return true;
         }
@@ -105,6 +106,7 @@ final class Classifier {
 
     Tier keywordMatch(String request) {
         var lower = request.toLowerCase();
+        var hasFile = explicitFileMentioned(request);
 
         var haikuHighConf = List.of(
             Pattern.compile("fix\\s+(typo|spelling|syntax)"),
@@ -117,7 +119,7 @@ final class Classifier {
             Pattern.compile("sort\\s+(imports|lines)")
         );
         for (var p : haikuHighConf) {
-            if (p.matcher(lower).find() && explicitFileMentioned(request)) {
+            if (p.matcher(lower).find() && hasFile) {
                 return Tier.HAIKU;
             }
         }
@@ -139,10 +141,10 @@ final class Classifier {
             Pattern.compile("\\b(append|prepend)\\b")
         );
         for (var p : fablePatterns) {
-            if (p.matcher(lower).find() && explicitFileMentioned(request)) return Tier.FABLE;
+            if (p.matcher(lower).find() && hasFile) return Tier.FABLE;
         }
 
-        if (explicitFileMentioned(request)) return Tier.HAIKU;
+        if (hasFile) return Tier.HAIKU;
         return null;
     }
 
@@ -181,5 +183,30 @@ final class Classifier {
 
     private int countMatches(String text, Set<String> keywords) {
         return (int) keywords.stream().filter(text::contains).count();
+    }
+
+    record MemorySignalMatch(Signal signal, String domain, double confidence) {}
+
+    private static java.util.Map<String, Pattern> domainPatterns = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static Pattern domainBoundaryPattern(String domain) {
+        return domainPatterns.computeIfAbsent(domain,
+            k -> Pattern.compile("\\b" + Pattern.quote(k) + "\\b", Pattern.CASE_INSENSITIVE));
+    }
+
+    List<MemorySignalMatch> matchUserMemorySignals(String prompt, List<UserMemorySignal> signals) {
+        if (signals.isEmpty()) return List.of();
+        var matches = new ArrayList<MemorySignalMatch>();
+        var lower = prompt.toLowerCase();
+        for (var s : signals) {
+            if (!domainBoundaryPattern(s.domain()).matcher(prompt).find()) continue;
+            double confidence = switch (s.signal()) {
+                case LEARNING -> 0.7;
+                case EXPERT -> 0.6;
+                case PREFERENCE -> 0.5;
+            };
+            matches.add(new MemorySignalMatch(s.signal(), s.domain(), confidence));
+        }
+        return matches;
     }
 }

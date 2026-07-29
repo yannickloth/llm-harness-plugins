@@ -6,8 +6,14 @@ const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
 const mainClass = "eu.infolead.llmhp.cache.SemanticCacheCli"
 
+function cacheDir(context: { worktree?: string; directory: string }): string {
+  return context.worktree
+    ? path.join(context.worktree, ".agentmem", "cache")
+    : path.join(context.directory, ".agentmem", "cache")
+}
+
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
-  const root = worktree ?? directory
+  const cdir = cacheDir({ worktree, directory })
   console.log("[semantic-cache] plugin active — 3 tools (cache-lookup, cache-store, cache-stats)")
 
   return {
@@ -18,7 +24,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           prompt: tool.schema.string().describe("The prompt to check in the cache"),
         },
         async execute(args) {
-          const result = await $`java --class-path ${classesDir} ${mainClass} lookup`.nothrow().stdin(args.prompt)
+          const result = await $`java --class-path ${classesDir} ${mainClass} lookup --cache-dir ${cdir}`.nothrow().quiet().stdin(args.prompt)
           const stdout = result.stdout.toString().trim()
           try {
             const parsed = JSON.parse(stdout)
@@ -39,7 +45,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           response: tool.schema.string().describe("The response to cache"),
         },
         async execute(args) {
-          await $`java --class-path ${classesDir} ${mainClass} store ${args.prompt}`.nothrow().stdin(args.response)
+          await $`java --class-path ${classesDir} ${mainClass} store --cache-dir ${cdir} ${args.prompt}`.nothrow().quiet().stdin(args.response)
           return "Cached response for prompt."
         },
       }),
@@ -47,8 +53,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       "cache-stats": tool({
         description: "Get cache statistics: hits, misses, entry count, total size, hit rate.",
         args: {},
-        async execute(args) {
-          const result = await $`java --class-path ${classesDir} ${mainClass} stats`.nothrow()
+        async execute(_args) {
+          const result = await $`java --class-path ${classesDir} ${mainClass} stats --cache-dir ${cdir}`.nothrow().quiet()
           return result.stdout.toString().trim()
         },
       }),

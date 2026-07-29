@@ -5,9 +5,10 @@ import java.nio.file.*;
 
 final class SemanticCacheCli {
 
-    private final CacheStore store;
-    private final InvalidationEngine invalidation;
+    private CacheStore store;
+    private InvalidationEngine invalidation;
 
+    SemanticCacheCli() {}
     SemanticCacheCli(Path cacheDir) {
         this.store = new CacheStore(cacheDir);
         this.invalidation = new InvalidationEngine(cacheDir);
@@ -15,30 +16,41 @@ final class SemanticCacheCli {
 
     void main(String[] args) throws Exception {
         if (args.length == 0) {
-            System.err.println("Usage: SemanticCacheCli <lookup|store|invalidate|invalidate-all|stats|invalidate-stale> [args...]");
+            System.err.println("Usage: SemanticCacheCli <lookup|store|invalidate|invalidate-all|stats|invalidate-stale|invalidate-files> [--cache-dir <dir>] [args...]");
             System.exit(1);
             return;
         }
 
-        switch (args[0]) {
+        var cacheDir = parseCacheDir(args);
+
+        var cmdIndex = 0;
+        var cmd = args[0];
+
+        var offset = 1;
+        if (args.length > 1 && args[1].equals("--cache-dir")) offset = 3;
+
+        this.store = new CacheStore(cacheDir);
+        this.invalidation = new InvalidationEngine(cacheDir);
+
+        switch (cmd) {
             case "lookup" -> lookup();
             case "store" -> {
-                if (args.length < 2) { System.err.println("store requires <prompt>"); System.exit(1); return; }
-                store(args[1]);
+                if (args.length < offset + 1) { System.err.println("store requires <prompt>"); System.exit(1); return; }
+                store(args[offset]);
             }
             case "invalidate" -> {
-                if (args.length < 2) { System.err.println("invalidate requires <prompt>"); System.exit(1); return; }
-                store.invalidate(args[1]);
+                if (args.length < offset + 1) { System.err.println("invalidate requires <prompt>"); System.exit(1); return; }
+                store.invalidate(args[offset]);
             }
             case "invalidate-all" -> store.invalidateAll();
             case "invalidate-stale" -> {
-                var maxAge = args.length >= 2 ? Long.parseLong(args[1]) : CacheStore.DEFAULT_TTL_SECONDS;
+                var maxAge = args.length >= offset + 1 ? Long.parseLong(args[offset]) : CacheStore.DEFAULT_TTL_SECONDS;
                 var projectRoot = Path.of(".").toRealPath();
                 invalidation.invalidateStale(projectRoot, maxAge);
             }
             case "invalidate-files" -> {
                 var changed = new java.util.ArrayList<Path>();
-                for (int i = 1; i < args.length; i++) changed.add(Path.of(args[i]));
+                for (int i = offset; i < args.length; i++) changed.add(Path.of(args[i]));
                 invalidation.invalidateForFiles(changed);
             }
             case "stats" -> {
@@ -46,10 +58,17 @@ final class SemanticCacheCli {
                 System.out.println(s.toJson());
             }
             default -> {
-                System.err.println("Unknown command: " + args[0]);
+                System.err.println("Unknown command: " + cmd);
                 System.exit(1);
             }
         }
+    }
+
+    private static Path parseCacheDir(String[] args) {
+        for (int i = 1; i < args.length - 1; i++) {
+            if (args[i].equals("--cache-dir")) return Path.of(args[i + 1]);
+        }
+        return Path.of(".agentmem", "cache");
     }
 
     private void lookup() throws Exception {
