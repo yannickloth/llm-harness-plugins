@@ -1,12 +1,20 @@
 # Tier Router — Design Document
 
-Cross-platform plugin that intercepts user prompts, classifies reasoning complexity, reformulates with SOTA prompt engineering criteria, detects ambiguity, and dispatches to the cheapest sufficient model tier. Shared Java 25 core with three backends: Claude Code (hooks), OpenCode (tools), Pi (tools).
+Cross-platform plugin that intercepts user prompts, classifies reasoning complexity, reformulates with SOTA prompt engineering criteria, detects ambiguity, dispatches to the cheapest sufficient model tier, and enforces session-level budget limits. Shared Java 25 core with three backends: Claude Code (hooks), OpenCode (tools), Pi (tools).
 
 ## Architecture
 
 ```
 User Prompt
     │
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│ Budget Circuit-Breaker (hooks: budget-check.sh)              │
+│  Pre-routing gate: checks cumulative session token spend.    │
+│  If exhausted → inject EXHAUSTED directive, skip routing.    │
+│  Ceiling: TIER_ROUTER_BUDGET_CEILING env (default 500K).     │
+└──────────────────────────────────────────────────────────────┘
+    │ (if budget OK)
     ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ Backend: Claude Code (UserPromptSubmit) / OpenCode (tools)   │
@@ -57,24 +65,35 @@ User Prompt
 ```
 tier-router/
 ├── src/main/java/eu/infolead/llmhp/router/
-│   ├── RouterCli.java       # CLI: classify, route, rewrite, ambiguity
-│   ├── RouterEngine.java    # 10-step classification pipeline
-│   ├── Classifier.java      # 8 escalation triggers + keyword tier match
-│   ├── Reformatter.java     # Prompt rewriting + ambiguity questions
-│   ├── RoutingResult.java   # record: decision, tier, reason, confidence, prompt
-│   ├── Decision.java        # DIRECT | ESCALATE
-│   └── Tier.java            # FABLE | HAIKU | SONNET | OPUS + relativeCost()
-├── agents/                   # Agent definition .md files
-│   ├── fable-general.md     # Ultra-light: close brackets, add semicolons
-│   ├── haiku-general.md     # Mechanical: typos, format, rename, sort
-│   ├── sonnet-general.md    # Judgment: analyze, implement, refactor, review
-│   └── opus-general.md      # Deep: proofs, formal verification, math
+│   ├── RouterCli.java         # CLI: classify, route, rewrite, ambiguity, budget-*
+│   ├── RouterEngine.java      # 10-step classification pipeline
+│   ├── Classifier.java        # 8 escalation triggers + keyword tier match
+│   ├── Reformatter.java       # Prompt rewriting + ambiguity questions
+│   ├── BudgetTracker.java     # Token accumulator, ceiling check, WAL-atomic save
+│   ├── BudgetState.java       # record: sessionId, tokensUsed, ceiling, startTime, exhausted
+│   ├── RoutingResult.java     # record: decision, tier, reason, confidence, prompt
+│   ├── Decision.java          # DIRECT | ESCALATE
+│   └── Tier.java              # FABLE | HAIKU | SONNET | OPUS + relativeCost()
+├── agents/                     # Agent definition .md files
+│   ├── fable-general.md       # Ultra-light: close brackets, add semicolons
+│   ├── haiku-general.md       # Mechanical: typos, format, rename, sort
+│   ├── sonnet-general.md      # Judgment: analyze, implement, refactor, review
+│   └── opus-general.md        # Deep: proofs, formal verification, math
 ├── hooks/
-│   ├── hooks.json           # Claude Code: UserPromptSubmit + lifecycle
-│   └── user-prompt-submit.sh # Main interception hook
-├── opencode/index.ts        # OpenCode: 3 tools
-├── pi/index.ts              # Pi: 3 tools
-├── prompts/README.md        # Plugin documentation
+│   ├── hooks.json             # Claude Code: UserPromptSubmit + PostToolUse + lifecycle
+│   ├── budget-check.sh        # Pre-routing budget gate (runs before classification)
+│   ├── accumulate-tokens.sh   # PostToolUse: parse usage JSON, accumulate session tokens
+│   ├── user-prompt-submit.sh  # Main interception: classify, rewrite, inject directive
+│   ├── log-subagent-start.sh  # Metrics: log subagent spawn time
+│   ├── log-subagent-stop.sh   # Metrics: log subagent duration
+│   ├── load-session-state.sh  # SessionStart: placeholder
+│   ├── save-session-state.sh  # SessionEnd: placeholder
+│   └── pre-tool-use-write-approve.sh # PreToolUse(Write|Edit): placeholder
+├── opencode/index.ts          # OpenCode: 3 tools
+├── pi/index.ts                # Pi: 3 tools
+├── prompts/
+│   ├── README.md              # Plugin documentation
+│   └── budget-exhausted.md    # Agent behavior directive when budget exhausted
 └── .claude-plugin/plugin.json
 ```
 
@@ -206,17 +225,20 @@ UNCERTAINTY: "If uncertain or missing info, say so explicitly.
 
 ### Claude Code (hook-based, full interception)
 
-`hooks/user-prompt-submit.sh` intercepts every `UserPromptSubmit` event:
+`hooks/user-prompt-submit.sh` intercepts every `UserPromptSubmit` event after the budget gate:
 
-1. Checks ambiguity via Java `ambiguity` command → if ambiguous, injects `<routing-recommendation>` with clarification directive and exits early (avoids full classification cost). Ambiguity is also re-checked inside `route()` as step 1 of the pipeline — the shell-level check is a fast-path optimization.
-2. Calls Java `route` → classifies + rewrites
-3. Extracts JSON fields (fallback to `escalate/sonnet` on failure)
-4. Logs metrics to `.tier-router/metrics/<date>.jsonl` (atomic append with flock)
-5. Injects `<routing-recommendation>` directive into Claude's context
+1. Checks budget sentinel file (`.tier-router/metrics/.budget-exhausted`) set by `budget-check.sh` — if present, injects EXHAUSTED directive and exits
+2. Checks ambiguity via Java `ambiguity` command → if ambiguous, injects `<routing-recommendation>` with clarification directive and exits early (avoids full classification cost). Ambiguity is also re-checked inside `route()` as step 1 of the pipeline — the shell-level check is a fast-path optimization.
+3. Calls Java `route` → classifies + rewrites
+4. Extracts JSON fields (fallback to `escalate/sonnet` on failure)
+5. Logs metrics to `.tier-router/metrics/<date>.jsonl` (atomic append with flock)
+6. Injects `<routing-recommendation>` directive into Claude's context
 
 The main agent reads the directive and must obey it (enforced by `Router System` rules in project's CLAUDE.md).
 
-Additional lifecycle hooks track subagent execution for metrics:
+Additional lifecycle hooks:
+- `budget-check.sh` (UserPromptSubmit, before classification) — checks cumulative token spend
+- `accumulate-tokens.sh` (PostToolUse, every tool response) — parses token usage from Claude response JSON, accumulates per-session
 - `SubagentStart` / `SubagentStop` — log which agent was spawned and duration
 - `SessionStart` / `SessionEnd` — placeholder hooks (reserved for future state management)
 - `PreToolUse` (Write/Edit) — write approval gate (placeholder)
@@ -244,15 +266,18 @@ Tool behavior differs between backends:
 |-----------|--------------|----------|
 | Classifier (escalation triggers + keywords) | Task complexity taxonomy | Anthropic model capability tiers + ai-patterns Routing pattern (ch23) |
 | Reformatter | Prompt engineering best practices | Anthropic prompt engineering documentation |
+| BudgetTracker + BudgetState | Token pricing + session cost policies | Vendor pricing pages, org cost policies |
 | fable-general | Fable model capabilities | Model release notes |
 | haiku-general | Haiku model capabilities | Model release notes |
 | sonnet-general | Sonnet model capabilities | Model release notes |
 | opus-general | Opus model capabilities | Model release notes |
 | user-prompt-submit.sh | Claude Code plugin hook API | Claude Code plugin spec |
+| budget-check.sh | Token accumulation hooks | Claude Code PostToolUse API, Claude response schema |
+| accumulate-tokens.sh | Token accumulation hooks | Claude Code PostToolUse API, Claude response schema |
 | opencode/index.ts | OpenCode plugin SDK | @opencode-ai/plugin |
 | pi/index.ts | Pi plugin SDK | @pi-ai/plugin |
 
-**IVP Compliance:** Changing model pricing never requires editing an agent definition. Changing model capabilities never requires editing routing rules. Each backend (OpenCode/Pi/Claude Code) varies independently. The shared Java core varies with classification logic only.
+**IVP Compliance:** Changing model pricing never requires editing an agent definition. Changing model capabilities never requires editing routing rules. Changing budget policy never requires editing routing logic — only env var or session state files. Budget tracking varies independently from classification. Each backend (OpenCode/Pi/Claude Code) varies independently. The shared Java core varies with classification logic + budget tracking only.
 
 ## Reference Implementation
 
@@ -262,6 +287,55 @@ The Claude Code router at `~/code/claude-router-system/` served as the initial r
 - Adding ambiguity detection with clarification questions
 - Supporting three backends (not just Claude Code)
 - Tighter IVP boundaries (classifier/reformatter/backends separated)
+
+## Budget Circuit-Breaker
+
+Session-level token budget enforcement that prevents runaway agent spend. Composed of two hooks and a WAL-atomic Java backend.
+
+### Mechanism
+
+```
+Pre-Routing: budget-check.sh (UserPromptSubmit, runs before classification)
+  → BudgetTracker.loadOrFresh(sessionId) → check isExhausted
+  → exhausted: write .budget-exhausted signal file → user-prompt-submit.sh skips routing
+  → ok: remove any existing signal file
+
+Post-ToolUse: accumulate-tokens.sh (every tool response)
+  → parse token count from Claude response JSON (usage.total_tokens)
+  → BudgetTracker.accumulate(state, tokens) → save with WAL (temp → fsync → rename)
+  → newly exhausted: write .budget-exhausted signal file
+```
+
+### Budget Configuration
+
+| Setting | Env var | Default |
+|---------|---------|---------|
+| Token ceiling | `TIER_ROUTER_BUDGET_CEILING` | 500,000 tokens/session |
+
+### Java Core
+
+| Class | Responsibility |
+|-------|---------------|
+| `BudgetState` | Immutable record: `sessionId`, `tokensUsed`, `ceiling`, `startTime`, `exhausted` |
+| `BudgetTracker` | Static methods: `loadOrFresh(sessionId)`, `accumulate(state, tokens)`, `isExhausted(state)`, `save(state)` with atomic write (tmp file → FileChannel.force → ATOMIC_MOVE) |
+
+### CLI Subcommands (RouterCli)
+
+| Command | Args | Output |
+|---------|------|--------|
+| `budget-check` | `<session-id> <metrics-dir>` | `{"status":"ok"\|"exhausted",...}`|
+| `budget-accumulate` | `<session-id> <tokens> <metrics-dir>` | Status + `newlyExhausted` flag |
+| `budget-reset` | `<session-id> <metrics-dir>` | Reset session to zero |
+
+### Storage
+
+State persisted as JSON files in `.tier-router/metrics/.sessions/<sessionId>.json`. WAL atomicity: write to `.sessions/.tmp/<sessionId>.<uuid>`, force flush, atomic rename to final path. (Same pattern as agentmem's `MemoryStore` and semantic-cache's `CacheStore`.)
+
+### Signal File Protocol
+
+When a session's budget is exhausted (cumulative token spend ≥ ceiling), a `.tier-router/metrics/.budget-exhausted` sentinel file is written. `user-prompt-submit.sh` checks for this file before every routing decision. If present, it injects a `<routing-recommendation decision=EXHAUSTED>` directive into Claude's context instead of routing normally. The directive instructs the agent to summarize, list remaining tasks, and advise a new session — all tool calls and subagent spawns are forbidden.
+
+The `PostToolUse` hook also writes this file on first-time exhaustion (via the `newlyExhausted` flag from `budget-accumulate`).
 
 ## Costs
 
