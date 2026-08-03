@@ -101,7 +101,7 @@ Use: active implementation when you trust the agent's edits but not arbitrary co
 ### `bypassPermissions` (!) — Trusted fast-follow
 
 Auto-allows: every tool.
-BYPASS_IMMUNE still gates: `.git/`, `.claude/`, `.ssh/`, `.env`, shell configs, `claude.md`, plugin/config JSON files always prompt for write tools.
+BYPASS_IMMUNE still gates: `.git/`, `.opencode/`, `.ssh/`, `.env`, shell configs, `AGENTS.md`, plugin/config JSON files always prompt for write tools.
 
 Use: known-safe refactors, scripted batch edits you've already reviewed.
 
@@ -125,7 +125,7 @@ Use: CI pipelines, scheduled maintenance, ant-level agent sessions.
 These paths always prompt for write tools (edit/write/bash/task), even in `bypassPermissions`:
 
 ```
-.git/  .claude/  claude.md
+.git/  .opencode/  AGENTS.md
 .bashrc  .bash_profile  .zshrc  .profile
 .ssh/  .env  .env.local
 config.json  opencode.json

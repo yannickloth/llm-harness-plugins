@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-    ROOT="${CLAUDE_PLUGIN_ROOT}"
-else
-    ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-fi
-exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.promptregistry.PromptRegistryCli "$@"

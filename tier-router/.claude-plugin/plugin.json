@@ -1,9 +1,0 @@
-{
-  "name": "tier-router",
-  "description": "Multi-tier prompt router — intercepts prompts, classifies by reasoning complexity, reformulates with SOTA prompt engineering criteria, and dispatches to the cheapest sufficient model tier (fable/haiku/sonnet/opus-general). Detects ambiguity and asks for clarification before executing.",
-  "version": "1.0.0",
-  "license": "MIT",
-  "author": { "name": "infolead" },
-  "repository": "https://github.com/infolead/llm-harness-plugins",
-  "tags": ["router", "prompt-engineering", "cost-optimization", "tier-routing", "ambiguity-detection", "prompt-rewriting"]
-}

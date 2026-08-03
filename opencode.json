@@ -2,7 +2,9 @@
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     "./guardrail-chain/opencode/index.ts",
-    "./general-skills/opencode/index.ts"
+    "./general-skills/opencode/index.ts",
+    "./latex-toolkit/opencode/index.ts",
+    "./typst-toolkit/opencode/index.ts"
   ],
   "agent": {
     "guardrail-chain": {
@@ -48,44 +50,6 @@
     "xref-checker": {
       "file": "./general-skills/agents/xref-checker.md",
       "mode": "subagent"
-    }
-  },
-  "skills": {
-    "citation": {
-      "file": "./general-skills/skills/citation/SKILL.md"
-    },
-    "cite-bib": {
-      "file": "./general-skills/skills/cite-bib/SKILL.md"
-    },
-    "cite-fidelity": {
-      "file": "./general-skills/skills/cite-fidelity/SKILL.md"
-    },
-    "claude-to-opencode-migration": {
-      "file": "./general-skills/skills/claude-to-opencode-migration/SKILL.md"
-    },
-    "config": {
-      "file": "./general-skills/skills/config/SKILL.md"
-    },
-    "logic": {
-      "file": "./general-skills/skills/logic/SKILL.md"
-    },
-    "math": {
-      "file": "./general-skills/skills/math/SKILL.md"
-    },
-    "proof": {
-      "file": "./general-skills/skills/proof/SKILL.md"
-    },
-    "redundancy": {
-      "file": "./general-skills/skills/redundancy/SKILL.md"
-    },
-    "review-convergence": {
-      "file": "./general-skills/skills/review-convergence/SKILL.md"
-    },
-    "style": {
-      "file": "./general-skills/skills/style/SKILL.md"
-    },
-    "xref": {
-      "file": "./general-skills/skills/xref/SKILL.md"
     }
   }
 }

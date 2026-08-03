@@ -10,9 +10,7 @@ compile_plugin() {
     local TEST_DIR="$SCRIPT_DIR/$NAME/src/test/java"
     local CLASSES_DIR="$SCRIPT_DIR/$NAME/build/classes"
     local TEST_CLASSES_DIR="$SCRIPT_DIR/$NAME/build/test-classes"
-    local BIN_DIR="$SCRIPT_DIR/$NAME/bin"
-
-    mkdir -p "$CLASSES_DIR" "$TEST_CLASSES_DIR" "$BIN_DIR"
+    mkdir -p "$CLASSES_DIR" "$TEST_CLASSES_DIR"
 
     if [ -n "$EXTRA_CP" ]; then
         find "$SRC_DIR" -name '*.java' -print0 | xargs -0 javac -d "$CLASSES_DIR" --release 25 --class-path "$EXTRA_CP"
@@ -81,65 +79,11 @@ compile_plugin "semantic-cache"
 compile_plugin "prompt-registry"
 compile_plugin "permission-modes"
 
-# session-lifecycle has its own build.sh that includes SHARED_CP
-if [ -f "$SCRIPT_DIR/session-lifecycle/build.sh" ]; then
-    bash "$SCRIPT_DIR/session-lifecycle/build.sh"
-fi
-
-cat > "$SCRIPT_DIR/agentmem/bin/memorysystem" << 'RUNNER'
-#!/usr/bin/env bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-    ROOT="${CLAUDE_PLUGIN_ROOT}"
-else
-    ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-fi
-GUARDRAIL_DIR="$(cd "$(dirname "$0")/../../guardrail-chain" && pwd)"
-exec java --class-path "${ROOT}/build/classes:${GUARDRAIL_DIR}/build/classes" eu.infolead.llmhp.memory.MemorySystemCli "$@"
-RUNNER
-chmod +x "$SCRIPT_DIR/agentmem/bin/memorysystem"
-
-cat > "$SCRIPT_DIR/guardrail-chain/bin/gcl" << 'RUNNER'
-#!/usr/bin/env bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-    ROOT="${CLAUDE_PLUGIN_ROOT}"
-else
-    ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-fi
-exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.guardrails.GuardrailPipelineCli "$@"
-RUNNER
-chmod +x "$SCRIPT_DIR/guardrail-chain/bin/gcl"
-
-cat > "$SCRIPT_DIR/semantic-cache/bin/cachecli" << 'RUNNER'
-#!/usr/bin/env bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-    ROOT="${CLAUDE_PLUGIN_ROOT}"
-else
-    ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-fi
-exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.cache.SemanticCacheCli "$@"
-RUNNER
-chmod +x "$SCRIPT_DIR/semantic-cache/bin/cachecli"
-
-cat > "$SCRIPT_DIR/prompt-registry/bin/prcli" << 'RUNNER'
-#!/usr/bin/env bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-    ROOT="${CLAUDE_PLUGIN_ROOT}"
-else
-    ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-fi
-exec java --class-path "${ROOT}/build/classes" eu.infolead.llmhp.promptregistry.PromptRegistryCli "$@"
-RUNNER
-chmod +x "$SCRIPT_DIR/prompt-registry/bin/prcli"
-
-echo "Runner: $SCRIPT_DIR/agentmem/bin/memorysystem"
-echo "Runner: $SCRIPT_DIR/agentinsights/bin/insights"
-echo "Runner: $SCRIPT_DIR/semantic-cache/bin/cachecli"
-echo "Runner: $SCRIPT_DIR/guardrail-chain/bin/gcl"
-echo "Runner: $SCRIPT_DIR/prompt-registry/bin/prcli"
+compile_plugin "session-lifecycle"
 
 run_tests "agentmem" "$GUARDRAIL_CP"
 echo "--- Running agentmem TS tests ---"
-bun test "$SCRIPT_DIR/agentmem/opencode/helpers.test.ts" "$SCRIPT_DIR/agentmem/pi/helpers.test.ts" || echo "agentmem TS tests: FAILED (bun not available?)"
+bun test "$SCRIPT_DIR/agentmem/opencode/helpers.test.ts" || echo "agentmem TS tests: FAILED (bun not available?)"
 echo ""
 run_tests "agentinsights"
 run_tests "semantic-cache"

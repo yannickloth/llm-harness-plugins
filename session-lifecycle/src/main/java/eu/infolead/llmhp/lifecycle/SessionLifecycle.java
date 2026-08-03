@@ -10,7 +10,7 @@ class SessionLifecycle {
         var projectDir = args[1];
         var trailingArgs = java.util.Arrays.copyOfRange(args, 2, args.length);
 
-        injectEnv("CLAUDE_PROJECT_DIR", projectDir);
+        injectEnv("OPENCODE_PROJECT_DIR", projectDir);
 
         switch (subcommand) {
             case "record-edit" -> {

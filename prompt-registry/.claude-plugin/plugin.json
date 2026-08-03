@@ -1,9 +1,0 @@
-{
-  "name": "prompt-registry",
-  "description": "Git-backed prompt versioning — commit, pull, diff, A/B test prompt templates across plugins. SessionStart auto-pulls active versions. JSON registry with no external dependencies.",
-  "version": "1.0.0",
-  "license": "MIT",
-  "author": { "name": "infolead" },
-  "repository": "https://github.com/infolead/llm-harness-plugins",
-  "tags": ["prompt-engineering", "versioning", "ab-testing", "prompt-management", "registry"]
-}

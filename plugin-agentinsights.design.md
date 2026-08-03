@@ -1,7 +1,6 @@
 # Insights — Design Specification
 
-Session analytics + AI-generated narrative report. Reverse-engineered from
-Claude Code `/insights` command (`commands/insights.ts`, 3200 lines).
+Session analytics + AI-generated narrative report.
 Local-only: scans session transcripts, classifies via LLM, generates HTML.
 
 Implementation: Java ≥ 25 for all logic. TypeScript shims for platform tool definitions.
@@ -102,13 +101,12 @@ underlying_goal: string       — "What the user fundamentally wanted to achieve
 goal_categories: Record<string, number>  — debug_investigate, implement_feature, fix_bug, ...
 outcome: enum                  — fully_achieved | mostly_achieved | partially_achieved | not_achieved | unclear
 user_satisfaction_counts: Record<string, number>  — happy, satisfied, likely_satisfied, disappointed, frustrated
-claude_helpfulness: enum       — unhelpful | slightly_helpful | moderately_helpful | very_helpful | essential
-session_type: enum             — single_task | multi_task | iterative_refinement | exploration | quick_question
+agent_helpfulness: enum       — unhelpful | slightly_helpful | moderately_helpful | very_helpful | essentialsession_type: enum             — single_task | multi_task | iterative_refinement | exploration | quick_question
 friction_counts: Record<string, number>  — misunderstood_request, wrong_approach, buggy_code, ...
 friction_detail: string        — one sentence or empty
 primary_success: string        — fast_accurate_search, correct_code_edits, good_explanations, ...
 brief_summary: string          — 1 sentence: what user wanted and whether they got it
-user_instructions_to_claude?: string[]
+user_instructions_to_agent?: string[]
 ```
 
 ### 2.3 AggregatedData (roll-up of all sessions)
@@ -163,7 +161,7 @@ interaction_style: { narrative, key_pattern }
 what_works: { intro, impressive_workflows: Array<{ title, description }> }
 friction_analysis: { intro, categories: Array<{ category, description, examples? }> }
 suggestions: {
-  claude_md_additions: Array<{ addition, why, prompt_scaffold }>
+  rules_additions: Array<{ addition, why, prompt_scaffold }>
   features_to_try: Array<{ feature, one_liner, why_for_you, example_code? }>
   usage_patterns: Array<{ title, suggestion, detail?, copyable_prompt? }>
 }
@@ -178,7 +176,7 @@ fun_ending: { headline, detail }
 ### 3.1 Session discovery
 
 ```
-Walk session storage dir (CLAUDE_PROJECT_DIR / OPENCODE_SESSION_DIR).
+Walk session storage dir (OPENCODE_SESSION_DIR).
 Find all *.jsonl files.
 Load each via session reader → LogOption (messages, timestamps, metadata).
 ```
@@ -257,7 +255,7 @@ Schema for JSON output:
   "goal_categories": {"debug_investigate": 2, "implement_feature": 1},
   "outcome": "fully_achieved|mostly_achieved|partially_achieved|not_achieved|unclear_from_transcript",
   "user_satisfaction_counts": {"satisfied": 3},
-  "claude_helpfulness": "very_helpful",
+  "agent_helpfulness": "very_helpful",
   "session_type": "single_task|multi_task|iterative_refinement|exploration|quick_question",
   "friction_counts": {"misunderstood_request": 1},
   "friction_detail": "One sentence or empty",
@@ -302,7 +300,7 @@ messages_per_day: total_messages / days_active
 
 ### 5.3 Multi-clauding detection
 
-Detect concurrent Claude usage (30-min sliding window):
+Detect concurrent agent usage (30-min sliding window):
 ```
 Sorted timeline of all session messages.
 Window: 30 min.
@@ -327,7 +325,7 @@ top 20 friction details + top 15 user instructions.
 | `interaction_style` | Narrative of how the user interacts; key pattern |
 | `what_works` | Impressive workflows, what went well, intro |
 | `friction_analysis` | Friction categories with descriptions and examples |
-| `suggestions` | CLAUDE.md additions, features to try, usage patterns (all with copyable prompts) |
+| `suggestions` | AGENTS.md additions, features to try, usage patterns (all with copyable prompts) |
 | `on_the_horizon` | Future opportunities as models improve |
 | `fun_ending` | Memorable qualitative moment from transcripts |
 
@@ -337,7 +335,7 @@ All sections: max 8192 output tokens. Return valid JSON only.
 
 Reads all other sections' outputs. 4-part structure:
 1. **What's working** — user's unique style, impactful accomplishments.
-2. **What's hindering** — Claude's fault (misunderstandings, wrong approaches) vs user-side friction.
+2. **What's hindering** — the agent's fault (misunderstandings, wrong approaches) vs user-side friction.
 3. **Quick wins to try** — specific features or workflow techniques.
 4. **Ambitious workflows for better models** — what to prepare for in next 3-6 months.
 
@@ -355,10 +353,10 @@ Sections (in order):
 1. **Header**: date_range, session count, duration, messages
 2. **At a Glance**: 4-part summary with links to detail sections
 3. **What You Work On**: project areas with session counts
-4. **How You Use Claude Code**: interaction narrative + key pattern
+4. **How You Use the Agent**: interaction narrative + key pattern
 5. **Impressive Things You Did**: big wins with titles and descriptions
 6. **Where Things Go Wrong**: friction categories with examples
-7. **Features to Try**: CLAUDE.md additions (with copy checkboxes), features, usage patterns
+7. **Features to Try**: AGENTS.md additions (with copy checkboxes), features, usage patterns
 8. **On the Horizon**: future opportunities with copyable prompts
 9. **Fun Ending**: memorable moment
 10. **Stats Appendix**: bar charts for outcomes, satisfaction, goals, tools, friction, languages,
@@ -451,8 +449,6 @@ Configurable via env var `INSIGHTS_MODEL` (default: platform's best model).
 Implementation files:
 ```
 agentinsights/                  # Plugin directory
-├── .claude-plugin/
-│   └── plugin.json
 ├── InsightsRunner.java          # Main entry: scan → extract → aggregate → generate → report
 ├── SessionScanner.java          # Walk session dirs, load .jsonl, compute SessionMeta
 ├── FacetExtractor.java          # LLM-driven facet extraction + caching
@@ -469,8 +465,6 @@ agentinsights/                  # Plugin directory
 │   └── InsightResults.java      # record (nested types)
 ├── opencode/
 │   └── index.ts                 # Plugin entry: registers /insights command + tool
-├── commands/
-│   └── insights.md              # Slash command definition
 ├── prompts/
 │   ├── facet-extraction.md      # Facet extraction prompt + schema
 │   ├── transcript-summarize.md  # Transcript chunk summarization prompt
@@ -478,7 +472,7 @@ agentinsights/                  # Plugin directory
 │   ├── interaction-style.md     # Section prompt
 │   ├── what-works.md            # Section prompt
 │   ├── friction-analysis.md     # Section prompt
-│   ├── suggestions.md           # Section prompt + CC features reference
+│   ├── suggestions.md           # Section prompt
 │   ├── on-the-horizon.md        # Section prompt
 │   ├── fun-ending.md            # Section prompt
 │   └── at-a-glance.md           # Synthesis prompt (runs last)
@@ -490,8 +484,6 @@ agentinsights/                  # Plugin directory
 
 ## 13. Platform Integration
 
-### 13.1 OpenCode
-
 ```
 /insights                       # Slash command → agentinsights run
 /insights report                # Open HTML report in browser
@@ -499,16 +491,6 @@ agentinsights/                  # Plugin directory
 ```
 
 Plugin registers `run-insights` tool accessible to the agent.
-
-### 13.2 Claude Code
-
-```
-/insights                       # Slash command → java InsightsRunner.java
-```
-
-Plugin registers:
-- Hook: `PostToolUse` on `Write|Edit` → maybe-touch session (no-op, just a marker).
-- Command: `/insights` in `.claude-plugin/commands/`.
 
 ---
 
@@ -518,13 +500,13 @@ When a session transcript exceeds 30KB, the FacetExtractor reuses the agentmem
 Dreamer's transcript summarization capability to produce chunk summaries before
 facet extraction. This avoids token overflow for the facet extraction LLM call.
 
-## 15. Key Differences from Claude Code
+## 15. Key Design Decisions
 
-| Aspect | Claude Code | Our design |
-|--------|-------------|------------|
-| Session storage | `.claude/projects/<name>/*.jsonl` | Configurable via plugin config |
-| Homespace SCP | Yes (ant-only) | No — local only |
-| CC-specific feature suggestions | CC features reference in prompt | Generic / configurable prompt templates |
-| CC team / model improvement sections | Yes (ant-only) | No — not relevant cross-platform |
-| Analytics telemetry | Separate pipeline to Datadog/1P | None |
-| Language | TypeScript | Java ≥ 25 core + TS shims |
+| Aspect | Decision |
+|--------|-------------|
+| Session storage | Configurable via plugin config |
+| Homespace SCP | No — local only |
+| Feature suggestions | Generic / configurable prompt templates |
+| Team / model improvement sections | No |
+| Analytics telemetry | None |
+| Language | Java ≥ 25 core + TS shims |

@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-    ROOT="${CLAUDE_PLUGIN_ROOT}"
-else
-    ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-fi
-GUARDRAIL_DIR="$(cd "$(dirname "$0")/../../guardrail-chain" && pwd)"
-exec java --class-path "${ROOT}/build/classes:${GUARDRAIL_DIR}/build/classes" eu.infolead.llmhp.memory.MemorySystemCli "$@"

@@ -40,27 +40,27 @@
   "command": {
     "save-memories": {
       "description": "Extract learnings from conversation to memory",
-      "run": "opencode run --agent memory-keeper -- Extract non-derivable learnings from the conversation and persist to .agentmem/."
+      "template": "Run this: opencode run --agent memory-keeper -- Extract non-derivable learnings from the conversation and persist to .agentmem/."
     },
     "dream": {
       "description": "Run memory consolidation",
-      "run": "opencode run --agent memory-dreamer -- Run memory consolidation: merge, deduplicate, prune, link."
+      "template": "Run this: opencode run --agent memory-dreamer -- Run memory consolidation: merge, deduplicate, prune, link."
     },
     "init-memory": {
       "description": "Bootstrap memory from git history",
-      "run": "java --class-path agentmem/build/classes --source 25 agentmem/MemorySystem.java bootstrap .agentmem ."
+      "template": "Run this: java --class-path agentmem/build/classes --source 25 agentmem/MemorySystem.java bootstrap .agentmem ."
     },
     "forget-memory": {
       "description": "Explicitly forget a memory. Usage: /forget-memory <name>",
-      "run": "java --class-path agentmem/build/classes --source 25 agentmem/MemorySystem.java delete .agentmem $ARG"
+      "template": "Run this: java --class-path agentmem/build/classes --source 25 agentmem/MemorySystem.java delete .agentmem $ARG"
     },
     "skip-review": {
       "description": "Skip this week's memory review",
-      "run": "echo 'Review skipped.'"
+      "template": "Run this: echo 'Review skipped.'"
     },
     "insights": {
       "description": "Generate session analytics + AI-powered insights report",
-      "run": "java --class-path agentinsights/build/classes eu.infolead.llmhp.insights.InsightsCli run --session-dir .opencode/sessions --insights-dir .agentmem/insights --platform opencode"
+      "template": "Run this: java --class-path agentinsights/build/classes eu.infolead.llmhp.insights.InsightsCli run --session-dir .opencode/sessions --insights-dir .agentmem/insights --platform opencode"
     }
   }
 }

@@ -47,7 +47,6 @@ src/main/java/eu/infolead/llmhp/cache/
     ├── CacheEntry.java       # Record: prompt, response, embedding, timestamp, ttl
     └── CacheStats.java       # Hit rate, miss rate, size, evictions
 opencode/index.ts             # Plugin: register cache-check tool, hook into tool.execute
-hooks/hooks.json              # PostToolUse → store; PreToolUse → check
 prompts/agent-prompt.md       # "Responses may be cached — verify against current state"
 ```
 
@@ -90,7 +89,6 @@ src/main/java/eu/infolead/llmhp/prompts/
     ├── PromptVersion.java    # Record: name, version, content, author, timestamp
     └── ABTestResult.java    # Pairwise comparison output
 opencode/index.ts             # Plugin: register prompt-pull, prompt-test tools
-hooks/hooks.json              # SessionStart → pull current versions
 ```
 
 ### ✅ 2.4 guardrail-chain — Guardrail Chain (Pt V, ch29) + Guardrail-First (ch31) — **DONE** (2026-07-29)
@@ -131,7 +129,6 @@ src/main/java/eu/infolead/llmhp/permissionmodes/
 ├── PermissionModes.java       # 6-mode state machine, checkPermission(), transitions, JSON serde
 └── PermissionModesCli.java    # CLI: check, transition, status, state, save, load, immune
 opencode/index.ts              # tool.execute.before hook + 4 tools (permission-mode, permission-status, etc.)
-.claude-plugin/hooks/hooks.json # PreToolUse hook
 ```
 
 ### ❌ 2.6 eval-harness — LLM-as-a-Judge (Pt VI, ch33) + Candidate B.7 Blind Evaluation
@@ -215,7 +212,7 @@ src/main/java/eu/infolead/llmhp/router/
 | 2 | **Pre-announced goal vs actual outcome drift** | Medium | Medium | B.2 Pre-Committed Plan | ❌ |
 | | Compare `first_prompt` (stated goal) vs `underlying_goal` (facet-extracted) vs `outcome`. Surface: "30% of sessions start with goal X and drift to Y." Insight section "Goal Drift." | | | | |
 | 3 | **Cross-family quality comparison** | Low | High | B.1 Cross-Family Ensemble | ❌ |
-| | If user switches between coding agents (OpenCode vs Claude Code vs Pi), the multi-clauding detector already catches concurrent usage. Extend to compare quality: "outcomes better on Claude than OpenCode for Python tasks." Depends on having enough data across families. | | | | |
+| | If user switches between coding agents, the multi-agent detector catches concurrent usage. Extend to compare quality: "outcomes better with model X than Y for Python tasks." Depends on having enough data across families. | | | | |
 | 4 | **Friction → automatic guardrail suggestion** | Low | Medium | Guardrail Chain (Pt V) | ❌ |
 | | If friction categories show "buggy_code" repeatedly for the same file, auto-suggest: "This file has high bug rate — add a guardrail in this directory." Output in suggestions section. | | | | |
 
@@ -331,12 +328,12 @@ Change drivers for each element. Grouping decisions should respect these boundar
 | `budget-circuit-breaker` | Token pricing + session policies | vendor pricing pages, org cost policies |
 | `prompt-registry` | Prompt engineering best practices | Anthropic prompt docs, general-skills agents |
 | `guardrail-chain` | Security threat catalog | OWASP LLM Top 10, red-team findings |
-| `permission-modes` | Permission model + tool authorization | opencode/Claude Code tool permission hooks, BYPASS_IMMUNE catalog |
+| `permission-modes` | Permission model + tool authorization | OpenCode tool permission hooks, BYPASS_IMMUNE catalog |
 | `eval-harness` | Evaluation framework specs + rubric design | benchmark protocols, B.7 blinding mechanism |
 | `cross-family-second-opinion` | Multi-provider API surfaces | vendor SDKs, B.1 family-diversity rationale |
 | `null-branch-reporter` | Transcript format + memory taxonomy | agentmem subtypes, agentinsights facet schema |
 
-Each new plugin has a distinct driver from existing plugins → separate directory, separate build target, separate OpenCode/Claude Code/Pi shims. Budget-circuit-breaker and cross-family-second-opinion are tier-router extensions (same driver as router: routing logic), so they live inside `tier-router/src/`.
+Each new plugin has a distinct driver from existing plugins → separate directory, separate build target, separate OpenCode shim.
 
 ---
 
@@ -357,14 +354,9 @@ Each new plugin has a distinct driver from existing plugins → separate directo
 ### 7.2 Pre-Flight Checklist Per New Plugin
 
 Every new plugin must satisfy:
-- [ ] Java ≥25 core + TypeScript shims (3 platforms: OpenCode, Claude Code, Pi)
+- [ ] Java ≥25 core + OpenCode TypeScript shim (`opencode/index.ts`)
 - [ ] Design doc (`plugin-<name>.design.md`) with IVP analysis
 - [ ] Compiled classes committed to `build/classes/`
 - [ ] Tests (≥10 test cases for core logic)
-- [ ] `.claude-plugin/plugin.json` marketplace manifest
-- [ ] `hooks/hooks.json` for Claude Code hooks
-- [ ] `opencode/index.ts` for OpenCode plugin entry
-- [ ] `pi/index.ts` for Pi plugin entry
 - [ ] `prompts/agent-prompt.md` for agent-facing usage guide
-- [ ] Registered in `.claude-plugin/marketplace.json`
 - [ ] Added to `build.sh` compile targets

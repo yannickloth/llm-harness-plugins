@@ -1,9 +1,0 @@
-{
-  "name": "general-skills",
-  "description": "Generic, reusable audit and quality skills for any project — config, redundancy, logic, math, style, cross-references, citations, proofs, and the review-convergence metaskill. All domain-agnostic and format-parameterized.",
-  "version": "1.0.0",
-  "license": "MIT",
-  "author": { "name": "infolead" },
-  "repository": "https://github.com/infolead/llm-harness-plugins",
-  "tags": ["audit", "review", "quality", "convergence", "proof", "style", "config", "citation", "cross-reference"]
-}

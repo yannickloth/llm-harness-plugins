@@ -1,9 +1,0 @@
-{
-  "name": "typst-toolkit",
-  "description": "Typst-specific tools for syntax fixing, formatting, cross-reference checking, citation validation, production readiness, diagram auditing, and proof validation. Format-bound: assumes .typ files and Typst syntax.",
-  "version": "1.0.0",
-  "license": "MIT",
-  "author": { "name": "infolead" },
-  "repository": "https://github.com/infolead/llm-harness-plugins",
-  "tags": ["typst", "syntax", "formatting", "diagram", "cross-reference", "citation", "production"]
-}

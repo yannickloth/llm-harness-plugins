@@ -125,7 +125,7 @@ project-specific (regex patterns from config). The rest are shared.
 ## 3. Plugin Automation Architecture
 
 The graph is never invoked manually. Three invisible automation layers fire from
-the OpenCode/Pi/Claude Code plugin system:
+the OpenCode plugin system:
 
 ### 3.1 Automation Layers
 
@@ -139,20 +139,10 @@ the OpenCode/Pi/Claude Code plugin system:
 
 ```
 llm-harness-plugins/knowledge-graph/
-├── .claude-plugin/
-│   └── plugin.json                    # Claude Code marketplace manifest
-├── hooks/
-│   └── hooks.json                     # Claude Code session-start + post-tool-use hooks
 ├── prompts/
 │   └── agent-prompt.md                # Agent-facing usage guide (injected at session start)
-├── commands/
-│   └── kg-query.md                    # Claude Code slash command (/kg-query)
 ├── opencode/
 │   └── index.ts                       # OpenCode plugin: tool registration + context injection
-├── pi/
-│   └── index.ts                       # Pi plugin: tool registration + context event hook
-├── bin/
-│   └── kg-context                     # Bash wrapper → Java CLI (used by Claude Code hooks)
 ├── config/
 │   ├── project-config-ivp.yaml        # IVP label regexes, node/edge rules
 │   └── project-config-mecfs.yaml      # ME/CFS label regexes, node/edge rules
@@ -219,51 +209,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 }
 ```
 
-### 3.4 Pi Plugin (pi/index.ts)
-
-Same pattern, uses `pi.registerTool()` and `pi.on("context")` / `pi.on("tool_result")` events.
-Reads `agent-prompt.md` with `readFileSync`, substitutes `<plugin-dir>`.
-
-### 3.5 Claude Code Plugin (hooks/hooks.json)
-
-Uses `SessionStart` + `PostToolUse` hooks to inject context:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "(sed \"s|<plugin-dir>|${CLAUDE_PLUGIN_ROOT}|g\" \"${CLAUDE_PLUGIN_ROOT}/prompts/agent-prompt.md\"; echo \"---\"; \"${CLAUDE_PLUGIN_ROOT}\"/bin/kg-context overview \"${CLAUDE_PROJECT_DIR}/graph.json\")"
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "Read|Grep|Glob|Find|Ls|Edit|Write",
-      "hooks": [{
-        "type": "command",
-        "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/kg-context subgraph \"${CLAUDE_PROJECT_DIR}/graph.json\" \"${CLAUDE_TOOL_INPUT}\" 1"
-      }]
-    }]
-  }
-}
-```
-
-Plus a slash command in `commands/kg-query.md`:
-
-```markdown
----
-description: Query the knowledge graph — transitive-closure, topo-sort, cycles,
-  community-summaries, contradictions, impact, quality, validate
-argument-hint: [query]
-allowed-tools: Bash(java:*)
----
-Run: `java --class-path ${CLAUDE_PLUGIN_ROOT}/build/classes
-  eu.infolead.llmhp.graph.GraphCli query "${CLAUDE_PROJECT_DIR}/graph.json" "$1"`
-Review and report.
-```
-
-### 3.6 Registration
+### 3.4 Registration
 
 In `opencode.json`:
 
@@ -272,17 +218,6 @@ In `opencode.json`:
   "plugin": [
     "../llm-harness-plugins/agentmem/opencode/index.ts",
     "../llm-harness-plugins/knowledge-graph/opencode/index.ts"
-  ]
-}
-```
-
-In `llm-harness-plugins/.claude-plugin/marketplace.json`:
-
-```json
-{
-  "plugins": [
-    "agentmem", "agentinsights", "general-skills",
-    "latex-toolkit", "typst-toolkit", "knowledge-graph"
   ]
 }
 ```
@@ -321,8 +256,8 @@ Commands:
 
 ## 5. Agent-Prompt
 
-Injected at session start by all three platforms. The `agent-prompt.md` file
-is shared; each platform substitutes `<plugin-dir>` with its concrete path.
+Injected at session start by OpenCode. The `agent-prompt.md` file
+is placed in the plugin; the platform substitutes `<plugin-dir>` with its concrete path.
 
 ```markdown
 # Knowledge Graph
@@ -550,13 +485,8 @@ appears_in       any_label → vol,part,ch,sec,subsec,file
 
 ```
 llm-harness-plugins/knowledge-graph/
-├── .claude-plugin/plugin.json          # Claude Code marketplace manifest
-├── hooks/hooks.json                     # Claude Code session-start + post-tool-use hooks
 ├── prompts/agent-prompt.md              # Agent-facing usage guide (injected at session start)
-├── commands/kg-query.md                 # Claude Code slash command
 ├── opencode/index.ts                    # OpenCode plugin shim (~153 LOC)
-├── pi/index.ts                          # Pi plugin shim (~132 LOC)
-├── bin/kg-context                       # Bash wrapper → Java CLI
 ├── config/
 │   ├── project-config-ivp.yaml          # IVP label regexes, node/edge rules
 │   └── project-config-mecfs.yaml        # ME/CFS label regexes, node/edge rules

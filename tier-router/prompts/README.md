@@ -31,7 +31,7 @@ description: Prompt-intercepting multi-tier router that classifies user requests
 | 2 | Complexity signal: "design", "architecture", "best approach", etc. | Escalate to sonnet-level routing |
 | 3 | Bulk destructive: "delete all", "remove *" | Escalate |
 | 4 | File op without path: "fix the bug" | Escalate |
-| 5 | Agent definition edit: ".claude/agents" + edit | Escalate |
+| 5 | Agent definition edit: ".opencode/agents" + edit | Escalate |
 | 6 | Multiple objectives (≥2) | Escalate |
 | 7 | Creation/design tasks | Escalate |
 | 8 | No clear keyword match | Escalate |
@@ -52,4 +52,3 @@ Add to `opencode.json`:
 }
 ```
 
-For Claude Code: install via marketplace and add routing directives to `.claude/CLAUDE.md`.

@@ -9,32 +9,16 @@ describe("permission-modes", () => {
 
     expect(existsSync(join(base, "src/main/java/eu/infolead/llmhp/permissionmodes/PermissionModes.java"))).toBe(true)
     expect(existsSync(join(base, "src/main/java/eu/infolead/llmhp/permissionmodes/PermissionModesCli.java"))).toBe(true)
-    expect(existsSync(join(base, ".claude-plugin/plugin.json"))).toBe(true)
-    expect(existsSync(join(base, ".claude-plugin/hooks/hooks.json"))).toBe(true)
     expect(existsSync(join(base, "opencode/index.ts"))).toBe(true)
   })
 
-  test("manifest has required fields", () => {
+  test("BYPASS_IMMUNE patterns exist in Java source", () => {
     const { readFileSync } = require("fs")
-    const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", ".claude-plugin", "plugin.json"), "utf-8"))
+    const source = readFileSync(join(import.meta.dir, "..", "src/main/java/eu/infolead/llmhp/permissionmodes/PermissionModes.java"), "utf-8")
 
-    expect(manifest.name).toBe("permission-modes")
-    expect(manifest.version).toBe("1.0.0")
-    expect(manifest.author.name).toBeDefined()
-    expect(manifest.tags).toContain("permissions")
-    expect(manifest.tags).toContain("state-machine")
+    expect(source).toContain("BYPASS_IMMUNE")
+    expect(source).toContain("bypassImmuneCheck")
   })
-
-  test("hooks.json has PreToolUse hook", () => {
-    const { readFileSync } = require("fs")
-    const hooks = JSON.parse(readFileSync(join(import.meta.dir, "..", ".claude-plugin", "hooks", "hooks.json"), "utf-8"))
-
-    expect(hooks.hooks).toBeDefined()
-    expect(hooks.hooks.PreToolUse).toBeDefined()
-    expect(Array.isArray(hooks.hooks.PreToolUse)).toBe(true)
-    expect(hooks.hooks.PreToolUse.length).toBeGreaterThan(0)
-    expect(hooks.hooks.PreToolUse[0].hooks.length).toBeGreaterThan(0)
-    expect(hooks.hooks.PreToolUse[0].hooks[0].type).toBe("command")
     expect(hooks.hooks.PreToolUse[0].hooks[0].command).toContain("PermissionModesCli")
   })
 

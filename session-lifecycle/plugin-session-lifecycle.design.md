@@ -6,11 +6,11 @@ Session lifecycle tracking plugin — file edit log (TSV), git commit diffing, a
 
 ## Why
 
-Replaces project-specific `.claude/hooks/` Java files with a reusable, platform-agnostic plugin. Original 5 hooks were baked into a single project; this plugin makes them installable as a marketplace artifact across OpenCode, Claude Code, and Pi.
+Replaces project-specific hook Java files with a reusable, platform-agnostic plugin. Original 5 hooks were baked into a single project; this plugin makes them installable as a plugin artifact for OpenCode.
 
 ## How
 
-Thin Java wrapper (`SessionLifecycle`) dispatches to the existing 5 Java hook classes. Adaptation via `CLAUDE_PROJECT_DIR` env injection only — no hook source modifications. The wrapper injects the env var via reflection (`--add-opens java.base/java.util=ALL-UNNAMED` required at runtime) and constructs stdin JSON when the calling platform doesn't provide it. For CC/Pi PostToolUse hooks, the wrapper enters stdin-passthrough mode — CC's native hook payload flows through to the hook class.
+Thin Java wrapper (`SessionLifecycle`) dispatches to the existing 5 Java hook classes. Adaptation via `OPENCODE_PROJECT_DIR` env injection only — no hook source modifications. The wrapper injects the env var via reflection (`--add-opens java.base/java.util=ALL-UNNAMED` required at runtime) and constructs stdin JSON when the calling context doesn't provide it.
 
 Data flow:
 ```
@@ -41,15 +41,10 @@ session-lifecycle/
 │   ├── SessionStartErrors.java      ← verbatim
 │   ├── SessionStartCommits.java     ← verbatim
 │   ├── SessionEndCommits.java       ← verbatim
-│   └── SessionEndArchive.java       ← verbatim
-├── bin/
+│   ├── SessionEndArchive.java       ← verbatim
 │   └── SessionLifecycle.java        ← wrapper (dispatches + stdin JSON)
 ├── build/classes/                   ← compiled .class files (committed)
 ├── opencode/index.ts                ← OpenCode plugin entry
-├── .claude-plugin/
-│   ├── plugin.json                  ← CC plugin metadata
-│   └── hooks/hooks.json             ← CC hook definitions
-├── pi/plugin.yml                    ← Pi plugin config
 └── build.sh                         ← Java compilation
 ```
 
@@ -58,6 +53,6 @@ session-lifecycle/
 - Java ≥ 25 only
 - Runtime requires `--add-opens java.base/java.util=ALL-UNNAMED` for env var injection
 - Original 5 hook files copied verbatim — no modifications
-- Wrapper only adds `CLAUDE_PROJECT_DIR` injection + stdin JSON construction
+- Wrapper only adds `OPENCODE_PROJECT_DIR` injection + stdin JSON construction
 - Every operation exits 0 on error (hooks must never crash the agent)
 - Compiled `.class` files committed to `build/classes/`

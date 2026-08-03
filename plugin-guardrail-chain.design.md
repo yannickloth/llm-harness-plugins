@@ -46,12 +46,8 @@ guardrail-chain/
 │       └── GuardConfig.java         # Per-plugin: which filters, severity
 ├── src/test/java/eu/infolead/llmhp/guardrails/
 │   └── GuardrailPipelineTest.java   # 25 test cases
-├── .claude-plugin/plugin.json
-├── hooks/hooks.json
 ├── opencode/index.ts
-├── pi/index.ts
-├── prompts/agent-prompt.md
-└── bin/gcl
+└── prompts/agent-prompt.md
 ```
 
 ## Data Types
@@ -97,14 +93,14 @@ Factory methods: `all()`, `warnOnly()`, `none()`
 ## CLI Interface
 
 ```
-gcl scan-secrets [content|-stdin]        → JSON {result, source, message}
-gcl check-path <target> <containment>    → JSON
-gcl check-name <name>                    → JSON
-gcl check-injection [prompt|-stdin]      → JSON
-gcl check-size [content|-stdin] [max]    → JSON
-gcl pre-write <target> <dir> <content>   → JSON {blocked, warnings, blocks[], warns[]}
-gcl input-filter [prompt|-stdin]         → JSON
-gcl output-filter [output|-stdin]        → JSON
+java GuardrailPipelineCli.java scan-secrets [content|-stdin]        → JSON {result, source, message}
+java GuardrailPipelineCli.java check-path <target> <containment>    → JSON
+java GuardrailPipelineCli.java check-name <name>                    → JSON
+java GuardrailPipelineCli.java check-injection [prompt|-stdin]      → JSON
+java GuardrailPipelineCli.java check-size [content|-stdin] [max]    → JSON
+java GuardrailPipelineCli.java pre-write <target> <dir> <content>   → JSON {blocked, warnings, blocks[], warns[]}
+java GuardrailPipelineCli.java input-filter [prompt|-stdin]         → JSON
+java GuardrailPipelineCli.java output-filter [output|-stdin]        → JSON
 ```
 
 ## Detection Patterns
@@ -144,16 +140,9 @@ Default: 500KB. Configurable per-call.
 
 ## Platform Integration
 
-### Claude Code (hooks.json)
-- PostToolUse on Write|Edit: scan output for secrets
-
 ### OpenCode (index.ts)
 - 3 tools: `scan-secrets`, `check-injection`, `check-path`
 - `file.edited` event: output-filter on every file edit
-
-### Pi (index.ts)
-- 3 tools: `gcl-scan-secrets`, `gcl-check-injection`, `gcl-check-path`
-- `tool_result` event: output-filter on write/edit results
 
 ## IVP Analysis
 

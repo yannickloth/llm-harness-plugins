@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { parseClaudeMd } from "../../shared/claudemd"
+import { parseInstructionsMd } from "../../shared/instructions-md"
 import { existsSync } from "fs"
 import path from "path"
 
@@ -21,7 +21,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     for (const file of files) {
       if (!existsSync(file)) continue
       try {
-        const { content } = parseClaudeMd(file, root)
+        const { content } = parseInstructionsMd(file, root)
         if (content.trim()) {
           resolvedContents.push(content)
           console.log("[context-includes] resolved", file)

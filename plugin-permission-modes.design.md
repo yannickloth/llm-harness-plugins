@@ -16,9 +16,9 @@
           ┌─────────────────┼─────────────────┐
           ▼                 ▼                  ▼
    BYPASS_IMMUNE?    Category blocked?    Mode default
-   (.git/, .claude/,   (plan: bash=N,     (prompt / allow / deny)
+   (.git/, .opencode/,  (plan: bash=N,     (prompt / allow / deny)
     .ssh/, .env,        read=Y)
-    CLAUDE.md, etc.)
+    AGENTS.md, etc.)
 ```
 
 6-mode state machine with centralized `transitionPermissionMode(mode)` entry point.
@@ -35,9 +35,6 @@ permission-modes/
 │   └── PermissionModesCli.java       # CLI entry: check, transition, status, state, save, load, immune
 ├── src/test/java/eu/infolead/llmhp/permissionmodes/
 │   └── PermissionModesTest.java      # 24 test methods
-├── .claude-plugin/
-│   ├── plugin.json
-│   └── hooks/hooks.json
 ├── opencode/
 │   ├── index.ts                      # tool.execute.before hook + 4 tools
 │   └── index.test.ts                 # 6 bun:test cases
@@ -102,7 +99,7 @@ permission-modes/
 ### BYPASS_IMMUNE patterns
 
 ```
-.git/  .claude/  claude.md
+.git/  .opencode/  AGENTS.md
 .bashrc  .bash_profile  .zshrc  .profile
 .ssh/  .env  .env.local
 config.json  opencode.json
@@ -171,7 +168,7 @@ plugin architecture.
     },
     ...
   },
-  "bypassImmune": [".git/", ".claude/", ...]
+  "bypassImmune": [".git/", ".opencode/", ...]
 }
 ```
 
@@ -201,20 +198,14 @@ permission-modes immune <projectDir> <toolName> <filePath>  → {"immune":T/F}
 | `permission-state` | tool | Full JSON state export |
 | `permission-check` | tool | Check tool against current mode |
 
-### Claude Code (hooks.json)
-
-| Hook | Purpose |
-|------|---------|
-| `PreToolUse` | Check `CLAUDE_TOOL_NAME` against current mode before execution |
-
 ## IVP Analysis
 
 | Element | Change driver | Artifact |
 |---------|--------------|----------|
-| Mode definitions | Permission model requirements | `claude-code-features.md` §5 |
+| Mode definitions | Permission model requirements | OpenCode permission model docs §5 |
 | BYPASS_IMMUNE patterns | Protected path catalog | OS security standards, git/shell conventions |
-| checkPermission() gate | Tool authorization logic | OpenCode/Claude Code tool permission hook contracts |
-| stripDangerousPermissionsForAutoMode() | Ant-level safety requirements | Claude Code `auto` mode spec |
+| checkPermission() gate | Tool authorization logic | OpenCode tool permission hook contracts |
+| stripDangerousPermissionsForAutoMode() | Automation safety requirements | OpenCode `auto` mode spec |
 | ModeConfig | Per-mode policy shape | Plugin integration API |
 | CLI + JSON serde | Persistence + programmatic access | Platform hook message formats |
 
@@ -232,5 +223,5 @@ Explore code   → shift-tab to PLAN (read-only)
 Implement      → shift-tab to ACCEPT_EDITS (auto-edit in CWD)
 Fast-follow    → shift-tab to BYPASS_PERMISSIONS (skip prompts)
 Sensitive area → shift-tab to DONT_ASK (silent block)
-CI automation  → SDK set_permission_mode("auto") (ant-level, stripped dangerous)
+CI automation  → SDK set_permission_mode("auto") (full automation, stripped dangerous)
 ```

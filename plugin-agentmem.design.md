@@ -1,13 +1,11 @@
 # OpenCode Auto Memory System — Design Specification
 
-Reverse-engineered from Claude Code leaked source (`/home/nicky/code/anthropic-leaked-source-code/`),
-informed by field research across LangGraph, Mem0, Cursor, and Windsurf.
+Informed by field research across LangGraph, Mem0, Cursor, and Windsurf.
 ~35 improvements beyond any surveyed system.
 
 Implementation: Java ≥ 25 for all logic. Thin TypeScript shims for platform tool
-definitions (`.opencode/tools/*.ts` for OpenCode, `.claude/commands/*.md` + plugin
-hooks for Claude Code). Both platforms shell out to the same Java scripts.
-Java scripts via `java MyScript.java` (JEP 458). No compilation step.
+definitions (`.opencode/tools/*.ts` for OpenCode). The platform shells out to the
+same Java scripts. Java scripts via `java MyScript.java` (JEP 458). No compilation step.
 
 ### 0.0 Multi-platform: shared files, explicit paths
 
@@ -15,11 +13,9 @@ Default memory directories follow a four-tier hierarchy. At session start, the
 plugin loads the union of all tiers. More specific tiers take precedence for
 retrieval ranking (per-project beats cross-project, personal beats team).
 
-**Startup safety check:** if any tier path matches Claude Code's auto memory path,
-verify `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` (for Claude Code users) or that the
-plugin is configured for OpenCode's memory path (not Claude Code's). If two agents
-could write to the same index → warn and refuse. Load-order conflict resolution:
-per-project beats cross-project for same topic; personal beats team for same tier.
+**Startup safety check:** if any tier path matches a shared memory path, verify that two
+agents could not write to the same index → warn and refuse. Load-order conflict
+resolution: per-project beats cross-project for same topic; personal beats team for same tier.
 
 **Four-tier storage:**
 
@@ -64,42 +60,13 @@ consolidation: private memories stay in `~/.agentmem/`, team memories sync to
 project/.agentmem/
 ├── MEMORY.md                    ← Index
 ├── feedback_testing.md          ← Topic file
-├── .entities.json               ← Our extensions
+├── .entities.json               ← Extensions
 └── .consolidate-lock
 
-# Claude Code compatibility (memoryPath set)
-~/.claude/projects/<project>/memory/
-├── MEMORY.md                    ← Index (shared with CC, CC memory disabled)
-├── feedback_testing.md          ← Topic file (CC-compatible frontmatter)
-├── .entities.json               ← Our extensions (ignored by CC)
-└── .consolidate-lock
 ```
-
-**Compatibility:** Claude Code topic files use YAML frontmatter (`type`, `name`,
-`description`) — identical to ours. Our additional fields (`who`, `context`,
-`confidence`, `subtype`) are ignored by Claude Code's reader. Our structured body
-(What/Why/How-to-apply/Who/Context) is valid markdown Claude Code can use. Files
-written by our plugin remain fully readable by Claude Code's built-in memory
-reader (if re-enabled).
 
 **Scoped files:** `.memory.md` in subdirectories — starts with dot to distinguish
-from topic files, our plugin discovers them by walking upward from CWD, Claude
-Code ignores them (doesn't match its discovery patterns).
-
-**Claude Code plugin structure** (from `https://docs.anthropic.com/en/docs/claude-code/plugins`):
-
-```
-.claude-plugin/plugin.json   # Manifest: name, description, version
-skills/                      # Skills as <name>/SKILL.md directories
-commands/                    # Custom commands as flat .md files
-agents/                      # Custom agent definitions (.md files)
-hooks/                       # Event handlers in hooks.json
-```
-
-Claude Code plugins use a `.claude-plugin/plugin.json` manifest. For the community
-marketplace, plugins are submitted via `claude.ai/admin-settings/directory/submissions/plugins/new`.
-The repo is the distribution mechanism for both OpenCode (ecosystem page) and
-Claude Code (community marketplace).
+from topic files, the plugin discovers them by walking upward from CWD.
 
 ---
 
@@ -179,12 +146,6 @@ opencode-memory/                       # One repo, one install
 ├── agents/
 │   ├── memory-keeper.md               # Subagent: out-of-band per-turn extraction (steps: 5)
 │   └── memory-dreamer.md              # Subagent: nightly consolidation (steps: 10)
-├── commands/
-│   ├── save-memories.md
-│   ├── dream.md
-│   ├── init-memory.md                 # Bootstrap from git history
-│   ├── forget-memory.md               # Explicit deletion (ADD-only guard)
-│   └── skip-review.md                 # Opt out of weekly review
 ├── prompts/
 │   └── agent-prompt.md                # Injected into build agent's context
 └── opencode.json.sample               # Config reference: instructions + command entries
@@ -196,7 +157,7 @@ opencode-memory/                       # One repo, one install
 |------------|-----|
 | Plain filesystem storage | Debuggable with `cat`, diffable with `git`, portable with `rsync`, no infra dependency |
 | No vector DB or embeddings | Retrieval via grep + entity index + keyword scan; no model in the retrieval path |
-| Platform-neutral `core/` | Same library powers OpenCode, Pi, CLI tools, CI pipelines |
+| Platform-neutral `core/` | Same library powers OpenCode and CI pipelines |
 | ADD-only semantics | Memories accumulate; contradictions are explicit, deletions are explicit |
 | Write-ahead log | Temp → fsync → rename for every file write; never corrupt on crash |
 | Short instructions | Agent prompt ~80 lines; model internalizes taxonomy without full text every session |
@@ -240,13 +201,6 @@ project/
 .opencode/agents/
 ├── memory-keeper.md            Agent: out-of-band per-turn extraction
 └── memory-dreamer.md           Agent: nightly consolidation
-
-.opencode/commands/
-├── save-memories.md            Slash command: invoke memory-keeper
-├── dream.md                    Slash command: invoke memory-dreamer
-├── init-memory.md              Bootstrap from git history
-├── forget-memory.md            Explicit deletion (ADD-only guard)
-└── skip-review.md              Opt out of weekly review
 ```
 
 ### Index vs topic files
@@ -2022,42 +1976,11 @@ SESSION END
 | `.opencode/tools/init-memory.ts` | TS shim → java Bootstrap.java ... | — (platform requirement) |
 | `.opencode/agents/memory-keeper.md` | Out-of-band subagent (steps: 5) | Agent prompt |
 | `.opencode/agents/memory-dreamer.md` | Second-order subagent (steps: 10) | Agent prompt |
-| `.opencode/commands/save-memories.md` | Slash command | — |
-| `.opencode/commands/dream.md` | Slash command | — |
-| `.opencode/commands/init-memory.md` | Bootstrap from git history | — |
-| `.opencode/commands/forget-memory.md` | Explicit deletion | — |
-| `.opencode/commands/skip-review.md` | Opt out of weekly review | — |
 | `prompts/agent-prompt.md` | System instructions for build agent | Agent prompt |
 
 ---
 
 ## 16. Sources
-
-### Primary: Claude Code leaked source
-Directory: `/home/nicky/code/anthropic-leaked-source-code/`
-
-| File | Extracted |
-|------|-----------|
-| `memdir/memoryTypes.ts` | 4-type taxonomy, exclusion list, frontmatter format, drift detection, recall safety |
-| `memdir/memdir.ts` | MEMORY.md index, truncation, two-step write, `buildMemoryPrompt()`, daily-log mode |
-| `memdir/paths.ts` | Storage path resolution, `isAutoMemoryEnabled()`, path security, env var overrides |
-| `memdir/memoryScan.ts` | File scanning + frontmatter parsing, `formatMemoryManifest()` |
-| `memdir/memoryAge.ts` | Staleness: `memoryAge()`, `memoryFreshnessText()`, `<system-reminder>` |
-| `memdir/findRelevantMemories.ts` | Sonnet side-query for ≤5 topic files, selector prompt |
-| `services/extractMemories/extractMemories.ts` | Out-of-band forked subagent, mutual exclusion, 5-turn budget |
-| `services/extractMemories/prompts.ts` | Extraction prompt, read-then-write strategy |
-| `services/autoDream/autoDream.ts` | Dreaming: time/session gates, scan throttle, PID lock, rollback |
-| `services/autoDream/consolidationPrompt.ts` | 4-phase dream prompt |
-| `services/autoDream/consolidationLock.ts` | Lock file mechanism, PID body, mtime, 60min staleness |
-| `services/teamMemorySync/types.ts` | API contract: GET/PUT, SHA-256 checksums, ETag, 412, 413 |
-| `services/teamMemorySync/index.ts` | Delta sync, batch splitting (200KB), secret scanning, conflict retry |
-| `tools/FileWriteTool/FileWriteTool.ts` | mtime-based optimistic lock, `readFileState`, post-write timestamp |
-| `utils/memoryFileDetection.ts` | Memory file type detection, path security |
-| `constants/prompts.ts` | `systemPromptSection('memory')` injection |
-
-### Primary: Claude Code documentation
-- `https://docs.anthropic.com/en/docs/claude-code/memory` — Full public specification
-- `https://code.claude.com/docs/llms.txt` — Documentation index
 
 ### Field survey (systems)
 - `https://docs.mem0.ai/core-concepts/memory-types` — Mem0: four-tier hierarchy (conversation → session → user → org), validates our multi-scope model. User memory is long-term personal; org memory is shared long-lived. "Avoid storing secrets or unredacted PII."

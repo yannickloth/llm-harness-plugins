@@ -329,7 +329,7 @@ export interface IncludeResult {
   included: string[]
 }
 
-export function parseClaudeMd(filePath: string, rootDir?: string): IncludeResult {
+export function parseInstructionsMd(filePath: string, rootDir?: string): IncludeResult {
   const resolved = path.resolve(filePath)
   return resolveIncludes(resolved, rootDir ?? path.dirname(resolved), new Set(), 0)
 }
@@ -408,7 +408,7 @@ function resolveIncludes(absPath: string, rootDir: string, visited: Set<string>,
   return { content, included }
 }
 
-export function parseClaudeMdText(text: string, sourceDir: string = process.cwd(), rootDir?: string): IncludeResult {
+export function parseInstructionsMdText(text: string, sourceDir: string = process.cwd(), rootDir?: string): IncludeResult {
   const paths = extractIncludePaths(text)
   let content = text
   const allIncluded: string[] = []
