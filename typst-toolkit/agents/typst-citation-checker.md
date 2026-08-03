@@ -1,6 +1,7 @@
 ---
 name: typst-citation-checker
 description: Verify all Typst citations are valid, find undefined citations, check bibliography consistency in .typ files.
+mode: subagent
 tools: Read, Glob, Grep
 model: haiku
 ---

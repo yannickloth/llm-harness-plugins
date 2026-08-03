@@ -1,6 +1,7 @@
 ---
 name: logic-auditor
 description: Audit document for circular reasoning, completeness gaps, hidden assumptions, forward references, and ambiguous statements.
+mode: subagent
 tools: Read, Glob, Grep
 model: sonnet
 ---

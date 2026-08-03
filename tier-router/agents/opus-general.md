@@ -1,6 +1,7 @@
 ---
 name: opus-general
 description: High-capability agent for complex reasoning tasks with no specialized agent available. Use when task requires deep analysis beyond Sonnet's capabilities — mathematical proofs, sophisticated logical verification, detecting subtle flaws, or high-stakes decisions where errors would be very costly.
+mode: subagent
 model: opus
 tools: Read, Edit, Write, Bash, Glob, Grep, Task
 permissionMode: acceptEdits

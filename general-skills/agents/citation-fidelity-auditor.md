@@ -1,6 +1,7 @@
 ---
 name: citation-fidelity-auditor
 description: Verify that cited sources actually support the claims they back — catches misrepresented sources, cherry-picked quotations, and scope mismatches.
+mode: subagent
 tools: Read, Glob, Grep
 model: sonnet
 ---

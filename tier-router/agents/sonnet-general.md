@@ -1,6 +1,7 @@
 ---
 name: sonnet-general
 description: Balanced agent for general tasks with no specialized agent available. Use when task requires reasoning, analysis, judgment calls, or assessing trade-offs. Default choice for non-specialized work. Handles multi-step planning, cross-referencing, and coordination.
+mode: subagent
 model: sonnet
 tools: Read, Edit, Write, Bash, Glob, Grep, Task
 permissionMode: acceptEdits

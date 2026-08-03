@@ -1,6 +1,7 @@
 ---
 name: latex-index-auditor
 description: Audit \index coverage — verify key terms, theorems, definitions, and named concepts are indexed, and index entries are consistent.
+mode: subagent
 tools: Read, Glob, Grep
 model: haiku
 ---

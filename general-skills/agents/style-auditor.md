@@ -1,6 +1,7 @@
 ---
 name: style-auditor
 description: Audit writing for AI-generated markers, rhetorical calibration, tone, and vocabulary precision. Pair with style-naturalizer for rewriting flagged passages.
+mode: subagent
 tools: Read, Glob, Grep
 model: sonnet
 ---

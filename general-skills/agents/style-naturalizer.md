@@ -1,6 +1,7 @@
 ---
 name: style-naturalizer
 description: Transform AI-typical writing patterns into natural human prose. Pairs with style-auditor which flags issues; this agent rewrites flagged passages.
+mode: subagent
 tools: Read, Edit
 model: sonnet
 ---

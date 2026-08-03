@@ -1,6 +1,7 @@
 ---
 name: xref-checker
 description: Audit internal cross-references — verify labels resolve, detect broken refs, orphans, duplicates. Adapts to project citation format (LaTeX, Typst, Markdown, reST, AsciiDoc).
+mode: subagent
 tools: Read, Glob, Grep, Bash
 model: sonnet
 ---

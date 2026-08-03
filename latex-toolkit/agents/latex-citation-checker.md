@@ -1,6 +1,7 @@
 ---
 name: latex-citation-checker
 description: Verify all LaTeX citations are valid, find undefined citations, check bibliography consistency.
+mode: subagent
 tools: Read, Glob, Grep
 model: haiku
 ---

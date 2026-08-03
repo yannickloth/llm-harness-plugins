@@ -1,6 +1,7 @@
 ---
 name: proof-soundness-auditor
 description: Deep adversarial review of formal proofs for logical soundness, hidden assumptions, gap detection, and circularity.
+mode: subagent
 tools: Read, Glob, Grep
 model: sonnet
 ---

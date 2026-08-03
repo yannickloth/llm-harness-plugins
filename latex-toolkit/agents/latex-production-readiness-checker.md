@@ -1,6 +1,7 @@
 ---
 name: latex-production-readiness-checker
 description: Scan LaTeX files for TODO markers, placeholders, debug artifacts, draft mode, and production issues.
+mode: subagent
 tools: Read, Glob, Grep, Bash
 model: haiku
 ---

@@ -1,6 +1,7 @@
 ---
 name: haiku-general
 description: Fast, cost-effective agent for mechanical tasks with no specialized agent available. Use when task requires speed over reasoning and involves no judgment calls or significant consequences. Explicit file paths required for modifications.
+mode: subagent
 model: haiku
 tools: Read, Edit, Write, Bash, Glob, Grep, Task
 permissionMode: acceptEdits
