@@ -4,5 +4,6 @@
 .agentmem/.history/
 .history/
 .opencode/
+tmp/
 .vscode/
 **/build/
