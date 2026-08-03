@@ -48,7 +48,7 @@
 
 **Existing plugin overlap:**
 - **guardrail-chain:** Partial — `PromptGuard` does deterministic regex injection-checking (5 patterns) at Warn level. `PathValidator` does realpath containment. BUT: no LLM, no fail-closed, no two-stage thinking, no safe-tool allowlist, no cost telemetry, no denial tracking. guardrail-chain gates *content*, not *tool actions*.
-- **tier-router:** Partial — `LlmClassifier` classifies prompts into model tiers (fable/haiku/sonnet/opus) with keyword + LLM two-stage. BUT: fail-open (null → keyword pass-through), no deep-reason second stage, no blocking semantics, no iron-gate config.
+- **tier-router:** Partial — `LlmClassifier` classifies prompts into model tiers (fable/haiku/sonnet/opus) with keyword + LLM two-stage. `SkillAxis` classifier maps prompts to 18 COEOS skill axes with retry-pool escalation (cheaper initial model → quality-specialist). BUT: fail-open (null → keyword pass-through), no deep-reason second stage, no blocking semantics, no iron-gate config.
 - **Gap:** A tool-action security classifier with fail-closed + two-stage CoT + iron gate + cost telemetry is entirely missing. guardrail-chain (regex) + tier-router (routing classifier) provide pieces, but the full YOLO pattern requires a new plugin or substantial guardrail-chain extension.
 
 **Effort:** High · **Risk:** Medium (API cost, latency) · **Impact:** Very High
@@ -76,7 +76,7 @@
 **Opencode applicability:** Tool retry loops, auto-compact equivalents, permission mode transitions. Add `CircuitBreaker` utility with configurable thresholds + stale-snapshot-safe transforms.
 
 **Existing plugin overlap:**
-- **tier-router:** Partial — `BudgetTracker` implements session token budget with ceiling+exhaustion threshold (monotonic 500K). BUT: budget-based, not consecutive-failure-based; no transform-function pattern; no auto-compact, denial, or classifier-unavailability breakers.
+- **tier-router:** Partial — `BudgetTracker` implements session token budget with ceiling+exhaustion threshold (monotonic 500K). `SkillAxis` retry-pool routing auto-escalates from cheaper initial model to quality-specialist after 2 non-converging rounds — a domain-scoped circuit breaker. BUT: budget-based, not consecutive-failure-based; no transform-function pattern; no auto-compact, denial, or classifier-unavailability breakers.
 - **session-lifecycle:** None — tracks edits/commits/archival, surfaces errors to `hook-errors.log`, but has no failure thresholds, no retry-loop protection, no compaction. Natural host for the auto-compact breaker (already knows session idle state).
 - **Gap:** A general `CircuitBreaker` utility + auto-compact breaker in session-lifecycle + denial tracking + iron-gate config for classifiers is absent.
 
@@ -286,10 +286,11 @@ plugin → userSettings → projectSettings → localSettings → flagSettings �
 |---|---------|--------|------|--------|----------------|--------|
 | 1  | Uncached prompt section API | Low | Low | High | **None** (absent everywhere) | **New implementation** |
 | 2  | YOLO classifier | High | Medium | Very High | **Partial** (guardrail-chain regex + tier-router routing classifier) | **New plugin** — extend guardrail-chain with LLM classifier + fail-closed |
-| 3  | Circuit breakers | Medium | Low | High | **Partial** (tier-router token budget; session-lifecycle idle tracking) | **New utility** — add budget/denial/compact breakers |
+| 3  | Circuit breakers | Medium | Low | High | **Partial** (tier-router token budget + retry-pool; session-lifecycle idle tracking) | **New utility** — add budget/denial/compact breakers |
 | 4  | AI-as-Moderator for Memory | — | — | — | **FULL + ENHANCED** (agentmem implements all pillars + budget + verifier) | **Skipped** — agentmem already ships it; enhanced with budget + verifier |
 | 5  | Permission modes | Medium | Medium | High | **None** (absent everywhere) | **New plugin** |
 | 6  | Plugin marketplace | Very High | High | Very High | **None** (flat dirs, no marketplace infra) | **New infrastructure** |
+| 11 | COEOS skill-axis routing | — | — | — | **DONE** (tier-router: 18 axes, retry-pool escalation, config-driven) | **Implemented** — `SkillAxis` + `SkillAxisMapping` + `Classifier.skillAxisMatch()` + JSON config |
 | 7  | `@include` directive | Low | Low | Medium | **DONE** | **Implemented** — shared/claudemd.ts (480 loc, token walker + containment) + context-includes/ plugin (session-start injector) |
 | 8  | Cascading config merge | Medium | Low | Medium | **None** (single-file JSON per plugin) | **New implementation** |
 | 9  | Transcript exclusion | Very Low | None | Medium | **DONE** | **Implemented** — TranscriptFilter.java (zero-dep JSON parser, 286 loc, 13 tests) + guardrail-chain opencode tool |
@@ -347,4 +348,5 @@ Phase 4 (ecosystem):    #6 plugin marketplace
 | 3 | knowledge-graph | Classify static overview cached, dynamic injections uncached (#1/#10) | Low (~50 loc) | ✅ Done — static header+overview as cachedSection(), per-file subgraph as uncachedSection() |
 | 4 | session-lifecycle | Add auto-compact breaker (#3) | Medium (~100 loc) | |
 | 5 | tier-router | Circuit-breaker on classifier fallback (#3) | Medium (~120 loc) | |
-| 6 | agentmem | Per-session memory token budget + optional live-verification agent (#4) | Medium (~200 loc) | ✅ Done — `MemoryBudget.java` (394 loc), `MemoryVerifier.java` (198 loc), `memory-verifier.md` (41 loc), budget + verification tools |
+| 6 | tier-router | COEOS skill-axis routing with retry-pool escalation | Medium (~500 loc) | ✅ Done — `SkillAxis.java` (18 axes), `SkillAxisMapping.java` (initial/specialist pool), `SkillAxisConfig.java` (JSON loader), `Classifier.skillAxisMatch()` (200+ keyword triggers), `RouterEngine` retry-pool branch, directive updates across shell/TS/Pi backends. Config-driven via `skill-axis-mapping.json`. |
+| 7 | agentmem | Per-session memory token budget + optional live-verification agent (#4) | Medium (~200 loc) | ✅ Done — `MemoryBudget.java` (394 loc), `MemoryVerifier.java` (198 loc), `memory-verifier.md` (41 loc), budget + verification tools |
