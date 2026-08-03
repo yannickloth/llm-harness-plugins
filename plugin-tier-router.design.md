@@ -53,10 +53,11 @@ User Prompt
     ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ Directive injected into LLM context                          │
-│  DIRECT → Task tool spawns fable/haiku/sonnet/opus-general   │
-│  ESCALATE → Task tool spawns sonnet-general (router)         │
-│  Ambiguous → agent asks user clarification questions,         │
-│              re-processes after user replies                  │
+│  Skill-axis fleet → Task tool with init→specialist model IDs │
+│  DIRECT + tier   → Task tool spawns fable/haiku/sonnet/opus  │
+│  ESCALATE        → Task tool spawns sonnet-general (router)  │
+│  Ambiguous       → agent asks user clarification questions,   │
+│                     re-processes after user replies            │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -107,6 +108,31 @@ tier-router/
 | opus-general | opus | ~75x | Deep reasoning: prove theorems, formal verification, math |
 
 Each agent defines responsibilities, safety protocols, and escalation rules. See `agents/*.md`.
+
+## Model Resolution Priority
+
+When the tier-router is active, agent-declared models may be overridden. The router selects the execution path; the active path determines which model is used.
+
+```
+Priority chain (first match wins):
+1. Skill-axis fleet match → direct model IDs from skill-axis-mapping.json
+   (no agent involved; tier-agent model ignored)
+2. Tier keyword/LLC match  → tier agent (haiku-general etc.) → its model
+3. ESCALATE                  → sonnet-general → its model
+4. Router not active         → called agent → its own model
+```
+
+| Router output | Agent invoked | Model used | Source |
+|---|---|---|---|
+| Skill-axis `fleetModels=[init, specialist]` | *(none)* | `init` → `specialist` | `skill-axis-mapping.json` |
+| `DIRECT` + `tier=FABLE` | `fable-general` | its declared model | agent `.md` → `opencode.json` |
+| `DIRECT` + `tier=HAIKU` | `haiku-general` | its declared model | agent `.md` → `opencode.json` |
+| `DIRECT` + `tier=SONNET` | `sonnet-general` | its declared model | agent `.md` → `opencode.json` |
+| `DIRECT` + `tier=OPUS` | `opus-general` | its declared model | agent `.md` → `opencode.json` |
+| `ESCALATE` | `sonnet-general` | its declared model | agent `.md` → `opencode.json` |
+| No router active / direct call | (any agent) | its declared model | agent `.md` → `opencode.json` |
+
+Tier-agent models are fallback/default paths. Fleet models in `skill-axis-mapping.json` are the preferred path when a skill axis triggers. Custom agents (e.g. `*-auditor`) are consulted only when the router is absent or inactive.
 
 ## Classification Pipeline (10 steps)
 
