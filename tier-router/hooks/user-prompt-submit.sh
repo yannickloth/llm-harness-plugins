@@ -88,11 +88,15 @@ fi
 
 # Step 2: Classify + rewrite (with memory signals if loaded)
 export TIER_ROUTER_METRICS_DIR="$METRICS_DIR"
+export TIER_ROUTER_PLUGIN_ROOT="$PLUGIN_ROOT"
 ROUTING_OUTPUT=$(java --class-path "$CLASSES_DIR" "$MAIN_CLASS" route 2>/dev/null <<< "$USER_REQUEST" || echo '{"decision":"escalate","tier":"sonnet","reason":"classification_failed","confidence":0.5}')
 
 # Step 3: Extract fields
 DECISION=$(echo "$ROUTING_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('decision','escalate'))" 2>/dev/null || echo "escalate")
 TIER=$(echo "$ROUTING_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tier','sonnet'))" 2>/dev/null || echo "sonnet")
+FLEET_MODELS=$(echo "$ROUTING_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); models=d.get('fleet_models',[]); print(' '.join(models))" 2>/dev/null || echo "")
+FLEET_FIRST=$(echo "$FLEET_MODELS" | awk '{print $1}')
+FLEET_REST=$(echo "$FLEET_MODELS" | awk '{for(i=2;i<=NF;i++) printf "%s ",$i;}' | xargs)
 REASON=$(echo "$ROUTING_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('reason','no reason'))" 2>/dev/null || echo "no reason")
 CONFIDENCE=$(echo "$ROUTING_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('confidence',0.5))" 2>/dev/null || echo "0.5")
 REWRITTEN=$(echo "$ROUTING_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('rewritten_prompt',''))" 2>/dev/null || echo "$USER_REQUEST")
@@ -100,6 +104,7 @@ REWRITTEN=$(echo "$ROUTING_OUTPUT" | python3 -c "import sys,json; d=json.load(sy
 # Log to stderr for visibility
 echo "[tier-router] Decision: $DECISION" >&2
 echo "[tier-router] Tier: $TIER" >&2
+echo "[tier-router] Fleet models: $FLEET_MODELS" >&2
 echo "[tier-router] Reason: $REASON" >&2
 echo "[tier-router] Confidence: $CONFIDENCE" >&2
 
@@ -119,7 +124,23 @@ cat <<EOF
 ROUTING DIRECTIVE — MANDATORY ACTION REQUIRED. No interpretation allowed.
 
 Decision: $DECISION
+EOF
+
+if [ -n "$FLEET_FIRST" ] && [ "$FLEET_FIRST" != "null" ]; then
+    cat <<EOF
+Skill Axis Match — Fleet Models (try in order):
+  1 [INITIAL]:  $FLEET_FIRST
+EOF
+    if [ -n "$FLEET_REST" ]; then
+        echo "  2 [SPECIALIST]: $FLEET_REST"
+    fi
+else
+    cat <<EOF
 Tier: $TIER-general
+EOF
+fi
+
+cat <<EOF
 Reason: $REASON
 Confidence: $CONFIDENCE
 
@@ -128,7 +149,24 @@ ACTION INSTRUCTIONS:
 - You MUST use the Task tool to invoke the appropriate agent
 EOF
 
-if [ "$DECISION" = "escalate" ]; then
+if [ -n "$FLEET_FIRST" ] && [ "$FLEET_FIRST" != "null" ]; then
+    cat <<INNER
+- You MUST first attempt with model: $FLEET_FIRST
+EOF
+    if [ -n "$FLEET_REST" ]; then
+        cat <<INNER
+- If $FLEET_FIRST fails to converge after 2 rounds, escalate to model: $FLEET_REST
+- $FLEET_REST is the quality-specialist for this skill axis — more expensive but proven on complex tasks
+INNER
+    fi
+    cat <<INNER
+- You MUST pass the user's original request below
+- You MUST NOT ask clarifying questions about routing
+- Execute immediately with no hesitation
+
+ORIGINAL PROMPT: $USER_REQUEST
+INNER
+elif [ "$DECISION" = "escalate" ]; then
     cat <<'INNER'
 - You MUST invoke the sonnet-general agent with the user's request
 - You MUST NOT ask clarifying questions about routing

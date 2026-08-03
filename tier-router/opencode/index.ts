@@ -9,6 +9,7 @@ const mainClass = "eu.infolead.llmhp.router.RouterCli"
 async function classifyPrompt(prompt: string): Promise<{
   decision: string
   tier: string
+  fleet_models: string[]
   reason: string
   confidence: number
   rewritten_prompt: string
@@ -21,6 +22,7 @@ async function classifyPrompt(prompt: string): Promise<{
     return {
       decision: "escalate",
       tier: "sonnet",
+      fleet_models: [],
       reason: "classification failed — defaulting to sonnet",
       confidence: 0.5,
       rewritten_prompt: prompt,
@@ -40,10 +42,14 @@ async function checkAmbiguity(prompt: string): Promise<string | null> {
 function generateRoutingDirective(result: {
   decision: string
   tier: string
+  fleet_models: string[]
   reason: string
   confidence: number
   rewritten_prompt: string
 }): string {
+  const fleetModels = result.fleet_models ?? []
+  const hasFleet = fleetModels.length > 0
+
   if (result.decision === "escalate") {
     return `<routing-recommendation>
 ROUTING DIRECTIVE — MANDATORY ACTION REQUIRED. No interpretation allowed.
@@ -60,6 +66,32 @@ ACTION INSTRUCTIONS:
 - Execute immediately with no hesitation
 
 ORIGINAL PROMPT (rewritten): ${result.rewritten_prompt}
+</routing-recommendation>`
+  }
+
+  if (hasFleet) {
+    const [initial, specialist] = fleetModels
+    const specialistLine = specialist
+      ? `\n  2 [SPECIALIST]: ${specialist}\n  If ${initial} fails to converge after 2 rounds, escalate to ${specialist} — quality-specialist for this skill axis.`
+      : ""
+
+    return `<routing-recommendation>
+ROUTING DIRECTIVE — MANDATORY ACTION REQUIRED. No interpretation allowed.
+
+Decision: DIRECT
+Skill Axis Match — Fleet Models (try in order):
+  1 [INITIAL]:  ${initial}${specialistLine}
+Reason: ${result.reason}
+Confidence: ${result.confidence.toFixed(2)}
+
+ACTION INSTRUCTIONS:
+- You MUST NOT handle this request directly
+- You MUST use the Task tool to invoke an agent using model: ${initial}
+- You MUST pass the user's original request below
+- You MUST NOT ask clarifying questions
+- Execute immediately with no hesitation
+
+ORIGINAL PROMPT: ${result.rewritten_prompt}
 </routing-recommendation>`
   }
 

@@ -1,6 +1,7 @@
 package eu.infolead.llmhp.router;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
  * CLI for tier-router engine. Invoked by OpenCode/Claude Code/Pi plugins via shell.
@@ -8,6 +9,36 @@ import java.nio.file.Path;
 final class RouterCli {
 
     private static final RouterEngine engine = new RouterEngine();
+
+    static {
+        loadSkillAxisConfig();
+    }
+
+    private static void loadSkillAxisConfig() {
+        var configPath = skillAxisConfigPath();
+        if (configPath != null) {
+            var mappings = SkillAxisConfig.load(configPath);
+            if (!mappings.isEmpty()) {
+                engine.setSkillAxisMappings(SkillAxisConfig.toMap(mappings));
+                System.err.println("[tier-router] loaded %d skill-axis mappings from %s".formatted(
+                    mappings.size(), configPath));
+            }
+        }
+    }
+
+    private static Path skillAxisConfigPath() {
+        var env = System.getenv("TIER_ROUTER_SKILL_AXIS_CONFIG");
+        if (env != null && !env.isBlank()) return Path.of(env);
+        var pluginRoot = System.getenv("TIER_ROUTER_PLUGIN_ROOT");
+        if (pluginRoot != null && !pluginRoot.isBlank())
+            return Path.of(pluginRoot, "skill-axis-mapping.json");
+        var cwd = Paths.get("").toAbsolutePath();
+        var local = cwd.resolve("tier-router/skill-axis-mapping.json");
+        if (java.nio.file.Files.exists(local)) return local;
+        local = cwd.resolve("skill-axis-mapping.json");
+        if (java.nio.file.Files.exists(local)) return local;
+        return null;
+    }
 
     void main(String[] args) throws Exception {
         if (args.length == 0) {

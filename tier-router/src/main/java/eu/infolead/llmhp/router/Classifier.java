@@ -1,7 +1,10 @@
 package eu.infolead.llmhp.router;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -98,6 +101,135 @@ final class Classifier {
     boolean isMetaRouting(String request) {
         var lower = request.toLowerCase();
         return META_ROUTING_VERBS.stream().anyMatch(lower::contains);
+    }
+
+    private static final Map<SkillAxis, List<String>> AXIS_KEYWORDS = new LinkedHashMap<>();
+    static {
+        AXIS_KEYWORDS.put(SkillAxis.CREATIVE, List.of(
+            "write a story", "creative writing", "brainstorm", "story idea",
+            "poem", "creative", "fiction", "plot", "worldbuilding", "ideate",
+            "generate ideas", "narrative"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.REDACTION_PRO, List.of(
+            "rewrite", "edit this", "proofread", "redact", "polish",
+            "improve writing", "rephrase", "clarify text", "professional tone",
+            "formal writing", "redact_pro", "enhance writing"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.LEGAL_GDPR, List.of(
+            "gdpr", "data privacy", "personal data", "consent", "data subject",
+            "right to be forgotten", "dsar", "privacy policy", "ccpa",
+            "data protection", "legal privacy"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.LEGAL_COMPLEX, List.of(
+            "legal", "contract", "compliance", "jurisdiction", "statute",
+            "regulation", "liability", "terms of service", "nda",
+            "intellectual property", "patent", "copyright"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.REASONING, List.of(
+            "reasoning", "prove", "theorem", "logic", "deduction",
+            "induction", "formal proof", "logical", "syllogism", "modus ponens",
+            "contradiction", "paradox", "fallacy", "entailment"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.CALCULATION, List.of(
+            "calculate", "compute", "arithmetic", "equation", "formula",
+            "math problem", "numerical", "solve for", "derivative", "integral",
+            "statistics", "probability", "regression", "sum", "product"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.PYTHON, List.of(
+            "python", "pandas", "numpy", "pytest", "django", "flask",
+            "fastapi", "pytorch", "tensorflow", "matplotlib", "scipy",
+            "pip install", "scikit-learn", "uvicorn", "asyncio",
+            "python script", ".py file"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.CODE_GENERAL, List.of(
+            "write code", "implement function", "create class", "add method",
+            "code this", "programming", "api endpoint", "rest api",
+            "graphql", "unit test", "integration test", "dockerfile",
+            "ci/cd", "pipeline", "github actions", "javascript", "typescript",
+            "golang", "rustlang", "ruby", "elixir", "sql", "database schema"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.DEBUG, List.of(
+            "debug", "bug", "error", "exception", "crash", "stack trace",
+            "segfault", "traceback", "fix issue", "fix this error",
+            "not working", "broken", "null pointer", "index out of bounds",
+            "undefined", "nan", "race condition", "deadlock", "memory leak",
+            "bottleneck", "slow", "hangs", "timeout"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.REACT, List.of(
+            "react", "jsx", "component", "useState", "useEffect", "useRef",
+            "useMemo", "useCallback", "props", "jsx", "next.js", "vite",
+            "react native", "redux", "zustand", "react hook", "virtual dom",
+            "css modules", "styled components", "tailwind component",
+            "frontend", "ui component", "user interface"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.SWIFT, List.of(
+            "swift", "swiftui", "uikit", "xcode", "ios", "macos",
+            "watchos", "visionos", "avfoundation", "appkit", "combine",
+            "arkit", "core data", "core graphics"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.REFACTORING, List.of(
+            "refactor", "restructure", "clean up code", "simplify",
+            "extract method", "extract class", "reduce duplication",
+            "improve readability", "reorganize", "decouple",
+            "remove duplication", "dry principle", "single responsibility",
+            "extract", "split class", "rename method", "move method",
+            "code cleanup", "technical debt"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.PLAN_DECOMP, List.of(
+            "break down", "decompose", "subtasks", "task list",
+            "step by step plan", "divide into", "work breakdown",
+            "milestones", "phases", "what are the steps", "how to approach",
+            "incremental", "split into", "migrate", "migration"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.PLAN_SPEC, List.of(
+            "specification", "requirements", "spec doc", "design document",
+            "tech spec", "architecture decision", "api design",
+            "system design", "data model", "schema design", "erd",
+            "uml", "class diagram", "gather requirements"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.PLAN_JUDGMENT, List.of(
+            "should I", "which approach", "trade-off", "tradeoff",
+            "better to", "recommend", "decide between", "pros and cons",
+            "compare", "versus", "vs ", "best practice", "best tool for",
+            "which framework", "which language", "evaluate",
+            "which is better", "which database", "or should I",
+            "what would you choose", "postgresql or", "mongodb or",
+            "react or", "vue or", "angular or", "django or", "flask or",
+            "pros cons", "what are the trade"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.FAST_TOOLS, List.of(
+            "find file", "search for", "list files", "where is",
+            "grep", "locate", "which file has", "show me the",
+            "what does this do", "explain this code", "summary of",
+            "summarize", "quick answer", "quick fix", "one line",
+            "short answer", "brief", "concise", "tl;dr"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.AGENT_EXEC, List.of(
+            "agent", "subagent", "spawn", "delegate", "task tool",
+            "parallel agent", "multi-agent", "orchestrate", "fan out",
+            "routing", "dispatch"
+        ));
+        AXIS_KEYWORDS.put(SkillAxis.AGENT_SAFETY, List.of(
+            "safe", "guardrail", "moderation", "content filter",
+            "harmful", "inappropriate", "policy violation", "unsafe",
+            "security audit", "vulnerability", "injection", "xss",
+            "sql injection", "csrf", "sanitize", "escape", "validate input"
+        ));
+    }
+
+    Optional<SkillAxis> skillAxisMatch(String request) {
+        var lower = request.toLowerCase();
+        SkillAxis best = null;
+        int bestHits = 0;
+        for (var entry : AXIS_KEYWORDS.entrySet()) {
+            int hits = (int) entry.getValue().stream().filter(lower::contains).count();
+            if (hits > bestHits) {
+                bestHits = hits;
+                best = entry.getKey();
+            }
+        }
+        if (bestHits >= 2) return Optional.of(best);
+        return Optional.empty();
     }
 
     boolean explicitFileMentioned(String request) {

@@ -1,0 +1,33 @@
+{
+  "comment": "COEOS SE TMB Skill-Axis → Fleet Model Mapping. Source: TMB Settings (2026-07-22). Fleet: deepseek-v4-pro, deepseek-v4-flash, kimi-k3, kimi-k2.7-code, kimi-k2.6.",
+  "benchmark_source": "https://themonoclebear.com/en/blog/coeos-divide-and-route/ | https://github.com/Odyssai-eu/coeos-SE/tree/main/coeos_se",
+  "strategy": "retry-pool-escalate",
+  "rationale": "Each axis has a ranked model list: cheaper model first [initial], quality-specialist [model] second. The agent tries initial first. If it fails to converge after 2 rounds, escalates to the quality-specialist. On axes where the cheapest model IS the quality-specialist, no initial is set (deepseek-primary axes).",
+  "pricing": {
+    "deepseek/deepseek-v4-pro":       {"input": 0.435, "output": 0.87,  "source": "api-docs.deepseek.com"},
+    "deepseek/deepseek-v4-flash":     {"input": 0.14,  "output": 0.28,  "source": "api-docs.deepseek.com"},
+    "kimi/kimi-k3":                   {"input": 3.00,  "output": 15.00, "source": "platform.kimi.ai"},
+    "kimi-for-coding/kimi-k2.7-code": {"input": 0.71,  "output": 3.50,  "source": "OpenRouter"},
+    "kimi-for-coding/kimi-k2.6":      {"input": 0.589, "output": 2.48,  "source": "OpenRouter"}
+  },
+  "mappings": [
+    {"axis": "creative",        "model": "kimi/kimi-k3",                    "initial": "deepseek/deepseek-v4-pro",  "matchType": "direct",      "note": "TMB king, direct match",    "score": 97.8},
+    {"axis": "redaction_pro",   "model": "deepseek/deepseek-v4-pro",        "initial": null,                         "matchType": "direct",      "note": "TMB king, direct match",    "score": 100.0},
+    {"axis": "legal_gdpr",      "model": "kimi/kimi-k3",                    "initial": "deepseek/deepseek-v4-pro",  "matchType": "direct",      "note": "TMB king, direct match",    "score": 100.0},
+    {"axis": "legal_complex",   "model": "kimi/kimi-k3",                    "initial": "deepseek/deepseek-v4-pro",  "matchType": "generalist",  "note": "No ring2.6; best available", "score": 99.0},
+    {"axis": "reasoning",       "model": "deepseek/deepseek-v4-pro",        "initial": null,                         "matchType": "direct",      "note": "TMB king, direct match",    "score": 100.0},
+    {"axis": "calculation",     "model": "deepseek/deepseek-v4-pro",        "initial": null,                         "matchType": "direct",      "note": "TMB king, direct match",    "score": 100.0},
+    {"axis": "python",          "model": "kimi/kimi-k3",                    "initial": "deepseek/deepseek-v4-pro",  "matchType": "direct",      "note": "k2.7-code is coding; k3 owns Python", "score": 97.8},
+    {"axis": "code_general",    "model": "kimi/kimi-k3",                    "initial": "deepseek/deepseek-v4-pro",  "matchType": "direct",      "note": "Best generalist coder",    "score": 97.9},
+    {"axis": "debug",           "model": "deepseek/deepseek-v4-pro",        "initial": null,                         "matchType": "direct",      "note": "TMB king, direct match",    "score": 100.0},
+    {"axis": "react",           "model": "deepseek/deepseek-v4-pro",        "initial": null,                         "matchType": "direct",      "note": "TMB king, direct match",    "score": 98.0},
+    {"axis": "swift",           "model": "kimi/kimi-k3",                    "initial": "deepseek/deepseek-v4-pro",  "matchType": "direct",      "note": "TMB king, direct match",    "score": 99.0},
+    {"axis": "refactoring",     "model": "deepseek/deepseek-v4-pro",        "initial": null,                         "matchType": "generalist",  "note": "No minimax3; best available", "score": 97.0},
+    {"axis": "plan_decomp",     "model": "kimi-for-coding/kimi-k2.7-code",  "initial": "deepseek/deepseek-v4-pro",  "matchType": "direct",      "note": "TMB king, direct match",    "score": 100.0},
+    {"axis": "plan_spec",       "model": "deepseek/deepseek-v4-pro",        "initial": null,                         "matchType": "generalist",  "note": "No o3-equivalent; best available", "score": 95.0},
+    {"axis": "plan_judgment",   "model": "kimi/kimi-k3",                    "initial": "deepseek/deepseek-v4-pro",  "matchType": "direct",      "note": "TMB king, direct match",    "score": 100.0},
+    {"axis": "fast_tools",      "model": "deepseek/deepseek-v4-flash",      "initial": null,                         "matchType": "generalist",  "note": "Flash for speed; highspeed not used (more expensive, same quality)", "score": 90.0},
+    {"axis": "agent_exec",      "model": "kimi-for-coding/kimi-k2.6",       "initial": "deepseek/deepseek-v4-pro",  "matchType": "direct",      "note": "TMB king, direct match",    "score": 100.0},
+    {"axis": "agent_safety",    "model": "deepseek/deepseek-v4-pro",        "initial": null,                         "matchType": "generalist",  "note": "No mistral-l3; best available", "score": 95.0}
+  ]
+}
