@@ -67,6 +67,22 @@ export default function guardrailChainPi(pi: any) {
   }
   pi.registerTool(checkPath)
 
+  const transcriptFilter: any = {
+    name: "gcl-transcript-filter",
+    label: "Filter Transcript",
+    description: "Strip assistant-role messages from a transcript JSON array before feeding to a secondary LLM. Prevents prompt injection via assistant-controlled text.",
+    parameters: {} as any,
+    async execute(toolCallId: string, params: Record<string, unknown>, signal: AbortSignal | undefined, _onUpdate: any, ctx: ToolCtx) {
+      const transcript = String(params.transcript ?? "")
+      const args = ["java", "--class-path", classpath, JAVA_CLASS, "transcript-filter", transcript]
+      const result = Bun.spawnSync(["sh", "-c", args.join(" ")])
+      const output = result.stdout.toString().trim() || result.stderr.toString().trim()
+      if (result.exitCode !== 0) return { content: [{ type: "text", text: "ERROR: " + output }], isError: true }
+      return { content: [{ type: "text", text: output }] }
+    },
+  }
+  pi.registerTool(transcriptFilter)
+
   pi.on("tool_result", (event: any, ctx: any) => {
     const toolName = event.toolName
     if (toolName !== "write" && toolName !== "edit") return undefined

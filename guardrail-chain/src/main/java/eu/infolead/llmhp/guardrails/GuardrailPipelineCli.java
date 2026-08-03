@@ -70,6 +70,13 @@ public class GuardrailPipelineCli {
                 System.out.println(pipelineResultToJson(result));
                 if (result.blocked()) System.exit(1);
             }
+            case "transcript-filter" -> {
+                var transcript = readStdinOrArg(args, 1);
+                var filter = new TranscriptFilter();
+                var result = filter.filter(transcript);
+                System.out.println(transcriptFilterToJson(result));
+                if (result.error()) System.exit(1);
+            }
             default -> { System.err.println("Unknown: " + cmd); System.exit(1); }
         }
     }
@@ -106,6 +113,15 @@ public class GuardrailPipelineCli {
             pr.blocked(), pr.warnings(), blocks, warns);
     }
 
+    static String transcriptFilterToJson(TranscriptFilter.FilterResult r) {
+        if (r.error()) {
+            return "{\"error\":true,\"errorMessage\":\"%s\",\"originalCount\":0,\"filteredCount\":0,\"strippedCount\":0,\"json\":\"[]\"}".formatted(
+                escapeJson(r.errorMessage()));
+        }
+        return "{\"error\":false,\"originalCount\":%d,\"filteredCount\":%d,\"strippedCount\":%d,\"json\":\"%s\"}".formatted(
+            r.originalCount(), r.filteredCount(), r.strippedCount(), escapeJson(r.json()));
+    }
+
     static String escapeJson(String s) {
         if (s == null) return "null";
         var sb = new StringBuilder();
@@ -135,6 +151,7 @@ public class GuardrailPipelineCli {
               pre-write <targetPath> <containmentDir> <content> [protected...]
               input-filter [prompt|-stdin]
               output-filter [output|-stdin]
+              transcript-filter [json|-stdin]
               Use -- to read content from stdin.
             """);
     }

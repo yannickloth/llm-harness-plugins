@@ -13,7 +13,7 @@ function java(args: string[]): Promise<{ stdout: string; stderr: string; exitCod
 }
 
 export default async ({ project, client, $_, directory, worktree }: Parameters<Plugin>[0]) => {
-  console.log("[guardrail-chain] plugin active — 3 tools (scan-secrets, check-injection, check-path)")
+  console.log("[guardrail-chain] plugin active — 4 tools (scan-secrets, check-injection, check-path, transcript-filter)")
   const root = worktree ?? directory
 
   return {
@@ -48,6 +48,17 @@ export default async ({ project, client, $_, directory, worktree }: Parameters<P
         },
         async execute(args) {
           const result = await $`java --class-path ${classesDir} ${mainClass} check-path ${args.target} ${args.containment}`.nothrow().text()
+          return result.trim()
+        },
+      }),
+
+      "transcript-filter": tool({
+        description: "Strip assistant-role messages from a transcript JSON array before feeding to a secondary LLM. Prevents prompt injection via assistant-controlled text.",
+        args: {
+          transcript: tool.schema.string().describe("JSON transcript array of messages with role+content fields"),
+        },
+        async execute(args) {
+          const result = await $`java --class-path ${classesDir} ${mainClass} transcript-filter ${args.transcript}`.nothrow().text()
           return result.trim()
         },
       }),
