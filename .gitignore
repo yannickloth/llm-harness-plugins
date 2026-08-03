@@ -2,6 +2,7 @@
 .agentmem/.consolidate-lock
 .agentmem/.cold/
 .agentmem/.history/
+.history/
 .opencode/
 .vscode/
 **/build/
