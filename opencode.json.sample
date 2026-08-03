@@ -14,7 +14,8 @@
     "./prompt-registry/opencode/index.ts",
     "./typst-toolkit/opencode/index.ts",
     "./latex-toolkit/opencode/index.ts",
-    "./general-skills/opencode/index.ts"
+    "./general-skills/opencode/index.ts",
+    "./permission-modes/opencode/index.ts"
   ],
   "agent": {
     "memory-keeper": {

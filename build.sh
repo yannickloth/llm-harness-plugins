@@ -79,6 +79,7 @@ compile_plugin "knowledge-graph"
 compile_plugin "tier-router" "$SHARED_CP"
 compile_plugin "semantic-cache"
 compile_plugin "prompt-registry"
+compile_plugin "permission-modes"
 
 # session-lifecycle has its own build.sh that includes SHARED_CP
 if [ -f "$SCRIPT_DIR/session-lifecycle/build.sh" ]; then
@@ -146,3 +147,6 @@ run_tests "guardrail-chain"
 run_tests "prompt-registry"
 run_tests "shared"
 run_tests "tier-router" "$SHARED_CP"
+run_tests "permission-modes"
+echo "--- Running permission-modes TS tests ---"
+bun test "$SCRIPT_DIR/permission-modes/opencode/index.test.ts" || echo "permission-modes TS tests: FAILED (bun not available?)"

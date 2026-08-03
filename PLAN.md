@@ -4,8 +4,8 @@ Patterns → plugins crosswalk + new plugin candidates + changes for existing pl
 Analysis date: 2026-07-29. Last updated: 2026-07-29.
 Source: _GenAI Design Patterns_ catalog (6 parts, ~30 patterns, 7 candidates) × 7 plugins.
 
-**Status**: 7/18 done (39%) — ✅ `budget-circuit-breaker` + `semantic-cache` + `tier-router:session-budget` + `tier-router:user-memory→routing` + `agentmem:extract-guardrail-pipeline` + `guardrail-chain` + `prompt-registry`
-| New plugins: 4/7 ✅  |  Existing changes: 3/25 ✅  |  Total: 7/32
+**Status**: 8/19 done (42%) — ✅ `budget-circuit-breaker` + `semantic-cache` + `tier-router:session-budget` + `tier-router:user-memory→routing` + `agentmem:extract-guardrail-pipeline` + `guardrail-chain` + `prompt-registry` + `permission-modes`
+| New plugins: 5/8 ✅  |  Existing changes: 3/25 ✅  |  Total: 8/33
 
 ---
 
@@ -116,7 +116,25 @@ src/main/java/eu/infolead/llmhp/guardrails/
     └── GuardResult.java      # Pass | Warn(reason) | Block(reason)
 ```
 
-### ❌ 2.5 eval-harness — LLM-as-a-Judge (Pt VI, ch33) + Candidate B.7 Blind Evaluation
+### ✅ 2.5 permission-modes — Permission Mode State Machine — **DONE** (2026-08-03)
+
+| Property | Detail |
+|----------|--------|
+| Priority | **5** |
+| Effort | Medium (~600 loc) |
+| Benefit | High — replaces binary approve/deny with 6-mode spectrum. Centralized `transitionPermissionMode()` with BYPASS_IMMUNE safety net, tool allow/deny lists per mode, auto-mode strip/restore on transitions. |
+| Mechanism | `PermissionModes.java`: 6-mode enum (DEFAULT/PLAN/ACCEPT_EDITS/BYPASS_PERMISSIONS/DONT_ASK/AUTO). `checkPermission(tool, filePath)` 7-layer gate: BYPASS_IMMUNE → deny-list → category-block → allow-list → mode-default fallthrough. `transitionPermissionMode()` triggers `stripDangerousPermissionsForAutoMode()` on AUTO entry, restores on exit via deque stash. |
+
+**File layout** — `permission-modes/`:
+```
+src/main/java/eu/infolead/llmhp/permissionmodes/
+├── PermissionModes.java       # 6-mode state machine, checkPermission(), transitions, JSON serde
+└── PermissionModesCli.java    # CLI: check, transition, status, state, save, load, immune
+opencode/index.ts              # tool.execute.before hook + 4 tools (permission-mode, permission-status, etc.)
+.claude-plugin/hooks/hooks.json # PreToolUse hook
+```
+
+### ❌ 2.6 eval-harness — LLM-as-a-Judge (Pt VI, ch33) + Candidate B.7 Blind Evaluation
 
 | Property | Detail |
 |----------|--------|
@@ -287,17 +305,18 @@ Rank  Plugin/Change                         Effort  Benefit  Depends on         
   5   agentmem: extract guardrail pipeline   Med     Med      guardrail-chain              ✅
   6   guardrail-chain (new)                  Med     Med      agentmem guards              ✅
    7   prompt-registry (new)                  Med     Med      none                         ✅
-   8   agentmem: rejected_approach subtype    Low     Med      none                         ❌
-  9   agentinsights: rejected-branch sec.    Med     Med      agentmem #8                  ❌
- 10   knowledge-graph: subgraph caching      Low     Low      semantic-cache               ❌
- 11   knowledge-graph: contradiction detect  Med     Med      none                         ❌
- 12   tier-router: model fallback            Med     Med      none                         ❌
- 13   general-skills: blinded audit mode     Med     Med      none                         ❌
- 14   agentmem: cross-project contradiction  Low     Low      none                         ❌
- 15   agentmem: bootstrap from insights      Med     Low      agentinsights                ❌
- 16   eval-harness (new)                     High    High     general-skills, B.7          ❌
- 17   cross-family-second-opinion            High    Spec.    B.1, multi-provider          ❌
- 18   null-branch-reporter                   Med     Spec.    B.6, agentmem, insights      ❌
+   8   permission-modes (new)                   Med     High     opencode hook system          ✅
+   9   agentmem: rejected_approach subtype      Low     Med      none                         ❌
+  10   agentinsights: rejected-branch sec.    Med     Med      agentmem #9                  ❌
+  11   knowledge-graph: subgraph caching      Low     Low      semantic-cache               ❌
+  12   knowledge-graph: contradiction detect  Med     Med      none                         ❌
+  13   tier-router: model fallback            Med     Med      none                         ❌
+  14   general-skills: blinded audit mode     Med     Med      none                         ❌
+  15   agentmem: cross-project contradiction  Low     Low      none                         ❌
+  16   agentmem: bootstrap from insights      Med     Low      agentinsights                ❌
+  17   eval-harness (new)                     High    High     general-skills, B.7          ❌
+  18   cross-family-second-opinion            High    Spec.    B.1, multi-provider          ❌
+  19   null-branch-reporter                   Med     Spec.    B.6, agentmem, insights      ❌
 ```
 
 ---
@@ -312,6 +331,7 @@ Change drivers for each element. Grouping decisions should respect these boundar
 | `budget-circuit-breaker` | Token pricing + session policies | vendor pricing pages, org cost policies |
 | `prompt-registry` | Prompt engineering best practices | Anthropic prompt docs, general-skills agents |
 | `guardrail-chain` | Security threat catalog | OWASP LLM Top 10, red-team findings |
+| `permission-modes` | Permission model + tool authorization | opencode/Claude Code tool permission hooks, BYPASS_IMMUNE catalog |
 | `eval-harness` | Evaluation framework specs + rubric design | benchmark protocols, B.7 blinding mechanism |
 | `cross-family-second-opinion` | Multi-provider API surfaces | vendor SDKs, B.1 family-diversity rationale |
 | `null-branch-reporter` | Transcript format + memory taxonomy | agentmem subtypes, agentinsights facet schema |

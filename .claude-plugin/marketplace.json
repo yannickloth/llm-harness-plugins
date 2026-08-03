@@ -66,6 +66,12 @@
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/prompt-registry"
     },
     {
+      "name": "permission-modes",
+      "description": "6-mode permission state machine — default, plan, acceptEdits, bypassPermissions, dontAsk, auto. Centralized transitionPermissionMode() with BYPASS_IMMUNE safety checks, tool allow/deny lists per mode, auto-mode strip/restore on transitions.",
+      "source": "./permission-modes",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/permission-modes"
+    },
+    {
       "name": "session-lifecycle",
       "description": "Session lifecycle tracking — edit logs, git commit diffing, archival with 30-day retention. Five hook Java classes dispatched through a thin CLI wrapper.",
       "source": "./session-lifecycle",
