@@ -5,22 +5,19 @@
 
 ---
 
-## 1. Dangerous/Uncached Prompt Sections API
+## 1. Dangerous/Uncached Prompt Sections API — ✅ DONE
 
 **Pattern:** Two-tier prompt section registration — `systemPromptSection()` (memoized, cache-safe) vs `DANGEROUS_uncachedSystemPromptSection(computeFn, reason)` (recomputed every turn, requires human-readable justification string).
 
 **Why it works:**
 - `DANGEROUS_` prefix + mandatory `reason` arg = code-review guardrail. You must explain why this section can't be cached.
 - Cache-fragmentation (2^N variants) treated as first-class bug class. Every `reason` is grep-able during perf audits.
-- `resolveSystemPromptSections` batches `Promise.all`; `clearSystemPromptSections()` on `/clear` or `/compact`.
+- `resolveSystemPromptSections` batches; `clearSystemPromptSections()` on `/clear` or `/compact`.
 
-**Source files:**
-- `constants/systemPromptSections.ts` — memoized section registry
-- `constants/prompts.ts` — `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` sentinel
-
-**Opencode applicability:** System context composition (CLAUDE.md, git status, MCP tools, session vars). Current approach has no cache-awareness. Add `cached_section()` / `uncached_section(reason)` to context builder.
-
-**Existing plugin overlap:** None. Neither prompt-registry (versions store opaque blobs with no cache-scope field) nor semantic-cache (response-cache, not prompt-prefix cache) touch this. Absent everywhere.
+**Implementation:**
+- `shared/section-registry.ts` (110 loc) — `SectionRegistry` class: `section(name, fn)`, `orgSection(name, fn)`, `uncached(name, fn, reason)`. Fluent API. `resolveSections()` sequential batch with per-factory error isolation. `buildPrompt()` delegates to `cache-boundary.ts` sentinel assembly. `clear()` on `session.deleted` for compact/reset lifecycle. Overwrite warnings, null/empty skip, passthrough for factories returning `ScopedSection` directly.
+- `shared/section-registry.test.ts` (192 loc, 14 tests) — covers cached/uncached/org, async, passthrough, null/empty skip, clear, overwrite, error recovery, buildPrompt boundary assembly, report, chaining.
+- `knowledge-graph/opencode/index.ts` refactored — uses `SectionRegistry` for static sections (`kg-header`, `kg-overview`), bypasses registry for single-shot per-event injections (avoids unbounded accumulation). `session.deleted` clears registry + resets module state. 5-round review-convergence passed.
 
 **Effort:** Low · **Risk:** Low · **Impact:** High (prompt-cache savings)
 
@@ -284,7 +281,7 @@ plugin → userSettings → projectSettings → localSettings → flagSettings �
 
 | # | Feature | Effort | Risk | Impact | Overlap Status | Action |
 |---|---------|--------|------|--------|----------------|--------|
-| 1  | Uncached prompt section API | Low | Low | High | **None** (absent everywhere) | **New implementation** |
+| 1  | Uncached prompt section API | Low | Low | High | **DONE** | **Implemented** — `shared/section-registry.ts` (110 loc), 14 tests, knowledge-graph refactored |
 | 2  | YOLO classifier | High | Medium | Very High | **Partial** (guardrail-chain regex + tier-router routing classifier) | **New plugin** — extend guardrail-chain with LLM classifier + fail-closed |
 | 3  | Circuit breakers | Medium | Low | High | **Partial** (tier-router token budget + retry-pool; session-lifecycle idle tracking) | **New utility** — add budget/denial/compact breakers |
 | 4  | AI-as-Moderator for Memory | — | — | — | **FULL + ENHANCED** (agentmem implements all pillars + budget + verifier) | **Skipped** — agentmem already ships it; enhanced with budget + verifier |
@@ -297,7 +294,7 @@ plugin → userSettings → projectSettings → localSettings → flagSettings �
 | 10 | Cache-fragmentation boundary | Low | Low | Medium | **DONE** | **Implemented** — shared/cache-boundary.ts + prompt-registry cacheScope + knowledge-graph static/dynamic split |
 
 **Priority order (cost/value):**
-- **Phase 1 (immediate):** 1, 7 ✅, 9 ✅, 10 ✅ — net-new, low-effort, high-security
+- **Phase 1 (immediate):** 1 ✅, 7 ✅, 9 ✅, 10 ✅ — net-new, low-effort, high-security
 - **Phase 2 (medium):** 3, 5, 8 — architectural additions, partial existing infrastructure
 - **Phase 3 (large):** 2 (extend guardrail-chain), 6 (marketplace infra)
 - **Skip:** 4 ✅ (agentmem already ships it, enhanced with budget + verifier)
@@ -311,7 +308,7 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 | 1 | **10** | Cache-fragmentation boundary | ✅ Done | **Done:** `shared/cache-boundary.ts` (63 loc) — sentinel, `cachedSection()`/`uncachedSection()`/`orgCachedSection()`, `buildPromptWithBoundary()`, `tagSection()`, `reportScopeBreakdown()`. **Integrated:** prompt-registry `PromptVersion.cacheScope` (null/global/org), knowledge-graph static overview cached + per-file injections uncached. |
 | 2 | **9** | Transcript exclusion | ✅ Done | **Done:** `TranscriptFilter.java` (286 loc, 13 tests) — zero-dep JSON parser, escape-aware, fail-closed on malformed/non-string/missing roles. Normalizes case+whitespace. Size bounds (10MB/1K messages). **Exposed:** CLI subcommand (`transcript-filter`), guardrail-chain opencode tool, guardrail-chain pi tool. |
 | 3 | **7** | `@include` directive | ✅ Done | **Done:** `shared/claudemd.ts` (480 loc) — hand-rolled markdown token walker, HTML comment stripping, DAG-safe circular-ref detection, realpath containment, realpath extension check, TEXT_FILE_EXTENSIONS allowlist, 2MB/16-depth limits. `context-includes/opencode/index.ts` (54 loc) — plugin injects resolved CLAUDE.md at session.created. 3 adversarial review rounds converged. |
-| 4 | **1** | Uncached prompt section API | ~200 loc | Registry of `section(name, fn)` + `uncached(name, fn, reason)`. `resolveSections()` batch. `clearSections()` on compact. Pure internal API. *Note: cache-boundary.ts implements the boundary mechanism; the registry is the missing piece.* |
+| 4 | **1** | Uncached prompt section API | ✅ Done | **Done:** `shared/section-registry.ts` (110 loc) — `SectionRegistry` class with fluent `section()`/`orgSection()`/`uncached(name, fn, reason)` API. `resolveSections()` sequential batch with per-factory error isolation. `buildPrompt()` delegates to cache-boundary sentinel assembly. `clear()` on `session.deleted`. 14 tests (192 loc). **Integrated:** knowledge-graph uses registry for static sections (`kg-header`, `kg-overview`), bypasses for single-shot per-event injections (avoids unbounded accumulation). `session.deleted` clears registry + resets module state. 5-round review-convergence passed. |
 | 5 | **3** | Circuit breakers | ~400 loc | `CircuitBreaker<T>` class (threshold + transform). Wire into 4 points: tier-router classifier, session-lifecycle compact, tool denial loop, auto-mode. Moderate integration surface. |
 | 6 | **8** | Cascading config merge | ~500 loc | 5-source deep merge, drop-in dir, array concatenation, `undefined`-as-delete, lockfile writes, backup rotation, auth-loss guard. Multiple file formats. |
 | 7 | **5** | Permission modes | ~600 loc | 6-mode state machine, centralized `transitionMode()`, tool allow/deny lists per mode, BYPASS_IMMUNE checks, mode-strip/restore on transitions. Deep opencode runtime integration. |
@@ -322,9 +319,9 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 
 | Tier | Features | Time-to-ship | Dependency risk | Status |
 |------|----------|--------------|-----------------|--------|
-| **Done** | #10 boundary, #9 transcript, #4 agentmem enh., #7 @include | — | — | ✅ shipped |
+| **Done** | #10 boundary, #9 transcript, #4 agentmem enh., #7 @include, #1 uncached API | — | — | ✅ shipped |
 | **Trivial** (hours) | — | 1 session | — | Phase 1 complete |
-| **Light** (1–2 sessions) | #1 uncached API, #3 breakers | 1–2 sessions | Internal API design; #3 needs integration across 3-4 plugins | |
+| **Light** (1–2 sessions) | #3 breakers | 1–2 sessions | Internal API design; #3 needs integration across 3-4 plugins | |
 | **Medium** (3–5 sessions) | #8 config merge, #5 permission modes | 1–2 weeks | #5 depends on opencode runtime hooks; #8 is self-contained | |
 | **Heavy** (2+ weeks) | #2 YOLO classifier | 2–4 weeks | LLM cost/latency tradeoffs, iron-gate config, per-tool projection schemas | |
 | **Platform** (1+ month) | #6 marketplace | 4–8 weeks | Package distribution infra, security review, ecosystem migration | |
@@ -332,7 +329,7 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 ### Incremental build order (each layer enables the next)
 
 ```
-Phase 0 (foundations):  #10 boundary ✅ → #1 uncached API → #8 config merge
+Phase 0 (foundations):  #10 boundary ✅ → #1 uncached API ✅ → #8 config merge
 Phase 1 (guard layer):  #9 transcript ✅ → #7 @include ✅ → #5 permission modes
 Phase 2 (resilience):   #3 circuit breakers
 Phase 3 (intelligence): #2 YOLO classifier
@@ -345,7 +342,7 @@ Phase 4 (ecosystem):    #6 plugin marketplace
 |-----|--------|------|--------|--------|
 | 1 | guardrail-chain | Add transcript-exclusion utility (#9) | Very Low (~30 loc) | ✅ Done — `TranscriptFilter.java` (286 loc, 13 tests) + tool integrations |
 | 2 | prompt-registry | Add `cacheScope` field to prompt versions (#10) | Low (~40 loc) | ✅ Done — `PromptVersion.cacheScope` (null/global/org), 27 test loc |
-| 3 | knowledge-graph | Classify static overview cached, dynamic injections uncached (#1/#10) | Low (~50 loc) | ✅ Done — static header+overview as cachedSection(), per-file subgraph as uncachedSection() |
+| 3 | knowledge-graph | Classify static overview cached, dynamic injections uncached (#1/#10). Refactored to use SectionRegistry. | Low (~50 loc) | ✅ Done — static header+overview as cachedSection(), per-file subgraph as uncachedSection(), `session.deleted` calls `registry.clear()` |
 | 4 | session-lifecycle | Add auto-compact breaker (#3) | Medium (~100 loc) | |
 | 5 | tier-router | Circuit-breaker on classifier fallback (#3) | Medium (~120 loc) | |
 | 6 | tier-router | COEOS skill-axis routing with retry-pool escalation | Medium (~500 loc) | ✅ Done — `SkillAxis.java` (18 axes), `SkillAxisMapping.java` (initial/specialist pool), `SkillAxisConfig.java` (JSON loader), `Classifier.skillAxisMatch()` (200+ keyword triggers), `RouterEngine` retry-pool branch, directive updates across shell/TS/Pi backends. Config-driven via `skill-axis-mapping.json`. |
