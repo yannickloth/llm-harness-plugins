@@ -3,7 +3,13 @@ name: config-auditor
 description: Audit AI coding agent configuration stacks for conflicts, inconsistencies, or undefined references across config files, agents, and workflows.
 mode: subagent
 model: sonnet
-tools: Read, Glob, Grep
+permission:
+  read: allow
+  glob: allow
+  grep: allow
+  edit: deny
+  bash: deny
+  task: deny
 ---
 
 ## Purpose

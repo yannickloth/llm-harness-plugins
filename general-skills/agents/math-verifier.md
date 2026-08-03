@@ -2,7 +2,13 @@
 name: math-verifier
 description: Verify mathematical proofs, derivations, and calculations — step-by-step correctness, hidden assumptions, logical structure.
 mode: subagent
-tools: Read, Glob, Grep
+permission:
+  read: allow
+  glob: allow
+  grep: allow
+  edit: deny
+  bash: deny
+  task: deny
 model: sonnet
 ---
 

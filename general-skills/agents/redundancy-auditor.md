@@ -2,7 +2,13 @@
 name: redundancy-auditor
 description: Detect repeated statements, arguments, and conclusions across documents. Paragraph-level semantic redundancy analysis.
 mode: subagent
-tools: Read, Glob, Grep
+permission:
+  read: allow
+  glob: allow
+  grep: allow
+  edit: deny
+  bash: deny
+  task: deny
 model: sonnet
 ---
 

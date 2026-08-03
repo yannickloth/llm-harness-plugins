@@ -2,7 +2,13 @@
 name: bibliography-auditor
 description: Audit bibliography files and citation usage for duplicates, missing fields, broken citations, uncited entries, and retracted papers.
 mode: subagent
-tools: Read, Grep, Glob, Bash
+permission:
+  read: allow
+  glob: allow
+  grep: allow
+  bash: allow
+  edit: deny
+  task: deny
 model: sonnet
 ---
 
