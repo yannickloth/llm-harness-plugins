@@ -167,14 +167,26 @@
 
 ## 7. `@include` Directive for Instruction Files — ✅ DONE
 
-**Pattern:** Memory files (CLAUDE.md) can include external files via `@path` syntax.
+**Pattern:** Instruction files (CLAUDE.md, AGENTS.md) can include external files via `@path` syntax. Resolution is memoized and cache is invalidated on compaction — matching Claude Code's `getUserContext`/`postCompactCleanup` behavior.
 
 **Implementation:**
 - `shared/claudemd.ts` (480 loc) — hand-rolled markdown token walker, HTML comment stripping, circular-ref detection (DAG-safe: visited.delete after each branch), realpath containment (path traversal blocked), realpath extension check (symlink-extension spoofing blocked), 2MB file size limit, max depth 16
-- `context-includes/opencode/index.ts` (54 loc) — plugin that reads `CLAUDE.md`/`AGENTS.md` from project root at `session.created`, resolves `@include` directives via `parseClaudeMd(file, rootDir)`, injects merged result as no-reply prompt push
+- `context-includes/opencode/index.ts` (90 loc) — plugin with 3 lifecycle hooks:
+  - `session.created` — resolves `@include` directives via `parseClaudeMd(file, root)`, caches merged result, injects as no-reply prompt push
+  - `session.compacted` — clears cache, re-resolves, re-injects (picks up file changes mid-session)
+  - `session.deleted` — clears cache
+  - `injectionInFlight` lock prevents duplicate pushes when compaction fires during creation
 - `TEXT_FILE_EXTENSIONS` — whitelisted extensions (60+ text formats), blocks binary/large file inclusion
 
-**Security (3 adversarial review rounds converged):**
+**Cache semantics (Claude Code parity):**
+
+| Trigger | Cache action | Injection |
+|---------|-------------|-----------|
+| `session.created` | Populates (first call) | Injects resolved instructions |
+| `session.compacted` | Clears + re-populates | Re-injects with fresh file contents |
+| `session.deleted` | Clears | None |
+
+**Security (4 adversarial review rounds converged):**
 - Code fence exclusion: ``` ``` ``` and `~~~` blocks skipped; inline `` ` `` codespans skipped
 - HTML comment exclusion: `<!-- -->` stripped before extraction; unclosed `<!--` treated as comment-to-EOL
 - Path traversal blocked: `realpathSync` containment check on child includes only (root file may be symlinked-in)
@@ -183,6 +195,7 @@
 - Same-line `<!-- --> @path` correctly resolved (line-level stripHtmlComments before marker comparison)
 - Literal `@` lines in included files preserved verbatim on not-found (no cascade abort)
 - Triple-at `@@/path` syntax for repo-root-relative resolution
+- Injection lock prevents racing duplicate pushes
 
 **Syntax examples:**
 ```
@@ -192,6 +205,8 @@
 ```
 
 **Usage:** Add `"./context-includes/opencode/index.ts"` to `opencode.json` plugin array. Place `CLAUDE.md` in project root with `@./path` directives.
+
+**Tests:** `context-includes/opencode/index.test.ts` (306 loc, 15 tests) — covers resolution, merge, cache hit, compaction refresh, file addition/removal mid-session, error isolation, missing-include verbatim preservation, empty content skip, defensive no-ops, concurrent-injection serialization.
 
 **Effort:** Low · **Risk:** Low · **Impact:** Medium
 
