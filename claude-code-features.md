@@ -168,31 +168,33 @@
 
 ---
 
-## 7. `@include` Directive for Instruction Files
+## 7. `@include` Directive for Instruction Files — ✅ DONE
 
 **Pattern:** Memory files (CLAUDE.md) can include external files via `@path` syntax.
 
-**Security design:**
-- Uses `marked` lexer token walk — only processes **leaf text nodes** (skips `code`/`codespan` tokens)
-- Ignores `@paths` inside HTML block comments
-- Circular-reference prevention via processed-file tracking
-- Whitelisted extensions (`TEXT_FILE_EXTENSIONS`) block binary inclusion
-- `stripHtmlComments()` on block-level `<!-- -->` (preserves code-block comments)
+**Implementation:**
+- `shared/claudemd.ts` (480 loc) — hand-rolled markdown token walker, HTML comment stripping, circular-ref detection (DAG-safe: visited.delete after each branch), realpath containment (path traversal blocked), realpath extension check (symlink-extension spoofing blocked), 2MB file size limit, max depth 16
+- `context-includes/opencode/index.ts` (54 loc) — plugin that reads `CLAUDE.md`/`AGENTS.md` from project root at `session.created`, resolves `@include` directives via `parseClaudeMd(file, rootDir)`, injects merged result as no-reply prompt push
+- `TEXT_FILE_EXTENSIONS` — whitelisted extensions (60+ text formats), blocks binary/large file inclusion
+
+**Security (3 adversarial review rounds converged):**
+- Code fence exclusion: ``` ``` ``` and `~~~` blocks skipped; inline `` ` `` codespans skipped
+- HTML comment exclusion: `<!-- -->` stripped before extraction; unclosed `<!--` treated as comment-to-EOL
+- Path traversal blocked: `realpathSync` containment check on child includes only (root file may be symlinked-in)
+- Symlink spoofing blocked: extension check runs on realpath target, not link name
+- Circular references detected: visited set with DAG-safe delete-after-branch pattern
+- Same-line `<!-- --> @path` correctly resolved (line-level stripHtmlComments before marker comparison)
+- Literal `@` lines in included files preserved verbatim on not-found (no cascade abort)
+- Triple-at `@@/path` syntax for repo-root-relative resolution
 
 **Syntax examples:**
 ```
 @./docs/style-guide.md
 @~/global-rules.md
-@/etc/project-policy.md
+@@/shared/project-rules.md  (repo-root-relative)
 ```
 
-**Source files:**
-- `utils/claudemd.ts` — `extractIncludePathsFromTokens()`
-- `utils/markdownConfigLoader.ts`
-
-**Opencode applicability:** Add to CLAUDE.md / system-context file processing. Lets users keep instruction files modular without giant monolithic CLAUDE.md.
-
-**Existing plugin overlap:** None. knowledge-graph injects graph-derived context but has no `@path` parser, no `marked` lexer walk, no circular-reference tracking, no extension allowlist. The `@include` directive concept is completely absent from all existing plugins.
+**Usage:** Add `"./context-includes/opencode/index.ts"` to `opencode.json` plugin array. Place `CLAUDE.md` in project root with `@./path` directives.
 
 **Effort:** Low · **Risk:** Low · **Impact:** Medium
 
@@ -288,16 +290,16 @@ plugin → userSettings → projectSettings → localSettings → flagSettings �
 | 4  | AI-as-Moderator for Memory | — | — | — | **FULL + ENHANCED** (agentmem implements all pillars + budget + verifier) | **Skipped** — agentmem already ships it; enhanced with budget + verifier |
 | 5  | Permission modes | Medium | Medium | High | **None** (absent everywhere) | **New plugin** |
 | 6  | Plugin marketplace | Very High | High | Very High | **None** (flat dirs, no marketplace infra) | **New infrastructure** |
-| 7  | `@include` directive | Low | Low | Medium | **None** (absent everywhere) | **New implementation** |
+| 7  | `@include` directive | Low | Low | Medium | **DONE** | **Implemented** — shared/claudemd.ts (480 loc, token walker + containment) + context-includes/ plugin (session-start injector) |
 | 8  | Cascading config merge | Medium | Low | Medium | **None** (single-file JSON per plugin) | **New implementation** |
 | 9  | Transcript exclusion | Very Low | None | Medium | **DONE** | **Implemented** — TranscriptFilter.java (zero-dep JSON parser, 286 loc, 13 tests) + guardrail-chain opencode tool |
 | 10 | Cache-fragmentation boundary | Low | Low | Medium | **DONE** | **Implemented** — shared/cache-boundary.ts + prompt-registry cacheScope + knowledge-graph static/dynamic split |
 
 **Priority order (cost/value):**
-- **Phase 1 (immediate):** 1, 7, 9, 10 — net-new, low-effort, high-security, no plugin conflicts
+- **Phase 1 (immediate):** 1, 7 ✅, 9 ✅, 10 ✅ — net-new, low-effort, high-security
 - **Phase 2 (medium):** 3, 5, 8 — architectural additions, partial existing infrastructure
 - **Phase 3 (large):** 2 (extend guardrail-chain), 6 (marketplace infra)
-- **Skip:** 4 (agentmem already ships it; extend instead)
+- **Skip:** 4 ✅ (agentmem already ships it, enhanced with budget + verifier)
 
 ## Implementation Cost Ranking (Easiest → Hardest)
 
@@ -307,7 +309,7 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 |------|---|---------|---------------------|-----------------|
 | 1 | **10** | Cache-fragmentation boundary | ✅ Done | **Done:** `shared/cache-boundary.ts` (63 loc) — sentinel, `cachedSection()`/`uncachedSection()`/`orgCachedSection()`, `buildPromptWithBoundary()`, `tagSection()`, `reportScopeBreakdown()`. **Integrated:** prompt-registry `PromptVersion.cacheScope` (null/global/org), knowledge-graph static overview cached + per-file injections uncached. |
 | 2 | **9** | Transcript exclusion | ✅ Done | **Done:** `TranscriptFilter.java` (286 loc, 13 tests) — zero-dep JSON parser, escape-aware, fail-closed on malformed/non-string/missing roles. Normalizes case+whitespace. Size bounds (10MB/1K messages). **Exposed:** CLI subcommand (`transcript-filter`), guardrail-chain opencode tool, guardrail-chain pi tool. |
-| 3 | **7** | `@include` directive | ~150 loc | Parse `@path` in markdown, walk tokens, resolve paths, circular-ref guard. `marked` lexer already available. |
+| 3 | **7** | `@include` directive | ✅ Done | **Done:** `shared/claudemd.ts` (480 loc) — hand-rolled markdown token walker, HTML comment stripping, DAG-safe circular-ref detection, realpath containment, realpath extension check, TEXT_FILE_EXTENSIONS allowlist, 2MB/16-depth limits. `context-includes/opencode/index.ts` (54 loc) — plugin injects resolved CLAUDE.md at session.created. 3 adversarial review rounds converged. |
 | 4 | **1** | Uncached prompt section API | ~200 loc | Registry of `section(name, fn)` + `uncached(name, fn, reason)`. `resolveSections()` batch. `clearSections()` on compact. Pure internal API. *Note: cache-boundary.ts implements the boundary mechanism; the registry is the missing piece.* |
 | 5 | **3** | Circuit breakers | ~400 loc | `CircuitBreaker<T>` class (threshold + transform). Wire into 4 points: tier-router classifier, session-lifecycle compact, tool denial loop, auto-mode. Moderate integration surface. |
 | 6 | **8** | Cascading config merge | ~500 loc | 5-source deep merge, drop-in dir, array concatenation, `undefined`-as-delete, lockfile writes, backup rotation, auth-loss guard. Multiple file formats. |
@@ -319,8 +321,8 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 
 | Tier | Features | Time-to-ship | Dependency risk | Status |
 |------|----------|--------------|-----------------|--------|
-| **Done** | #10 boundary, #9 transcript, #4 agentmem enh. | — | — | ✅ shipped |
-| **Trivial** (hours) | #7 @include | 1 session | None — pure text processing | |
+| **Done** | #10 boundary, #9 transcript, #4 agentmem enh., #7 @include | — | — | ✅ shipped |
+| **Trivial** (hours) | — | 1 session | — | Phase 1 complete |
 | **Light** (1–2 sessions) | #1 uncached API, #3 breakers | 1–2 sessions | Internal API design; #3 needs integration across 3-4 plugins | |
 | **Medium** (3–5 sessions) | #8 config merge, #5 permission modes | 1–2 weeks | #5 depends on opencode runtime hooks; #8 is self-contained | |
 | **Heavy** (2+ weeks) | #2 YOLO classifier | 2–4 weeks | LLM cost/latency tradeoffs, iron-gate config, per-tool projection schemas | |
@@ -330,7 +332,7 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 
 ```
 Phase 0 (foundations):  #10 boundary ✅ → #1 uncached API → #8 config merge
-Phase 1 (guard layer):  #9 transcript ✅ → #7 @include → #5 permission modes
+Phase 1 (guard layer):  #9 transcript ✅ → #7 @include ✅ → #5 permission modes
 Phase 2 (resilience):   #3 circuit breakers
 Phase 3 (intelligence): #2 YOLO classifier
 Phase 4 (ecosystem):    #6 plugin marketplace
