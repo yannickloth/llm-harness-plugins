@@ -64,6 +64,12 @@
       "description": "Git-backed prompt versioning — commit, pull, diff, A/B test prompt templates across plugins. SessionStart auto-pulls active versions. JSON registry with no external dependencies.",
       "source": "./prompt-registry",
       "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/prompt-registry"
+    },
+    {
+      "name": "session-lifecycle",
+      "description": "Session lifecycle tracking — edit logs, git commit diffing, archival with 30-day retention. Five hook Java classes dispatched through a thin CLI wrapper.",
+      "source": "./session-lifecycle",
+      "homepage": "https://github.com/infolead/llm-harness-plugins/tree/main/session-lifecycle"
     }
   ]
 }

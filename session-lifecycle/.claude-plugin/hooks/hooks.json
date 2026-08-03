@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "java --add-opens java.base/java.util=ALL-UNNAMED --class-path \"${CLAUDE_PLUGIN_ROOT}\"/build/classes SessionLifecycle check-errors \"${CLAUDE_PROJECT_DIR}\""
+          },
+          {
+            "type": "command",
+            "command": "java --add-opens java.base/java.util=ALL-UNNAMED --class-path \"${CLAUDE_PLUGIN_ROOT}\"/build/classes SessionLifecycle snapshot-commits \"${CLAUDE_PROJECT_DIR}\" \"${CLAUDE_SESSION_ID}\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "java --add-opens java.base/java.util=ALL-UNNAMED --class-path \"${CLAUDE_PLUGIN_ROOT}\"/build/classes SessionLifecycle record-edit \"${CLAUDE_PROJECT_DIR}\" \"${CLAUDE_SESSION_ID}\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "java --add-opens java.base/java.util=ALL-UNNAMED --class-path \"${CLAUDE_PLUGIN_ROOT}\"/build/classes SessionLifecycle diff-commits \"${CLAUDE_PROJECT_DIR}\" \"${CLAUDE_SESSION_ID}\""
+          },
+          {
+            "type": "command",
+            "command": "java --add-opens java.base/java.util=ALL-UNNAMED --class-path \"${CLAUDE_PLUGIN_ROOT}\"/build/classes SessionLifecycle archive \"${CLAUDE_PROJECT_DIR}\" \"${CLAUDE_SESSION_ID}\""
+          }
+        ]
+      }
+    ]
+  }
+}

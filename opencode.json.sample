@@ -5,6 +5,7 @@
   },
   "plugin": [
     "./guardrail-chain/opencode/index.ts",
+    "./session-lifecycle/opencode/index.ts",
     "./agentmem/opencode/index.ts",
     "./semantic-cache/opencode/index.ts",
     "./tier-router/opencode/index.ts",
