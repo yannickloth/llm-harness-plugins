@@ -2,7 +2,8 @@ import type { Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
 import { existsSync } from "fs"
-import { buildPromptWithBoundary, cachedSection, uncachedSection, reportScopeBreakdown } from "../../shared/cache-boundary"
+import { SectionRegistry } from "../../shared/section-registry"
+import { buildPromptWithBoundary, cachedSection, uncachedSection } from "../../shared/cache-boundary"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -56,6 +57,12 @@ async function injectContext(
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
   console.log("[knowledge-graph] plugin active — kg-query tool + auto-injection hooks")
   const root = worktree ?? directory
+  const registry = new SectionRegistry()
+
+  registry.section("kg-header", async () => {
+    const raw = await $`cat ${path.join(pluginDir, "prompts", "agent-prompt.md")}`.nothrow().text()
+    return raw.replace("<plugin-dir>", pluginDir)
+  })
 
   return {
     "session.created": async (input: { properties?: { session?: { id?: string } } }) => {
@@ -73,21 +80,22 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         const ctxText = await $`java --class-path ${classesDir} ${mainClass} overview ${gf}`.nothrow().text()
         if (!ctxText.trim()) return
 
-        const raw = await $`cat ${path.join(pluginDir, "prompts", "agent-prompt.md")}`.nothrow().text()
-        const header = raw.replace("<plugin-dir>", pluginDir)
+        registry.section("kg-overview", () => ctxText)
 
-        const sections = [
-          cachedSection(header),
-          cachedSection(ctxText),
-        ]
-        const prompt = buildPromptWithBoundary(sections)
-        console.log("[knowledge-graph]", reportScopeBreakdown(sections))
+        const prompt = await registry.buildPrompt()
+        console.log("[knowledge-graph]", registry.report())
 
         await injectContext(client, sessionId, prompt)
         console.log("[knowledge-graph] injected graph context into session", sessionId)
       } catch (e) {
         console.error("[knowledge-graph] session.created injection failed:", (e as Error).message)
       }
+    },
+
+    "session.deleted": () => {
+      registry.clear()
+      injectedSessionId = null
+      injectedFiles.clear()
     },
 
     "file.edited": async (input: { file: string }) => {
@@ -106,7 +114,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
       try {
         const result = await $`java --class-path ${classesDir} ${mainClass} subgraph ${gf} ${absPath} 1`.nothrow().text()
-        const section = uncachedSection("## Graph Impact (edited file)\n" + result, "per-file subgraph injection on edit")
+        if (!result.trim()) return
+
+        const section = uncachedSection(
+          "## Graph Impact (edited file)\n" + result,
+          "per-file subgraph injection on edit"
+        )
         await injectContext(client, sessionId, buildPromptWithBoundary([section]))
       } catch (e) {
         // silently ignore — best-effort injection
@@ -138,7 +151,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
       try {
         const result = await $`java --class-path ${classesDir} ${mainClass} subgraph ${gf} ${absPath} 1`.nothrow().text()
-        const section = uncachedSection("## Graph Context (file read)\n" + result, "per-file subgraph injection on read")
+        if (!result.trim()) return
+
+        const section = uncachedSection(
+          "## Graph Context (file read)\n" + result,
+          "per-file subgraph injection on read"
+        )
         await injectContext(client, sessionId, buildPromptWithBoundary([section]))
       } catch (e) {
         // silently ignore
