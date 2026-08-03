@@ -2,7 +2,7 @@
 name: typst-syntax-fixer
 description: Fix Typst compilation errors and warnings. Use when Typst build fails or has errors in .typ files.
 mode: subagent
-tools: Read, Edit, Bash, Glob, Grep
+tools: [Read, Edit, Bash, Glob, Grep]
 model: haiku
 ---
 

@@ -2,7 +2,7 @@
 name: latex-formatting-fixer
 description: Convert Markdown formatting to LaTeX and normalize formatting conventions.
 mode: subagent
-tools: Read, Edit, Glob, Grep
+tools: [Read, Edit, Glob, Grep]
 model: haiku
 ---
 

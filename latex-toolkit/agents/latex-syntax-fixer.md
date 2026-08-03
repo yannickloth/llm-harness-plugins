@@ -2,7 +2,7 @@
 name: latex-syntax-fixer
 description: Fix LaTeX compilation errors and warnings. Use when LaTeX build fails.
 mode: subagent
-tools: Read, Edit, Bash, Glob, Grep
+tools: [Read, Edit, Bash, Glob, Grep]
 model: sonnet
 ---
 
