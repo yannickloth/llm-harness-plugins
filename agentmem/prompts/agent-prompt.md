@@ -31,3 +31,15 @@ Memory → cross-session knowledge. Do not confuse them.
 ## Scoped memory
 MEMORY.md files in subdirectories (e.g. `src/auth/MEMORY.md`) are loaded when
 working in that subtree. Scoped matches take precedence over root matches.
+
+## Token budget
+Memory injection has a 12,000 token ceiling per session, with individual sections
+capped at 2,000 tokens. Memories are prioritized: user > feedback > project >
+reference, weighted by confidence and model trust. Excluded sections are silently
+dropped. Check budget status with `memory-budget-status`.
+
+## Stale file references
+File paths in memories may be stale. Use `verify-memory-files` or
+`verify-memory-report` to cross-reference against current project state.
+If a memory references a path that no longer exists, verify before acting:
+"The memory says X exists" != "X exists now."

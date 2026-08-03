@@ -154,4 +154,19 @@ export default function agentmemPi(pi: any) {
     },
   }
   pi.registerTool(forgetTool)
+
+  const verifyTool: any = {
+    name: "agentmem-verify-files",
+    label: "Verify Memory Files",
+    description: "Cross-reference file paths in memories against current project state. Returns STALE markers.",
+    parameters: {} as any,
+    async execute(_toolCallId: string, _params: Record<string, unknown>, _signal: AbortSignal | undefined, _onUpdate: any, ctx: ToolCtx) {
+      const root = projectRoot || ctx.cwd
+      const mdir = join(root, ".agentmem")
+      const result = Bun.spawnSync(["java", "--class-path", classpath, JAVA_CLASS, "verify", mdir, root])
+      const out = result.stdout.toString().trim()
+      return { content: [{ type: "text", text: out || "No file references found in memories." }] }
+    },
+  }
+  pi.registerTool(verifyTool)
 }

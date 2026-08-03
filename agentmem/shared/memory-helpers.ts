@@ -2,7 +2,16 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { isAbsolute, join } from "node:path"
 
 export const MAX_INJECT_LENGTH = 8000
+export const MAX_TOTAL_TOKENS = 12_000
+export const MAX_SECTION_TOKENS = 2_000
+export const CHARS_PER_TOKEN = 4
+
 export const FILE_TOOLS: ReadonlySet<string> = new Set(["read", "grep", "glob", "edit", "write", "find", "ls"])
+
+export function estimateTokens(text: string): number {
+  if (!text) return 0
+  return Math.ceil(text.length / CHARS_PER_TOKEN)
+}
 
 export function loadMemIndex(memDirPath: string): string | null {
   const f = join(memDirPath, "MEMORY.md")

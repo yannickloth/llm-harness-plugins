@@ -162,6 +162,138 @@ public class MemorySystemCli {
             case "path-validate" -> PathValidator.validate(Path.of(args[2]), memDir);
             case "path-validate-name" -> PathValidator.validateName(args[2]);
 
+            case "budget-inject" -> {
+                var projectRoot = args.length > 2 ? args[2] : memDir.getParent() != null ? memDir.getParent().toString() : ".";
+                var sessionId = args.length > 3 ? args[3] : "default";
+                var result = MemoryBudget.buildBudgetedInjection(memDir, projectRoot);
+                var output = new StringBuilder();
+                output.append("---\n");
+                output.append("type: budgeted-inject\n");
+                output.append("total_tokens: ").append(result.totalTokens()).append("\n");
+                output.append("tokens_available: ").append(result.tokensAvailable()).append("\n");
+                output.append("sections_budgeted: ").append(result.sectionsBudgeted()).append("\n");
+                output.append("sections_excluded: ").append(result.sectionsExcluded()).append("\n");
+                output.append("---\n\n");
+                output.append(result.output());
+                try {
+                    var budget = MemoryBudget.loadBudgetOrFresh(memDir, sessionId);
+                    budget = MemoryBudget.accumulate(budget, result.totalTokens());
+                    MemoryBudget.saveBudget(memDir, budget);
+                } catch (IOException e) {
+                    System.err.println("[budget] Save failed: " + e.getMessage());
+                }
+                System.out.print(output.toString());
+            }
+            case "budget-inject-nosave" -> {
+                var projectRoot = args.length > 2 ? args[2] : memDir.getParent() != null ? memDir.getParent().toString() : ".";
+                var sessionId = args.length > 3 ? args[3] : "default";
+                var result = MemoryBudget.buildBudgetedInjectionForReinject(memDir, projectRoot, sessionId);
+                var output = new StringBuilder();
+                output.append("---\n");
+                output.append("type: budgeted-inject-nosave\n");
+                output.append("total_tokens: ").append(result.totalTokens()).append("\n");
+                output.append("tokens_available: ").append(result.tokensAvailable()).append("\n");
+                output.append("sections_budgeted: ").append(result.sectionsBudgeted()).append("\n");
+                output.append("sections_excluded: ").append(result.sectionsExcluded()).append("\n");
+                output.append("---\n\n");
+                output.append(result.output());
+                System.out.print(output.toString());
+            }
+            case "budget-inject-delta" -> {
+                var projectRoot = args.length > 2 ? args[2] : memDir.getParent() != null ? memDir.getParent().toString() : ".";
+                var sessionId = args.length > 3 ? args[3] : "default";
+                try {
+                    var result = MemoryBudget.buildBudgetedInjection(memDir, projectRoot);
+                    var budget = MemoryBudget.loadBudgetOrFresh(memDir, sessionId);
+                    if (budget.exhausted()) {
+                        System.err.println("[budget] Budget exhausted, no injection");
+                        System.out.println("");
+                        return;
+                    }
+                    var delta = Math.max(0, result.totalTokens() - budget.tokensInjected());
+                    budget = MemoryBudget.accumulate(budget, delta);
+                    MemoryBudget.saveBudget(memDir, budget);
+                    var output = new StringBuilder();
+                    output.append("---\n");
+                    output.append("type: budgeted-inject-delta\n");
+                    output.append("total_tokens: ").append(result.totalTokens()).append("\n");
+                    output.append("delta_tokens: ").append(delta).append("\n");
+                    output.append("tokens_available: ").append(result.tokensAvailable()).append("\n");
+                    output.append("sections_budgeted: ").append(result.sectionsBudgeted()).append("\n");
+                    output.append("sections_excluded: ").append(result.sectionsExcluded()).append("\n");
+                    output.append("---\n\n");
+                    output.append(result.output());
+                    System.out.print(output.toString());
+                } catch (IOException e) {
+                    System.err.println("[budget] delta-inject failed: " + e.getMessage());
+                    System.out.println("");
+                }
+            }
+            case "budget-init" -> {
+                var sessionId = args.length > 2 ? args[2] : "default";
+                long ceiling = MemoryBudget.MAX_TOTAL_TOKENS;
+                if (args.length > 3) {
+                    try {
+                        ceiling = Long.parseLong(args[3]);
+                    } catch (NumberFormatException e) {
+                        System.err.println("[budget] Invalid ceiling '" + args[3] + "', using default " + ceiling);
+                    }
+                }
+                var budget = MemoryBudget.SessionBudget.fresh(sessionId, ceiling);
+                MemoryBudget.saveBudget(memDir, budget);
+                System.out.println("INITIALIZED session=" + sessionId + " ceiling=" + ceiling);
+            }
+            case "budget-status" -> {
+                var sessionId = args.length > 2 ? args[2] : "default";
+                var budget = MemoryBudget.loadBudgetOrFresh(memDir, sessionId);
+                System.out.println("session=" + budget.sessionId());
+                System.out.println("tokensInjected=" + budget.tokensInjected());
+                System.out.println("ceiling=" + budget.ceiling());
+                System.out.println("exhausted=" + budget.exhausted());
+                System.out.println("startTime=" + budget.startTime());
+            }
+            case "budget-accumulate" -> {
+                var sessionId = args.length > 2 ? args[2] : "default";
+                if (args.length < 4) {
+                    System.err.println("[budget] Missing token count argument");
+                    System.exit(1);
+                }
+                var tokens = Long.parseLong(args[3]);
+                var budget = MemoryBudget.loadBudgetOrFresh(memDir, sessionId);
+                budget = MemoryBudget.accumulate(budget, tokens);
+                MemoryBudget.saveBudget(memDir, budget);
+                System.out.println("ACCUMULATED session=" + sessionId + " tokensInjected=" + budget.tokensInjected() + " exhausted=" + budget.exhausted());
+            }
+            case "budget-reset" -> {
+                var sessionId = args.length > 2 ? args[2] : "default";
+                var budgetFile = MemoryBudget.budgetFile(memDir, sessionId);
+                try {
+                    Files.deleteIfExists(budgetFile);
+                    System.out.println("RESET session=" + sessionId);
+                } catch (IOException e) {
+                    System.err.println("[budget] Reset failed: " + e.getMessage());
+                }
+            }
+
+            case "verify" -> {
+                var projectRoot = Path.of(args.length > 2 ? args[2] : memDir.getParent() != null ? memDir.getParent().toString() : ".");
+                var result = MemoryVerifier.verify(memDir, projectRoot);
+                System.out.println("total_file_refs=" + result.totalFiles());
+                System.out.println("stale_files=" + result.staleFiles());
+                System.out.println("outside_project=" + result.outsideProject());
+                System.out.print(result.staleAnnotation());
+            }
+            case "verify-inject" -> {
+                var projectRoot = args.length > 2 ? args[2] : memDir.getParent() != null ? memDir.getParent().toString() : ".";
+                var output = MemoryVerifier.injectWithVerification(memDir, projectRoot);
+                System.out.println(output);
+            }
+            case "verify-report" -> {
+                var projectRoot = Path.of(args.length > 2 ? args[2] : memDir.getParent() != null ? memDir.getParent().toString() : ".");
+                var report = MemoryVerifier.buildVerifiedInjection(memDir, projectRoot);
+                System.out.print(report);
+            }
+
             case "tiered-inject" -> {
                 var projectRoot = Path.of(args.length > 2 ? args[2] : ".");
                 var tiers = new LinkedHashSet<Path>();
@@ -243,6 +375,9 @@ public class MemorySystemCli {
             model-tier model-trust model-record model-correct
             review sync-delta bootstrap migrate inject scoped-inject
             tiered-inject path-validate path-validate-name
+            budget-inject budget-init budget-status budget-accumulate
+            budget-inject-nosave budget-inject-delta budget-reset
+            verify verify-inject verify-report
             """);
     }
 
