@@ -2,6 +2,7 @@ import type { Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
 import { existsSync } from "fs"
+import { buildPromptWithBoundary, cachedSection, uncachedSection, reportScopeBreakdown } from "../../shared/cache-boundary"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -74,7 +75,15 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
         const raw = await $`cat ${path.join(pluginDir, "prompts", "agent-prompt.md")}`.nothrow().text()
         const header = raw.replace("<plugin-dir>", pluginDir)
-        await injectContext(client, sessionId, header + "\n---\n" + ctxText)
+
+        const sections = [
+          cachedSection(header),
+          cachedSection(ctxText),
+        ]
+        const prompt = buildPromptWithBoundary(sections)
+        console.log("[knowledge-graph]", reportScopeBreakdown(sections))
+
+        await injectContext(client, sessionId, prompt)
         console.log("[knowledge-graph] injected graph context into session", sessionId)
       } catch (e) {
         console.error("[knowledge-graph] session.created injection failed:", (e as Error).message)
@@ -97,7 +106,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
       try {
         const result = await $`java --class-path ${classesDir} ${mainClass} subgraph ${gf} ${absPath} 1`.nothrow().text()
-        await injectContext(client, sessionId, "## Graph Impact (edited file)\n" + result)
+        const section = uncachedSection("## Graph Impact (edited file)\n" + result, "per-file subgraph injection on edit")
+        await injectContext(client, sessionId, buildPromptWithBoundary([section]))
       } catch (e) {
         // silently ignore — best-effort injection
       }
@@ -128,7 +138,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
       try {
         const result = await $`java --class-path ${classesDir} ${mainClass} subgraph ${gf} ${absPath} 1`.nothrow().text()
-        await injectContext(client, sessionId, "## Graph Context (file read)\n" + result)
+        const section = uncachedSection("## Graph Context (file read)\n" + result, "per-file subgraph injection on read")
+        await injectContext(client, sessionId, buildPromptWithBoundary([section]))
       } catch (e) {
         // silently ignore
       }

@@ -16,6 +16,7 @@ final class PromptRegistryTest {
 
     void main(String[] args) throws Exception {
         withFreshRegistry(this::testParseVersionJson);
+        withFreshRegistry(this::testCacheScopeRoundtrips);
         withFreshRegistry(this::testJsonRoundtrip);
         withFreshRegistry(this::testSpecialCharactersInPromptName);
         withFreshRegistry(this::testEscapeJsonInjection);
@@ -63,10 +64,12 @@ final class PromptRegistryTest {
         assertThat(v.name().equals("greeting"), "name should be greeting");
         assertThat(v.content().equals("Hello, world!"), "content should match");
         assertThat(v.author().equals("alice"), "author should be alice");
+        assertThat(v.cacheScope().equals("global"), "committed version defaults cacheScope to global");
 
         var fetched = store.getVersion("greeting", 1);
         assertThat(fetched != null, "should fetch v1");
         assertThat(fetched.content().equals("Hello, world!"), "fetched content should match");
+        assertThat(fetched.cacheScope().equals("global"), "fetched version retains cacheScope");
     }
 
     void testCommitMultipleVersions() throws Exception {
@@ -232,6 +235,30 @@ final class PromptRegistryTest {
         assertThat(parsed.version() == 1, "version should match");
         assertThat(parsed.content().equals("hello world"), "content should match");
         assertThat(parsed.author().equals("alice"), "author should match");
+        assertThat(parsed.cacheScope().equals("global"), "5-arg constructor defaults cacheScope to global");
+    }
+
+    void testCacheScopeRoundtrips() throws Exception {
+        var org = new PromptVersion("org-test", 1, "content", "alice", Instant.now(), "org");
+        var orgJson = org.toJson();
+        assertThat(orgJson.contains("\"cacheScope\":\"org\""), "org cacheScope in JSON");
+        var orgParsed = RegistryStore.parseVersionJson(orgJson);
+        assertThat(orgParsed != null, "org should parse");
+        assertThat(orgParsed.cacheScope().equals("org"), "org cacheScope roundtripped");
+
+        var explicitNull = new PromptVersion("null-test", 1, "content", "alice", Instant.now(), null);
+        var nullJson = explicitNull.toJson();
+        assertThat(nullJson.contains("\"cacheScope\":\"global\""), "null cacheScope coerced to global in JSON");
+        var nullParsed = RegistryStore.parseVersionJson(nullJson);
+        assertThat(nullParsed != null, "null should parse");
+        assertThat(nullParsed.cacheScope().equals("global"), "null cacheScope roundtripped as global");
+
+        var jsonWithoutScope = """
+            {"name":"legacy","version":1,"content":"legacy content","author":"alice","timestamp":"%s"}"""
+            .formatted(Instant.now().toString());
+        var legacyParsed = RegistryStore.parseVersionJson(jsonWithoutScope);
+        assertThat(legacyParsed != null, "legacy JSON without cacheScope should parse");
+        assertThat(legacyParsed.cacheScope().equals("global"), "legacy JSON defaults cacheScope to global");
     }
 
     void testJsonRoundtrip() throws Exception {

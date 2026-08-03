@@ -301,7 +301,8 @@ final class RegistryStore {
             var version = versionNum.intValue();
             var author = (String) map.getOrDefault("author", "unknown");
             var ts = (String) map.getOrDefault("timestamp", Instant.now().toString());
-            return new PromptVersion(name, version, content, author, Instant.parse(ts));
+            var cacheScope = (String) map.getOrDefault("cacheScope", "global");
+            return new PromptVersion(name, version, content, author, Instant.parse(ts), cacheScope);
         } catch (Exception e) {
             return null;
         }

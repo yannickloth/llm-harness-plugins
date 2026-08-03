@@ -8,16 +8,25 @@ public record PromptVersion(
     int version,
     String content,
     String author,
-    Instant timestamp
+    Instant timestamp,
+    String cacheScope
 ) {
+    public PromptVersion {
+        if (cacheScope == null) cacheScope = "global";
+    }
+
+    public PromptVersion(String name, int version, String content, String author, Instant timestamp) {
+        this(name, version, content, author, timestamp, "global");
+    }
+
     public String slug() {
         return "v%d".formatted(version);
     }
 
     public String toJson() {
         return """
-            {"name":"%s","version":%d,"content":"%s","author":"%s","timestamp":"%s"}"""
-            .formatted(escapeJson(name), version, escapeJson(content), escapeJson(author), timestamp.toString());
+            {"name":"%s","version":%d,"content":"%s","author":"%s","timestamp":"%s","cacheScope":"%s"}"""
+            .formatted(escapeJson(name), version, escapeJson(content), escapeJson(author), timestamp.toString(), escapeJson(cacheScope));
     }
 
     public static String escapeJson(String s) {
