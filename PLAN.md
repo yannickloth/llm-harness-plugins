@@ -320,7 +320,21 @@ Each new plugin has a distinct driver from existing plugins → separate directo
 
 ---
 
-## 7. Pre-Flight Checklist Per New Plugin
+## 7. Shared Utilities
+
+### 7.1 config-settings — Cascading Config Merge (shared/config-settings.ts)
+
+| Property | Detail |
+|----------|--------|
+| Status | ✅ |
+| Tiers | userSettings → localSettings → flagSettings |
+| Merge | deep-merge, `null` = delete marker |
+| Safety | lockfile writes (O_EXCL), timestamped backups (capped 5, ≥60s throttle), auth-loss guard |
+| Per-key tracking | `perKey` map → query which source set each value |
+| Exports | `buildConfigCascade`, `loadSettingsFromDisk`, `mergeWithFlags`, `saveConfigAtomic`, `wouldLoseAuthState`, `getSourceForKey` |
+| Tests | `shared/config-settings.test.ts` (37 tests) |
+
+### 7.2 Pre-Flight Checklist Per New Plugin
 
 Every new plugin must satisfy:
 - [ ] Java ≥25 core + TypeScript shims (3 platforms: OpenCode, Claude Code, Pi)
