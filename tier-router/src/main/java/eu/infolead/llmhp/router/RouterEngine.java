@@ -1,8 +1,14 @@
 package eu.infolead.llmhp.router;
 
+import eu.infolead.llmhp.shared.CircuitBreaker;
+import eu.infolead.llmhp.shared.IronGate;
+import eu.infolead.llmhp.shared.DenialTracker;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * RouterEngine — combines mechanical escalation, keyword-based tier matching,
@@ -13,6 +19,7 @@ import java.util.Map;
  *   - Bandit-theoretic second-best margin (ai-patterns ch23: routing)
  *   - SOTA prompt rewriting (Anthropic docs: clarity, conciseness, XML, CoT)
  *   - Ambiguity detection with clarification question generation
+ *   - Circuit breakers for classifier unavailability, fleet escalation, and denial tracking
  */
 final class RouterEngine {
 
@@ -28,9 +35,125 @@ final class RouterEngine {
     private static final double SOFT_SIGNAL_CONFIDENCE = 0.9;
     private static final double CREATION_CONFIDENCE = 0.85;
 
+    private static final int CLASSIFIER_CONSECUTIVE_MAX = 3;
+    private static final int CLASSIFIER_TOTAL_MAX = 10;
+    private static final int FLEET_FAILURE_CONSECUTIVE_MAX = 5;
+    private static final int FLEET_FAILURE_TOTAL_MAX = 20;
+
+    private final IronGate classifierGate;
+    private CircuitBreaker<String> classifierBreaker;
+    private CircuitBreaker<String> fleetBreaker;
+    private DenialTracker<String> denialTracker;
+
+    private static final Path BREAKER_DIR = breakerDir();
+
+    private static Path breakerDir() {
+        var dir = env("TIER_ROUTER_METRICS_DIR", System.getProperty("user.dir"));
+        var path = Path.of(dir, ".breakers");
+        try { Files.createDirectories(path); } catch (java.io.IOException ignored) {}
+        return path;
+    }
+
+    private static String env(String key, String fallback) {
+        var val = System.getenv(key);
+        return val != null && !val.isBlank() ? val : fallback;
+    }
+
     RouterEngine() {
         this.classifier = new Classifier();
         this.reformatter = new Reformatter();
+        this.classifierGate = new IronGate(
+            resolveGateConfig(), true, 1800);
+
+        this.classifierBreaker = CircuitBreaker.loadOrFresh(
+            BREAKER_DIR, "classifier-unavailable",
+            CLASSIFIER_CONSECUTIVE_MAX, CLASSIFIER_TOTAL_MAX,
+            ctx -> ctx + " [BREAKER-TRIPPED: classifier unavailable — fallback routing]");
+
+        this.fleetBreaker = CircuitBreaker.loadOrFresh(
+            BREAKER_DIR, "fleet-escalation",
+            FLEET_FAILURE_CONSECUTIVE_MAX, FLEET_FAILURE_TOTAL_MAX,
+            ctx -> ctx + " [BREAKER-TRIPPED: fleet model failures — no more escalation]",
+            Function.identity());
+
+        this.denialTracker = DenialTracker.create("router",
+            ctx -> ctx + " [DENIAL-ABORTED: too many denials]");
+    }
+
+    private static Path resolveGateConfig() {
+        var cfg = System.getenv("TIER_ROUTER_IRON_GATE_CONFIG");
+        if (cfg != null && !cfg.isBlank()) {
+            var p = Path.of(cfg);
+            if (Files.exists(p)) return p;
+        }
+        var pluginRoot = System.getenv("TIER_ROUTER_PLUGIN_ROOT");
+        if (pluginRoot != null && !pluginRoot.isBlank()) {
+            var p = Path.of(pluginRoot, "iron-gate.json");
+            if (Files.exists(p)) return p;
+        }
+        return null;
+    }
+
+    IronGate classifierGate() { return classifierGate; }
+    CircuitBreaker<String> classifierBreaker() { return classifierBreaker; }
+    CircuitBreaker<String> fleetBreaker() { return fleetBreaker; }
+    DenialTracker<String> denialTracker() { return denialTracker; }
+
+    void recordClassifierFailure() {
+        classifierBreaker.recordFailure();
+    }
+
+    void recordClassifierSuccess() {
+        classifierBreaker.recordSuccess();
+    }
+
+    void recordFleetFailure() {
+        fleetBreaker.recordFailure();
+    }
+
+    void recordFleetSuccess() {
+        fleetBreaker.recordSuccess();
+    }
+
+    boolean fleetTripped() {
+        return fleetBreaker.isTripped();
+    }
+
+    String gateFleet(String prompt) {
+        return fleetBreaker.gate(prompt);
+    }
+
+    void recordDenial() {
+        denialTracker.recordDenial();
+    }
+
+    void recordToolAllow() {
+        denialTracker.recordAllow();
+    }
+
+    boolean denialsAborted() {
+        return denialTracker.isAborted();
+    }
+
+    String gateDenials(String prompt) {
+        return denialTracker.gate(prompt);
+    }
+
+    void saveBreakers() {
+        try {
+            classifierBreaker.save(BREAKER_DIR);
+            fleetBreaker.save(BREAKER_DIR);
+            denialTracker.save(BREAKER_DIR);
+        } catch (java.io.IOException e) {
+            System.err.println("[tier-router] breaker save failed: " + e.getMessage());
+        }
+    }
+
+    void setSessionId(String sessionId) {
+        this.denialTracker = DenialTracker.loadOrFresh(
+            BREAKER_DIR, sessionId,
+            DenialTracker.DEFAULT_CONSECUTIVE_MAX, DenialTracker.DEFAULT_TOTAL_MAX,
+            ctx -> ctx + " [DENIAL-ABORTED: too many denials]");
     }
 
     void setMemorySignals(List<UserMemorySignal> signals) {
@@ -126,18 +249,32 @@ final class RouterEngine {
         }
 
         // Step 3 (fallback): LLM classification (primary)
-        var llmResult = LlmClassifier.classify(trimmed);
-        if (llmResult != null) {
-            var reason = llmResult.reason();
-            if (llmResult.decision() == Decision.ESCALATE) {
-                return result(Decision.ESCALATE, null, reason + memoryHint, llmResult.confidence(), trimmed);
+        if (classifierBreaker.isTripped()) {
+            var gateMsg = "[BREAKER-TRIPPED: classifier unavailable — fallback routing]";
+            System.err.println("[tier-router] " + gateMsg);
+            memoryHint += " " + gateMsg;
+        } else {
+            var llmResult = LlmClassifier.classify(trimmed);
+            if (llmResult != null) {
+                recordClassifierSuccess();
+                var reason = llmResult.reason();
+                if (llmResult.decision() == Decision.ESCALATE) {
+                    return result(Decision.ESCALATE, null, reason + memoryHint, llmResult.confidence(), trimmed);
+                }
+                if (forceEscalate && matchedSignal != null) {
+                    return result(Decision.ESCALATE, null,
+                        "LLM routed but user is learning %s — escalating for judgment".formatted(matchedSignal.domain()) + memoryHint,
+                        matchedSignal.confidence(), trimmed);
+                }
+                return result(llmResult.decision(), llmResult.tier(), reason + memoryHint, llmResult.confidence(), trimmed);
             }
-            if (forceEscalate && matchedSignal != null) {
+
+            recordClassifierFailure();
+            if (classifierGate.isClosed()) {
                 return result(Decision.ESCALATE, null,
-                    "LLM routed but user is learning %s — escalating for judgment".formatted(matchedSignal.domain()) + memoryHint,
-                    matchedSignal.confidence(), trimmed);
+                    "Classifier unavailable (iron-gate closed) — fail-safe escalation" + memoryHint, 0.6, trimmed);
             }
-            return result(llmResult.decision(), llmResult.tier(), reason + memoryHint, llmResult.confidence(), trimmed);
+            memoryHint += " [LLM: unavailable — keyword fallback]";
         }
 
         // Step 4 (fallback): Keyword-based classification

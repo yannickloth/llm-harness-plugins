@@ -1,5 +1,6 @@
 package eu.infolead.llmhp.router;
 
+import eu.infolead.llmhp.shared.DenialTracker;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -42,7 +43,7 @@ final class RouterCli {
 
     void main(String[] args) throws Exception {
         if (args.length == 0) {
-            System.err.println("Usage: RouterCli <classify|route|rewrite|ambiguity|budget-check|budget-accumulate|budget-reset|memory-load|memory-extract> [args...]");
+            System.err.println("Usage: RouterCli <classify|route|rewrite|ambiguity|budget-check|budget-accumulate|budget-reset|memory-load|memory-extract|breaker-classifier-fail|breaker-classifier-ok|breaker-fleet-fail|breaker-fleet-ok|breaker-fleet-check|breaker-denial|breaker-denial-allow|breaker-save|breaker-status|breaker-session> [args...]");
             System.exit(1);
             return;
         }
@@ -93,6 +94,22 @@ final class RouterCli {
                     System.exit(1);
                 }
                 memoryExtract(args[1]);
+            }
+            case "breaker-classifier-fail" -> breakerClassifierFail();
+            case "breaker-classifier-ok" -> breakerClassifierOk();
+            case "breaker-fleet-fail" -> breakerFleetFail();
+            case "breaker-fleet-ok" -> breakerFleetOk();
+            case "breaker-fleet-check" -> breakerFleetCheck();
+            case "breaker-denial" -> breakerDenial();
+            case "breaker-denial-allow" -> breakerDenialAllow();
+            case "breaker-save" -> breakerSave();
+            case "breaker-status" -> breakerStatus();
+            case "breaker-session" -> {
+                if (args.length < 2) {
+                    System.err.println("breaker-session requires <session-id>");
+                    System.exit(1);
+                }
+                breakerSession(args[1]);
             }
             default -> {
                 System.err.println("Unknown command: " + cmd);
@@ -201,5 +218,91 @@ final class RouterCli {
             }
             return sb.toString().strip();
         }
+    }
+
+    private void breakerClassifierFail() {
+        engine.recordClassifierFailure();
+        var state = engine.classifierBreaker().state();
+        System.out.printf(
+            "{\"status\":\"%s\",\"consecutiveFailures\":%d,\"totalFailures\":%d,\"maxConsecutive\":%d,\"maxTotal\":%d}%n",
+            state.tripped() ? "tripped" : "ok",
+            state.consecutiveFailures(), state.totalFailures(),
+            engine.classifierBreaker().consecutiveMax(), engine.classifierBreaker().totalMax());
+    }
+
+    private void breakerClassifierOk() {
+        engine.recordClassifierSuccess();
+        var state = engine.classifierBreaker().state();
+        System.out.printf(
+            "{\"status\":\"ok\",\"consecutiveFailures\":%d,\"totalFailures\":%d}%n",
+            state.consecutiveFailures(), state.totalFailures());
+    }
+
+    private void breakerFleetFail() {
+        engine.recordFleetFailure();
+        var state = engine.fleetBreaker().state();
+        System.out.printf(
+            "{\"status\":\"%s\",\"consecutiveFailures\":%d,\"totalFailures\":%d,\"maxConsecutive\":%d,\"maxTotal\":%d}%n",
+            state.tripped() ? "tripped" : "ok",
+            state.consecutiveFailures(), state.totalFailures(),
+            engine.fleetBreaker().consecutiveMax(), engine.fleetBreaker().totalMax());
+    }
+
+    private void breakerFleetOk() {
+        engine.recordFleetSuccess();
+        var state = engine.fleetBreaker().state();
+        System.out.printf(
+            "{\"status\":\"ok\",\"consecutiveFailures\":%d,\"totalFailures\":%d}%n",
+            state.consecutiveFailures(), state.totalFailures());
+    }
+
+    private void breakerFleetCheck() {
+        var tripped = engine.fleetTripped();
+        System.out.printf("{\"tripped\":%s}%n", tripped);
+    }
+
+    private void breakerDenial() {
+        var aborted = engine.denialTracker().recordDenial();
+        var state = engine.denialTracker().state();
+        System.out.printf(
+            "{\"status\":\"%s\",\"justAborted\":%s,\"consecutiveDenials\":%d,\"totalDenials\":%d,\"maxConsecutive\":%d,\"maxTotal\":%d}%n",
+            engine.denialTracker().isAborted() ? "aborted" : "tracking",
+            aborted,
+            state.consecutiveFailures(), state.totalFailures(),
+            DenialTracker.DEFAULT_CONSECUTIVE_MAX, DenialTracker.DEFAULT_TOTAL_MAX);
+    }
+
+    private void breakerDenialAllow() {
+        engine.recordToolAllow();
+        var state = engine.denialTracker().state();
+        System.out.printf(
+            "{\"status\":\"tracking\",\"consecutiveDenials\":%d,\"totalDenials\":%d}%n",
+            state.consecutiveFailures(), state.totalFailures());
+    }
+
+    private void breakerSave() throws Exception {
+        engine.saveBreakers();
+        System.out.println("{\"status\":\"saved\"}");
+    }
+
+    private void breakerStatus() {
+        var cb = engine.classifierBreaker().state();
+        var fb = engine.fleetBreaker().state();
+        var dt = engine.denialTracker().state();
+        System.out.printf("""
+            {"classifier":{"tripped":%s,"consecutive":%d,"total":%d,"maxConsecutive":%d,"maxTotal":%d},"fleet":{"tripped":%s,"consecutive":%d,"total":%d,"maxConsecutive":%d,"maxTotal":%d},"denial":{"aborted":%s,"consecutive":%d,"total":%d,"maxConsecutive":%d,"maxTotal":%d}}
+            """.strip(),
+            cb.tripped(), cb.consecutiveFailures(), cb.totalFailures(),
+            engine.classifierBreaker().consecutiveMax(), engine.classifierBreaker().totalMax(),
+            fb.tripped(), fb.consecutiveFailures(), fb.totalFailures(),
+            engine.fleetBreaker().consecutiveMax(), engine.fleetBreaker().totalMax(),
+            engine.denialTracker().isAborted(),
+            dt.consecutiveFailures(), dt.totalFailures(),
+            DenialTracker.DEFAULT_CONSECUTIVE_MAX, DenialTracker.DEFAULT_TOTAL_MAX);
+    }
+
+    private void breakerSession(String sessionId) {
+        engine.setSessionId(sessionId);
+        System.out.printf("{\"status\":\"session-set\",\"sessionId\":\"%s\"}%n", sessionId);
     }
 }

@@ -69,14 +69,21 @@ run_tests() {
 }
 
 GUARDRAIL_CP="$SCRIPT_DIR/guardrail-chain/build/classes"
+SHARED_CP="$SCRIPT_DIR/shared/build/classes"
 
+compile_plugin "shared"
 compile_plugin "guardrail-chain"
 compile_plugin "agentmem" "$GUARDRAIL_CP"
 compile_plugin "agentinsights"
 compile_plugin "knowledge-graph"
-compile_plugin "tier-router"
+compile_plugin "tier-router" "$SHARED_CP"
 compile_plugin "semantic-cache"
 compile_plugin "prompt-registry"
+
+# session-lifecycle has its own build.sh that includes SHARED_CP
+if [ -f "$SCRIPT_DIR/session-lifecycle/build.sh" ]; then
+    bash "$SCRIPT_DIR/session-lifecycle/build.sh"
+fi
 
 cat > "$SCRIPT_DIR/agentmem/bin/memorysystem" << 'RUNNER'
 #!/usr/bin/env bash
@@ -137,3 +144,5 @@ run_tests "agentinsights"
 run_tests "semantic-cache"
 run_tests "guardrail-chain"
 run_tests "prompt-registry"
+run_tests "shared"
+run_tests "tier-router" "$SHARED_CP"

@@ -52,30 +52,34 @@
 
 ---
 
-## 3. Circuit Breakers on Critical Paths
+## 3. Circuit Breakers on Critical Paths — ✅ DONE
 
 **Pattern:** Explicit failure thresholds with state tracking on every critical loop.
 
 | Breaker | Threshold | On Trigger | Rationale |
 |---------|-----------|------------|-----------|
-| Auto-compact | 3 consecutive failures | Stop compacting, keep original | Real telemetry: sessions with 50+ failures wasting ~250K calls/day |
+| Auto-compact | 3 consecutive failures / 50 total | Stop compacting, keep original | Real telemetry: sessions with 50+ failures wasting ~250K calls/day |
 | Classifier unavailability | Iron gate config | Fail-closed or fallback-to-prompt | 30-min refresh gate; no stale decisions |
 | Denial limits | 3 consecutive / 20 total | Prompt user or AbortError | Prevents infinite retry loops on denied actions |
 | Auto-mode gates | GrowthBook toggle | Strip dangerous permissions, disable auto | Circuit-break = transform function applied to fresh context (avoids stale-snapshot races) |
+| Fleet escalation | 5 consecutive / 20 total | Stop retry-pool escalation | Prevents infinite escalation loops on model failures |
 
 **Key pattern:** `verifyAutoModeGateAccess` returns `(ctx) => ctx` transform function — not a boolean — applied against fresh context to prevent async stale-snapshot races.
 
-**Source files:**
-- `services/compact/autoCompact.ts` — `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3`
-- `utils/permissions/denialTracking.ts`
-- `utils/permissions/yoloClassifier.ts` — iron gate
-
-**Opencode applicability:** Tool retry loops, auto-compact equivalents, permission mode transitions. Add `CircuitBreaker` utility with configurable thresholds + stale-snapshot-safe transforms.
-
-**Existing plugin overlap:**
-- **tier-router:** Partial — `BudgetTracker` implements session token budget with ceiling+exhaustion threshold (monotonic 500K). `SkillAxis` retry-pool routing auto-escalates from cheaper initial model to quality-specialist after 2 non-converging rounds — a domain-scoped circuit breaker. BUT: budget-based, not consecutive-failure-based; no transform-function pattern; no auto-compact, denial, or classifier-unavailability breakers.
-- **session-lifecycle:** None — tracks edits/commits/archival, surfaces errors to `hook-errors.log`, but has no failure thresholds, no retry-loop protection, no compaction. Natural host for the auto-compact breaker (already knows session idle state).
-- **Gap:** A general `CircuitBreaker` utility + auto-compact breaker in session-lifecycle + denial tracking + iron-gate config for classifiers is absent.
+**Implementation:**
+- `shared/src/main/java/eu/infolead/llmhp/shared/BreakerState.java` (34 loc) — immutable record: breakerId, consecutiveFailures, totalFailures, totalActivations, tripped, timestamps. `fresh()`, `recordFailure(consecutiveMax, totalMax)`, `reset()`, `resetFailuresKeepTripState()`.
+- `shared/src/main/java/eu/infolead/llmhp/shared/CircuitBreaker.java` (212 loc) — generic `<Ctx>` class: constructor(tripped-transform, reset-transform), `isTripped()`, `gate(ctx)` (fresh-context transform to avoid stale-snapshot races), `recordFailure()`, `recordSuccess()`, `reset(cooldownMs)`, `gateWithReset(ctx)` (for auto-mode save/restore). WAL-atomic persistence via `save(dir)` / `loadOrFresh(dir, ...)`. Hand-rolled JSON `toJson()` / `parse()`.
+- `shared/src/main/java/eu/infolead/llmhp/shared/DenialTracker.java` (84 loc) — session-scoped denial tracking: `recordDenial()` returns true on just-aborted, `recordAllow()` resets consecutive counter, `isAborted()`, `gate(ctx)` (applies abort transform). Per-session WAL-atomic persistence.
+- `shared/src/main/java/eu/infolead/llmhp/shared/IronGate.java` (97 loc) — fail-closed/fail-open config gate. File-based config with mtime tracking, 30-min default refresh. `isClosed()`/`isOpen()`, `gate(ctx, onClosed)` / `gateOpen(ctx, onOpen)` transform function API.
+- `shared/src/main/java/eu/infolead/llmhp/shared/BreakerRegistry.java` (66 loc) — named breaker management with `breaker(name, ...)`, `gate(name, ...)`, `save(name)`, `saveAll()`, `reset(name, cooldownMs)`. ConcurrentHashMap-backed, thread-safe.
+- `shared/src/test/java/eu/infolead/llmhp/shared/CircuitBreakerTest.java` (307 loc, 13 tests) — covers fresh state, failure tripping, success reset, total-max tripping, full reset, gate transform, cooldown, JSON roundtrip, persistence, denial tracker, denial allows, iron gate, breaker registry.
+- `tier-router/.../RouterEngine.java` — wired 3 breakers: classifier unavailability (3/10, iron-gate fail-closed), fleet escalation (5/20), denial tracking (3/20). `classifierBreaker.isTripped()` skips LLM call. `recordClassifierFailure()` on null return. `recordFleetFailure()`/`recordFleetSuccess()`. `saveBreakers()` WAL-persists all 3. `setSessionId()` reattaches denial tracker per session.
+- `tier-router/.../RouterCli.java` — 10 CLI subcommands: `breaker-classifier-fail/ok`, `breaker-fleet-fail/ok/check`, `breaker-denial/denial-allow`, `breaker-save`, `breaker-status`, `breaker-session`.
+- `session-lifecycle/.../SessionBreakers.java` (77 loc) — auto-compact breaker: 3 consecutive / 50 total. `fail`/`success`/`check`/`reset` subcommands dispatched via `SessionLifecycle.java`.
+- `session-lifecycle/.../AutoModeGate.java` (72 loc) — auto-mode gate: 1 consecutive / 3 total (aggressive). 30-min cooldown on reset. `check`/`disable`/`reset`/`status` subcommands dispatched via `SessionLifecycle.java`.
+- `session-lifecycle/bin/SessionLifecycle.java` — new dispatch arms: `breaker-fail/success/check/reset`, `auto-gate-check/disable/reset/status`. Updated usage text.
+- `session-lifecycle/build.sh` — updated to compile with `--class-path "$SHARED_CP"` against `../shared/build/classes`.
+- `build.sh` (root) — added `shared` compile step (first), `SHARED_CP` variable, tier-router compiles with `$SHARED_CP`, session-lifecycle delegated to own build.sh. Added `run_tests "shared"` and `run_tests "tier-router" "$SHARED_CP"`.
 
 **Effort:** Medium · **Risk:** Low · **Impact:** High (reliability)
 
@@ -298,7 +302,7 @@ plugin → userSettings → projectSettings → localSettings → flagSettings �
 |---|---------|--------|------|--------|----------------|--------|
 | 1  | Uncached prompt section API | Low | Low | High | **DONE** | **Implemented** — `shared/section-registry.ts` (110 loc), 14 tests, knowledge-graph refactored |
 | 2  | YOLO classifier | High | Medium | Very High | **Partial** (guardrail-chain regex + tier-router routing classifier) | **New plugin** — extend guardrail-chain with LLM classifier + fail-closed |
-| 3  | Circuit breakers | Medium | Low | High | **Partial** (tier-router token budget + retry-pool; session-lifecycle idle tracking) | **New utility** — add budget/denial/compact breakers |
+| 3  | Circuit breakers | Medium | Low | High | **Partial → DONE** (tier-router budget + session-lifecycle idle tracking) | **Implemented** — shared CircuitBreaker<T> (212 loc), DenialTracker (84 loc), IronGate (97 loc), BreakerRegistry (66 loc); 13 tests; tier-router + session-lifecycle wired |
 | 4  | AI-as-Moderator for Memory | — | — | — | **FULL + ENHANCED** (agentmem implements all pillars + budget + verifier) | **Skipped** — agentmem already ships it; enhanced with budget + verifier |
 | 5  | Permission modes | Medium | Medium | High | **None** (absent everywhere) | **New plugin** |
 | 6  | Plugin marketplace | Very High | High | Very High | **None** (flat dirs, no marketplace infra) | **New infrastructure** |
@@ -324,7 +328,7 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 | 2 | **9** | Transcript exclusion | ✅ Done | **Done:** `TranscriptFilter.java` (286 loc, 13 tests) — zero-dep JSON parser, escape-aware, fail-closed on malformed/non-string/missing roles. Normalizes case+whitespace. Size bounds (10MB/1K messages). **Exposed:** CLI subcommand (`transcript-filter`), guardrail-chain opencode tool, guardrail-chain pi tool. |
 | 3 | **7** | `@include` directive | ✅ Done | **Done:** `shared/claudemd.ts` (480 loc) — hand-rolled markdown token walker, HTML comment stripping, DAG-safe circular-ref detection, realpath containment, realpath extension check, TEXT_FILE_EXTENSIONS allowlist, 2MB/16-depth limits. `context-includes/opencode/index.ts` (54 loc) — plugin injects resolved CLAUDE.md at session.created. 3 adversarial review rounds converged. |
 | 4 | **1** | Uncached prompt section API | ✅ Done | **Done:** `shared/section-registry.ts` (110 loc) — `SectionRegistry` class with fluent `section()`/`orgSection()`/`uncached(name, fn, reason)` API. `resolveSections()` sequential batch with per-factory error isolation. `buildPrompt()` delegates to cache-boundary sentinel assembly. `clear()` on `session.deleted`. 14 tests (192 loc). **Integrated:** knowledge-graph uses registry for static sections (`kg-header`, `kg-overview`), bypasses for single-shot per-event injections (avoids unbounded accumulation). `session.deleted` clears registry + resets module state. 5-round review-convergence passed. |
-| 5 | **3** | Circuit breakers | ~400 loc | `CircuitBreaker<T>` class (threshold + transform). Wire into 4 points: tier-router classifier, session-lifecycle compact, tool denial loop, auto-mode. Moderate integration surface. |
+| 5 | **3** | Circuit breakers | ✅ Done | **Done:** `shared/` Java library — `CircuitBreaker<T>` (212 loc), `BreakerState` (34 loc), `DenialTracker` (84 loc), `IronGate` (97 loc), `BreakerRegistry` (66 loc). 13 tests (307 loc). **Wired:** tier-router (classifier unavailability 3/10 + iron-gate, fleet escalation 5/20, denial tracking 3/20), session-lifecycle (auto-compact 3/50, auto-mode-gate 1/3 + 30-min cooldown). CLI subcommands: 10 in tier-router, 8 in session-lifecycle. |
 | 6 | **8** | Cascading config merge | ~500 loc | 5-source deep merge, drop-in dir, array concatenation, `undefined`-as-delete, lockfile writes, backup rotation, auth-loss guard. Multiple file formats. |
 | 7 | **5** | Permission modes | ~600 loc | 6-mode state machine, centralized `transitionMode()`, tool allow/deny lists per mode, BYPASS_IMMUNE checks, mode-strip/restore on transitions. Deep opencode runtime integration. |
 | 8 | **2** | YOLO classifier | ~1000 loc | LLM call with two-stage (fast 64tok + thinking 4096tok CoT), XML parsing, fail-closed, iron gate, safe-tool allowlist, cost telemetry, denial tracking, transcript projection per tool. |
@@ -334,9 +338,9 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 
 | Tier | Features | Time-to-ship | Dependency risk | Status |
 |------|----------|--------------|-----------------|--------|
-| **Done** | #10 boundary, #9 transcript, #4 agentmem enh., #7 @include, #1 uncached API | — | — | ✅ shipped |
-| **Trivial** (hours) | — | 1 session | — | Phase 1 complete |
-| **Light** (1–2 sessions) | #3 breakers | 1–2 sessions | Internal API design; #3 needs integration across 3-4 plugins | |
+| **Done** | #10 boundary, #9 transcript, #4 agentmem enh., #7 @include, #1 uncached API, #3 breakers | — | — | ✅ shipped |
+| **Trivial** (hours) | — | 1 session | — | Phase 1–2 complete |
+| **Light** (1–2 sessions) | — | — | — | All light tasks done |
 | **Medium** (3–5 sessions) | #8 config merge, #5 permission modes | 1–2 weeks | #5 depends on opencode runtime hooks; #8 is self-contained | |
 | **Heavy** (2+ weeks) | #2 YOLO classifier | 2–4 weeks | LLM cost/latency tradeoffs, iron-gate config, per-tool projection schemas | |
 | **Platform** (1+ month) | #6 marketplace | 4–8 weeks | Package distribution infra, security review, ecosystem migration | |
@@ -346,7 +350,7 @@ Ranked by: scope of new code, dependency surface, API integration depth, verific
 ```
 Phase 0 (foundations):  #10 boundary ✅ → #1 uncached API ✅ → #8 config merge
 Phase 1 (guard layer):  #9 transcript ✅ → #7 @include ✅ → #5 permission modes
-Phase 2 (resilience):   #3 circuit breakers
+Phase 2 (resilience):   #3 circuit breakers ✅
 Phase 3 (intelligence): #2 YOLO classifier
 Phase 4 (ecosystem):    #6 plugin marketplace
 ```
@@ -358,7 +362,7 @@ Phase 4 (ecosystem):    #6 plugin marketplace
 | 1 | guardrail-chain | Add transcript-exclusion utility (#9) | Very Low (~30 loc) | ✅ Done — `TranscriptFilter.java` (286 loc, 13 tests) + tool integrations |
 | 2 | prompt-registry | Add `cacheScope` field to prompt versions (#10) | Low (~40 loc) | ✅ Done — `PromptVersion.cacheScope` (null/global/org), 27 test loc |
 | 3 | knowledge-graph | Classify static overview cached, dynamic injections uncached (#1/#10). Refactored to use SectionRegistry. | Low (~50 loc) | ✅ Done — static header+overview as cachedSection(), per-file subgraph as uncachedSection(), `session.deleted` calls `registry.clear()` |
-| 4 | session-lifecycle | Add auto-compact breaker (#3) | Medium (~100 loc) | |
-| 5 | tier-router | Circuit-breaker on classifier fallback (#3) | Medium (~120 loc) | |
+| 4 | session-lifecycle | Add auto-compact breaker (#3) | Medium (~100 loc) | ✅ Done — `SessionBreakers.java` (77 loc, 3/50 thresholds), `AutoModeGate.java` (72 loc, 1/3 + 30-min cooldown), dispatched via `SessionLifecycle.java` |
+| 5 | tier-router | Circuit-breaker on classifier fallback (#3) | Medium (~120 loc) | ✅ Done — `RouterEngine.java` wired with 3 breakers (classifier 3/10 + iron-gate, fleet 5/20, denial 3/20), `RouterCli.java` with 10 CLI subcommands |
 | 6 | tier-router | COEOS skill-axis routing with retry-pool escalation | Medium (~500 loc) | ✅ Done — `SkillAxis.java` (18 axes), `SkillAxisMapping.java` (initial/specialist pool), `SkillAxisConfig.java` (JSON loader), `Classifier.skillAxisMatch()` (200+ keyword triggers), `RouterEngine` retry-pool branch, directive updates across shell/TS/Pi backends. Config-driven via `skill-axis-mapping.json`. |
 | 7 | agentmem | Per-session memory token budget + optional live-verification agent (#4) | Medium (~200 loc) | ✅ Done — `MemoryBudget.java` (394 loc), `MemoryVerifier.java` (198 loc), `memory-verifier.md` (41 loc), budget + verification tools |

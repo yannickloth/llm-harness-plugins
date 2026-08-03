@@ -43,8 +43,16 @@ class SessionLifecycle {
                 System.setIn(new java.io.ByteArrayInputStream(stdinJson.getBytes(StandardCharsets.UTF_8)));
                 new SessionEndArchive().main();
             }
+            case "breaker-fail" -> new SessionBreakers().main();
+            case "breaker-success" -> new SessionBreakers().main();
+            case "breaker-check" -> new SessionBreakers().main();
+            case "breaker-reset" -> new SessionBreakers().main();
+            case "auto-gate-check" -> new AutoModeGate().main();
+            case "auto-gate-disable" -> new AutoModeGate().main();
+            case "auto-gate-reset" -> new AutoModeGate().main();
+            case "auto-gate-status" -> new AutoModeGate().main();
             default -> {
-                System.err.println("usage: session-lifecycle <record-edit|check-errors|snapshot-commits|diff-commits|archive> <project-dir> [args...]");
+            System.err.println("usage: session-lifecycle <record-edit|check-errors|snapshot-commits|diff-commits|archive|breaker-fail|breaker-success|breaker-check|breaker-reset|auto-gate-check|auto-gate-disable|auto-gate-reset|auto-gate-status> <project-dir> [args...]");
                 System.exit(1);
             }
         }
