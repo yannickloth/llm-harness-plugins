@@ -1,7 +1,7 @@
 import type { Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
-import { existsSync, statSync } from "fs"
+import { existsSync } from "fs"
 import { loadMemIndex, collectTopicFiles, collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
 
 const agentmemDir = path.join(import.meta.dir, "..")
@@ -121,6 +121,12 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
   }).catch(() => { clearTimeout(kill) })
 }
 
+function flushFlaggedTurns(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string) {
+  if (flaggedTurnCount <= 0) return
+  flaggedTurnCount = 0
+  spawnKeeper(client, root)
+}
+
 function trySpawnDreamer(mdir: string) {
   const now = Date.now()
   if (now - lastDreamRun <= DREAM_INTERVAL_MS) return
@@ -146,7 +152,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     event: async ({ event }) => {
       switch (event.type) {
         case "session.created": {
-          flaggedTurnCount = 0
+          flushFlaggedTurns(client, root)
           injectedScopes.clear()
           const sid = event.properties?.sessionID
           if (!sid) return
@@ -181,11 +187,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         }
         case "session.idle": {
           const mdir = path.join(root, ".agentmem")
-          if (flaggedTurnCount > 0) {
-            flaggedTurnCount = 0
-            spawnKeeper(client, root)
-          }
+          flushFlaggedTurns(client, root)
           trySpawnDreamer(mdir)
+          break
+        }
+        case "session.deleted": {
+          flushFlaggedTurns(client, root)
           break
         }
       }
