@@ -10,32 +10,46 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     path.join(root, "AGENTS.md"),
   ]
 
-  const resolvedContents: string[] = []
+  let cachedMerged: string | null = null
+  let injectionInFlight = false
 
-  for (const file of files) {
-    if (!existsSync(file)) continue
-    try {
-      const { content } = parseClaudeMd(file, root)
-      if (content.trim()) {
-        resolvedContents.push(content)
-        console.log("[context-includes] resolved", file)
+  function resolveInstructions(): string | null {
+    if (cachedMerged !== null) return cachedMerged
+
+    const resolvedContents: string[] = []
+
+    for (const file of files) {
+      if (!existsSync(file)) continue
+      try {
+        const { content } = parseClaudeMd(file, root)
+        if (content.trim()) {
+          resolvedContents.push(content)
+          console.log("[context-includes] resolved", file)
+        }
+      } catch (e) {
+        console.error("[context-includes]", file, ":", (e as Error).message)
       }
-    } catch (e) {
-      console.error("[context-includes]", file, ":", (e as Error).message)
     }
+
+    if (resolvedContents.length === 0) {
+      console.log("[context-includes] no instruction files found, skipping injection")
+      cachedMerged = ""
+      return ""
+    }
+
+    cachedMerged = resolvedContents.join("\n\n")
+    return cachedMerged
   }
 
-  if (resolvedContents.length === 0) {
-    console.log("[context-includes] no instruction files found, skipping injection")
-    return {}
-  }
-
-  const merged = resolvedContents.join("\n\n")
-
-  return {
-    "session.created": async (input: { properties?: { session?: { id?: string } } }) => {
-      const sessionId = input?.properties?.session?.id
-      if (!sessionId) return
+  async function injectIfResolved(sessionId: string) {
+    if (injectionInFlight) {
+      console.log("[context-includes] injection already in flight for", sessionId, "- skipping")
+      return
+    }
+    injectionInFlight = true
+    try {
+      const merged = resolveInstructions()
+      if (!merged) return
 
       try {
         await client.session.prompt({
@@ -49,6 +63,28 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       } catch (e) {
         console.error("[context-includes] injection failed:", (e as Error).message)
       }
+    } finally {
+      injectionInFlight = false
+    }
+  }
+
+  return {
+    "session.created": async (input: { properties?: { session?: { id?: string } } }) => {
+      const sessionId = input?.properties?.session?.id
+      if (!sessionId) return
+      await injectIfResolved(sessionId)
+    },
+
+    "session.compacted": async (input: { properties?: { session?: { id?: string } } }) => {
+      const sessionId = input?.properties?.session?.id
+      if (!sessionId) return
+      cachedMerged = null
+      console.log("[context-includes] cache cleared on compaction, re-resolving")
+      await injectIfResolved(sessionId)
+    },
+
+    "session.deleted": () => {
+      cachedMerged = null
     },
   }
 }
