@@ -12,7 +12,9 @@ Eval-agnostic. A *code* eval (compile → test → integration) is one instance;
 
 ## Parameters
 
-`$ARGUMENTS` = space/nl-separated `gate=command...` in gate order, plus optional `rounds=N`.
+`$ARGUMENTS` = space/nl-separated `gate=<command>` in gate order, plus optional `rounds=N`. Commands containing spaces must be quoted: `gate="mvn -q test"`.
+
+Correctors are per-gate wiring: `corrector=<agent>`, matched to gates by position (first corrector → first gate, etc.).
 
 Gates are **project configuration** passed in, not hardcoded here. Example code instance:
 
@@ -36,10 +38,10 @@ Score = ordered pass-set (bit per gate), in declared gate order.
 
 Per round (cap default 5 unless `rounds=N`):
 
-1. Run gates in order until one fails
-2. Failing gate → dispatch its corrector → fix → next round
+1. Run **all** gates to completion; stop early only when a gate errors before it can run (missing executor)
+2. For each failing gate, dispatch its positional corrector → apply fixes → next round
 3. All gates pass → **green**; write final snapshot; report
-4. **UPDATE** — append snapshot to history (`<project>/tmp/eval-loop-history.md`); compute monotonic progress (pass-set grows or strictly non-decreasing)
+4. **UPDATE** — append snapshot to history (`<project>/tmp/eval-loop-history.md`); compute progress = pass-set strictly grows vs prior round
 5. **DECIDE:**
    - no progress vs prior round → stop-and-report (avoid oscillation)
    - rounds exhausted → abort
@@ -47,22 +49,22 @@ Per round (cap default 5 unless `rounds=N`):
 
 ## Corrector Dispatch
 
-Corrective agent set = **project wiring**. Map each failure class to the corrector the project has defined. Example code wiring:
+Corrective agent set = **project wiring** passed via `$ARGUMENTS`, one corrector per gate in gate order. Each gate's failure dispatches the corrector wired at the same position. Illustrative wiring for a code eval:
 
-| Failure class | Corrector role |
-|---------------|----------------|
-| compile / style | modern-java-agent (if wired) |
-| test failures | test-writer (if wired) |
-| build / wiring | quarkus-expert / maven-expert (if wired) |
+| Gate | Corrector (project-defined) |
+|------|------------------------------|
+| 1 compile | a build/style expert |
+| 2 test | a test expert |
+| 3 verify | a deploy/integration expert |
 
-For non-code instances, wire the class to the relevant expert (e.g. schema/dtla → data-expert). If the wired corrector is absent → report, do not fabricate.
+Names above are placeholders — the project supplies the actual expert agents. If the wired corrector is absent → report, do not fabricate.
 
 ## Abort & Report
 
 On abort, report:
 - failing gate (which gate, last result)
 - rounds used / cap
-- best snapshot (max pass-set from history)
+- best snapshot (last round's full pass-set — monotonic growth means this is the max)
 
 ## Constraints
 
