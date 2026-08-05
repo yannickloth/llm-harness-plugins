@@ -1,5 +1,7 @@
-import type { Config, Plugin } from "@opencode-ai/plugin"
+import type { Config, Plugin, tool } from "@opencode-ai/plugin"
+import { $ } from "bun"
 import fs from "fs"
+import os from "os"
 import path from "path"
 
 const skillsDir = path.join(import.meta.dir, "..", "skills")
@@ -40,6 +42,27 @@ export default async ({ directory }: Parameters<Plugin>[0]) => {
       const existing = (input as any).skills ?? {}
       ;(input as any).skills = { ...existing, ...entries }
     },
-    tool: {},
+    tool: {
+      "latex-check": tool({
+        description: "Compile a .tex file with latexmk to check for errors/warnings. Build artifacts go to a temp dir, not the source tree. Returns diagnostics or 'Compilation succeeded: <path>'.",
+        args: {
+          filePath: tool.schema.string().describe("Path to the .tex file to compile"),
+        },
+        async execute(args) {
+          const absPath = path.resolve(args.filePath)
+          const dir = path.dirname(absPath)
+          const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "latex-check-"))
+          try {
+            const result = await $`latexmk -pdf -interaction=nonstopmode -outdir=${tmp} ${absPath}`.cwd(dir).nothrow().quiet()
+            if (result.exitCode === 0) {
+              return `Compilation succeeded: ${absPath}`
+            }
+            return result.text()
+          } finally {
+            fs.rmSync(tmp, { recursive: true, force: true })
+          }
+        },
+      }),
+    },
   }
 }

@@ -15,17 +15,6 @@ function extractName(skillFile: string, dirName: string): string {
   return m ? m[1].trim() : dirName
 }
 
-function findNixRoot(startDir: string): string | null {
-  let dir = startDir
-  while (true) {
-    const flakePath = path.join(dir, "flake.nix")
-    if (fs.existsSync(flakePath)) return dir
-    const parent = path.dirname(dir)
-    if (parent === dir) return null
-    dir = parent
-  }
-}
-
 function skillEntries(dir: string): Record<string, { file: string }> {
   const entries: Record<string, { file: string }> = {}
   if (!fs.existsSync(dir)) return entries
@@ -43,9 +32,9 @@ function skillEntries(dir: string): Record<string, { file: string }> {
 }
 
 export default async ({ directory }: Parameters<Plugin>[0]) => {
-  console.log("[typst-toolkit] plugin active — skill self-registration")
+  console.log("[c-toolkit] plugin active — skill self-registration")
   const entries = skillEntries(skillsDir)
-  console.log(`[typst-toolkit] discovered ${Object.keys(entries).length} skills`)
+  console.log(`[c-toolkit] discovered ${Object.keys(entries).length} skills`)
 
   return {
     config: async (input: Config) => {
@@ -53,21 +42,29 @@ export default async ({ directory }: Parameters<Plugin>[0]) => {
       ;(input as any).skills = { ...existing, ...entries }
     },
     tool: {
-      "typst-check": tool({
-        description: "Compile a .typ file with Typst to check for errors/warnings. Returns diagnostics or 'Compilation succeeded: <path>'.",
+      "c-check": tool({
+        description: "Compile-check a .c file with gcc -std=c11 -fsyntax-only (no output files). Returns errors/warnings or 'Compilation succeeded: <path>'.",
         args: {
-          filePath: tool.schema.string().describe("Path to the .typ file to compile"),
+          filePath: tool.schema.string().describe("Path to the .c file to check"),
         },
         async execute(args) {
           const absPath = path.resolve(args.filePath)
-          const dir = path.dirname(absPath)
-          if (!process.env.TYPST_FONT_PATHS) {
-            const flakeRoot = findNixRoot(dir)
-            if (flakeRoot) {
-              return `TYPST_FONT_PATHS is not set but a flake.nix exists at ${flakeRoot}. Enter the dev shell first: cd ${flakeRoot} && nix develop`
-            }
+          const result = await $`gcc -std=c11 -fsyntax-only ${absPath}`.nothrow().quiet()
+          if (result.exitCode === 0) {
+            return `Compilation succeeded: ${absPath}`
           }
-          const result = await $`typst compile --root ${dir} --format pdf ${absPath} /dev/null`.nothrow().quiet()
+          return result.text()
+        },
+      }),
+
+      "cpp-check": tool({
+        description: "Compile-check a .cpp/.cc/.cxx file with g++ -std=c++17 -fsyntax-only (no output files). Returns errors/warnings or 'Compilation succeeded: <path>'.",
+        args: {
+          filePath: tool.schema.string().describe("Path to the C++ file to check"),
+        },
+        async execute(args) {
+          const absPath = path.resolve(args.filePath)
+          const result = await $`g++ -std=c++17 -fsyntax-only ${absPath}`.nothrow().quiet()
           if (result.exitCode === 0) {
             return `Compilation succeeded: ${absPath}`
           }

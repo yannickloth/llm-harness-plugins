@@ -1,6 +1,7 @@
 import type { Config, Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import fs from "fs"
+import os from "os"
 import path from "path"
 
 const skillsDir = path.join(import.meta.dir, "..", "skills")
@@ -13,17 +14,6 @@ function extractName(skillFile: string, dirName: string): string {
   const fm = content.slice(3, endIdx)
   const m = fm.match(/^name:\s*(.+)$/m)
   return m ? m[1].trim() : dirName
-}
-
-function findNixRoot(startDir: string): string | null {
-  let dir = startDir
-  while (true) {
-    const flakePath = path.join(dir, "flake.nix")
-    if (fs.existsSync(flakePath)) return dir
-    const parent = path.dirname(dir)
-    if (parent === dir) return null
-    dir = parent
-  }
 }
 
 function skillEntries(dir: string): Record<string, { file: string }> {
@@ -43,9 +33,9 @@ function skillEntries(dir: string): Record<string, { file: string }> {
 }
 
 export default async ({ directory }: Parameters<Plugin>[0]) => {
-  console.log("[typst-toolkit] plugin active — skill self-registration")
+  console.log("[kotlin-toolkit] plugin active — skill self-registration")
   const entries = skillEntries(skillsDir)
-  console.log(`[typst-toolkit] discovered ${Object.keys(entries).length} skills`)
+  console.log(`[kotlin-toolkit] discovered ${Object.keys(entries).length} skills`)
 
   return {
     config: async (input: Config) => {
@@ -53,25 +43,23 @@ export default async ({ directory }: Parameters<Plugin>[0]) => {
       ;(input as any).skills = { ...existing, ...entries }
     },
     tool: {
-      "typst-check": tool({
-        description: "Compile a .typ file with Typst to check for errors/warnings. Returns diagnostics or 'Compilation succeeded: <path>'.",
+      "kotlin-check": tool({
+        description: "Compile a .kt file with kotlinc to check for errors/warnings. Output goes to a temp dir, not the source tree. Returns diagnostics or 'Compilation succeeded: <path>'.",
         args: {
-          filePath: tool.schema.string().describe("Path to the .typ file to compile"),
+          filePath: tool.schema.string().describe("Path to the .kt file to compile"),
         },
         async execute(args) {
           const absPath = path.resolve(args.filePath)
-          const dir = path.dirname(absPath)
-          if (!process.env.TYPST_FONT_PATHS) {
-            const flakeRoot = findNixRoot(dir)
-            if (flakeRoot) {
-              return `TYPST_FONT_PATHS is not set but a flake.nix exists at ${flakeRoot}. Enter the dev shell first: cd ${flakeRoot} && nix develop`
+          const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kotlin-check-"))
+          try {
+            const result = await $`kotlinc -d ${tmp} ${absPath}`.nothrow().quiet()
+            if (result.exitCode === 0) {
+              return `Compilation succeeded: ${absPath}`
             }
+            return result.text()
+          } finally {
+            fs.rmSync(tmp, { recursive: true, force: true })
           }
-          const result = await $`typst compile --root ${dir} --format pdf ${absPath} /dev/null`.nothrow().quiet()
-          if (result.exitCode === 0) {
-            return `Compilation succeeded: ${absPath}`
-          }
-          return result.text()
         },
       }),
     },
