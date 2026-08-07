@@ -9,6 +9,7 @@
     "./agentmem/opencode/index.ts",
     "./semantic-cache/opencode/index.ts",
     "./tier-router/opencode/index.ts",
+    "./datetime-inject/opencode/index.ts",
     "./agentinsights/opencode/index.ts",
     "./knowledge-graph/opencode/index.ts",
     "./prompt-registry/opencode/index.ts",

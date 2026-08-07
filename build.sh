@@ -94,3 +94,6 @@ run_tests "tier-router" "$SHARED_CP"
 run_tests "permission-modes"
 echo "--- Running permission-modes TS tests ---"
 bun test "$SCRIPT_DIR/permission-modes/opencode/index.test.ts" || echo "permission-modes TS tests: FAILED (bun not available?)"
+
+echo "--- Running datetime-inject TS tests ---"
+bun test "$SCRIPT_DIR/datetime-inject/opencode/index.test.ts" || echo "datetime-inject TS tests: FAILED (bun not available?)"

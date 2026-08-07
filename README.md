@@ -13,6 +13,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`guardrail-chain`](./guardrail-chain) | Shared guardrail pipeline — pre/post execution filters across plugins |
 | [`agentmem`](./agentmem) | Persistent file-based memory system — ADD-only, multi-signal retrieval, hierarchical scoping |
 | [`agentinsights`](./agentinsights) | Session analytics + AI-generated narrative reports — scan transcripts, extract facets via LLM, generate HTML insights |
+| [`datetime-inject`](./datetime-inject) | Injects current datetime, platform, and repo toolchain context into every LLM prompt |
 
 ---
 
@@ -36,6 +37,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
     "./llm-harness-plugins/agentmem/opencode/index.ts",
     "./llm-harness-plugins/semantic-cache/opencode/index.ts",
     "./llm-harness-plugins/tier-router/opencode/index.ts",
+    "./llm-harness-plugins/datetime-inject/opencode/index.ts",
     "./llm-harness-plugins/agentinsights/opencode/index.ts",
     "./llm-harness-plugins/knowledge-graph/opencode/index.ts",
     "./llm-harness-plugins/prompt-registry/opencode/index.ts",
@@ -53,6 +55,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 | 3 | `agentmem` | `semantic-cache`, `agentinsights` | Creates `.agentmem/` root dir; `tier-router` reads its `MEMORY.md` |
 | 4 | `semantic-cache` | — | Writes to `.agentmem/cache/`; planned cache for `tier-router` |
 | 5 | `tier-router` | — | Reads `agentmem`'s `MEMORY.md` for routing signals |
+| 5b | `datetime-inject` | — | Adds datetime/platform/toolchain context to every prompt; loads with the other chat-message consumers |
 | 6 | `agentinsights` | — | Writes reports to `.agentmem/insights/` |
 | 7 | `knowledge-graph` | — | Typst-derived graph; conceptually downstream of `typst-toolkit` |
 | 8 | `prompt-registry` | — | Manages prompt templates across all plugins |

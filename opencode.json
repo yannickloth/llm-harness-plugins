@@ -4,7 +4,8 @@
     "./guardrail-chain/opencode/index.ts",
     "./general-skills/opencode/index.ts",
     "./latex-toolkit/opencode/index.ts",
-    "./typst-toolkit/opencode/index.ts"
+    "./typst-toolkit/opencode/index.ts",
+    "./datetime-inject/opencode/index.ts"
   ],
   "agent": {
     "guardrail-chain": {
