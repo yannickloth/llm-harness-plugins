@@ -68,6 +68,14 @@ Where useful, compare the target against baseline ranges and report metrics per 
 | Formulaic opening rate | <5% of paragraphs |
 | Sentence length variance | 10–18 words |
 
+## Qualitative Metrics
+
+Reference docs (available in the general-skills plugin at `general-skills/references/`):
+- `ai-prose-patterns.md` — full pattern registry with severity, domain exceptions, suggested revisions, and research sources.
+- `corpus-analysis-framework.md` — baseline metrics, domain conventions, and severity-calculation framework.
+
+Load the relevant one when you need the full per-pattern exception set or precise baselines.
+
 ## Optional Deterministic Helper
 
 If a Java prose-pattern analyzer is available in the project, run it for deterministic, repeatable pattern detection and use its output as a cross-reference for the manual read-through. A canonical copy ships with the llm-harness-plugins general-skills plugin at `general-skills/tools/ProsePatternAnalyzer.java`:
