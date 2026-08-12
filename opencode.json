@@ -82,6 +82,12 @@
       "file": "./typst-toolkit/agents/structure-auditor.md",
       "mode": "subagent",
       "model": "deepseek/deepseek-v4-flash"
+    },
+    "typst-writer": {
+      "file": "./typst-toolkit/agents/typst-writer.md",
+      "mode": "subagent",
+      "model": "deepseek/deepseek-v4-pro",
+      "thinking": { "type": "enabled" }
     }
   }
 }
