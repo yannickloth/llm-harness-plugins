@@ -3,7 +3,7 @@ import module java.base;
 class SessionLifecycle {
     public static void main(String... args) {
         if (args.length < 2) {
-            System.err.println("usage: session-lifecycle <record-edit|check-errors|snapshot-commits|diff-commits|archive> <project-dir> [args...]");
+            System.err.println("usage: session-lifecycle <record-access|record-edit|check-errors|snapshot-commits|diff-commits|archive> <project-dir> [args...]");
             System.exit(1);
         }
         var subcommand = args[0];
@@ -11,13 +11,24 @@ class SessionLifecycle {
         var trailingArgs = java.util.Arrays.copyOfRange(args, 2, args.length);
 
         injectEnv("OPENCODE_PROJECT_DIR", projectDir);
+        injectEnv("CLAUDE_PROJECT_DIR", projectDir);  // consumers read this name; keep both for compatibility
 
         switch (subcommand) {
+            case "record-access" -> {
+                if (trailingArgs.length < 2) { System.err.println("record-access expects: session_id access_type [file_path]"); System.exit(1); }
+                var sessionId = trailingArgs[0];
+                var accessType = trailingArgs[1];
+                if (trailingArgs.length >= 3) {
+                    var stdinJson = "{\"session_id\":\"" + escape(sessionId) + "\",\"access_type\":\"" + escape(accessType) + "\",\"tool_input\":{\"file_path\":\"" + escape(trailingArgs[2]) + "\"}}";
+                    System.setIn(new java.io.ByteArrayInputStream(stdinJson.getBytes(StandardCharsets.UTF_8)));
+                }
+                new LogFileChange().main();
+            }
             case "record-edit" -> {
                 if (trailingArgs.length < 1) { System.err.println("record-edit expects: session_id [file_path]"); System.exit(1); }
                 var sessionId = trailingArgs[0];
                 if (trailingArgs.length >= 2) {
-                    var stdinJson = "{\"session_id\":\"" + escape(sessionId) + "\",\"tool_input\":{\"file_path\":\"" + escape(trailingArgs[1]) + "\"}}";
+                    var stdinJson = "{\"session_id\":\"" + escape(sessionId) + "\",\"access_type\":\"edit\",\"tool_input\":{\"file_path\":\"" + escape(trailingArgs[1]) + "\"}}";
                     System.setIn(new java.io.ByteArrayInputStream(stdinJson.getBytes(StandardCharsets.UTF_8)));
                 }
                 new LogFileChange().main();
@@ -52,7 +63,7 @@ class SessionLifecycle {
             case "auto-gate-reset" -> new AutoModeGate().main();
             case "auto-gate-status" -> new AutoModeGate().main();
             default -> {
-            System.err.println("usage: session-lifecycle <record-edit|check-errors|snapshot-commits|diff-commits|archive|breaker-fail|breaker-success|breaker-check|breaker-reset|auto-gate-check|auto-gate-disable|auto-gate-reset|auto-gate-status> <project-dir> [args...]");
+            System.err.println("usage: session-lifecycle <record-access|record-edit|check-errors|snapshot-commits|diff-commits|archive|breaker-fail|breaker-success|breaker-check|breaker-reset|auto-gate-check|auto-gate-disable|auto-gate-reset|auto-gate-status> <project-dir> [args...]");
                 System.exit(1);
             }
         }

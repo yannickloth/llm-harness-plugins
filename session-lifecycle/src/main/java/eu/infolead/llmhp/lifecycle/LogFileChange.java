@@ -1,9 +1,12 @@
-// PostToolUse hook: append a timestamped row per file edit.
-// Drivers: γ_payload-shape (Claude Code stdin JSON), γ_log-format-edits (TSV layout).
-// Output: tmp/sessions/<session_id>.tsv — one line per edit: <ISO-8601 ts>\t<absolute file path>
+// File-access hook: append a timestamped row per file access (read/edit/write).
+// Drivers: γ_payload-shape (tool JSON), γ_log-format-access (TSV layout).
+// Output: tmp/sessions/<session_id>.tsv — one line per access:
+//   <ISO-8601 ts>\t<read|edit|write>\t<absolute file path>
 // Errors → tmp/sessions/hook-errors.log; always exit 0.
 
 import module java.base;
+
+class LogFileChange {
 
 void main() {
     try {
@@ -13,12 +16,13 @@ void main() {
             .or(() -> extractNestedString(json, "tool_input", "path"))
             .orElse(null);
         if (filePath == null) return;
+        var accessType = normalizeAccess(extractString(json, "access_type").orElse("edit"));
 
         var sessionsDir = sessionsDir();
         Files.createDirectories(sessionsDir);
         var logFile = sessionsDir.resolve(sessionId + ".tsv");
         var lockFile = sessionsDir.resolve(sessionId + ".tsv.lock");
-        var line = Instant.now() + "\t" + filePath + "\n";
+        var line = Instant.now() + "\t" + accessType + "\t" + filePath + "\n";
 
         try (var raf = new RandomAccessFile(lockFile.toFile(), "rw");
              var _ = raf.getChannel().lock()) {
@@ -29,6 +33,13 @@ void main() {
     } catch (Throwable t) {
         ErrorReporter.report("LogFileChange", t);
     }
+}
+
+String normalizeAccess(String raw) {
+    var lower = raw.toLowerCase();
+    if (lower.equals("write") || lower.equals("w") || lower.equals("edit")) return "write";
+    if (lower.equals("read") || lower.equals("r")) return "read";
+    return "edit";
 }
 
 Path sessionsDir() {
@@ -79,4 +90,6 @@ static class ErrorReporter {
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (Throwable ignored) {}
     }
+}
+
 }
