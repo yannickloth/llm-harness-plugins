@@ -5,7 +5,8 @@
     "./general-skills/opencode/index.ts",
     "./latex-toolkit/opencode/index.ts",
     "./typst-toolkit/opencode/index.ts",
-    "./datetime-inject/opencode/index.ts"
+    "./datetime-inject/opencode/index.ts",
+    "./ivp/opencode/index.ts"
   ],
   "agent": {
     "guardrail-chain": {
@@ -51,6 +52,36 @@
     "xref-checker": {
       "file": "./general-skills/agents/xref-checker.md",
       "mode": "subagent"
+    },
+    "driver-identifier": {
+      "file": "./ivp/agents/driver-identifier.md",
+      "mode": "subagent"
+    },
+    "driver-assignment-auditor": {
+      "file": "./ivp/agents/driver-assignment-auditor.md",
+      "mode": "subagent"
+    },
+    "gamma-modularizer": {
+      "file": "./ivp/agents/gamma-modularizer.md",
+      "mode": "subagent"
+    },
+    "nest-decider": {
+      "file": "./ivp/agents/nest-decider.md",
+      "mode": "subagent"
+    },
+    "ivp-refactor-auditor": {
+      "file": "./ivp/agents/ivp-refactor-auditor.md",
+      "mode": "subagent"
+    },
+    "content-splitter": {
+      "file": "./typst-toolkit/agents/content-splitter.md",
+      "mode": "subagent",
+      "model": "deepseek/deepseek-v4-pro"
+    },
+    "structure-auditor": {
+      "file": "./typst-toolkit/agents/structure-auditor.md",
+      "mode": "subagent",
+      "model": "deepseek/deepseek-v4-flash"
     }
   }
 }
