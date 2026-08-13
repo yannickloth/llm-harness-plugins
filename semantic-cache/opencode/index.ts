@@ -1,6 +1,7 @@
 import type { Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
+import { createLogger } from "../../shared/plugin-logger"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -13,8 +14,9 @@ function cacheDir(context: { worktree?: string; directory: string }): string {
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  const logger = createLogger(client, "semantic-cache")
   const cdir = cacheDir({ worktree, directory })
-  console.log("[semantic-cache] plugin active — 3 tools (cache-lookup, cache-store, cache-stats)")
+  logger.info("plugin active — 3 tools (cache-lookup, cache-store, cache-stats)")
 
   return {
     tool: {

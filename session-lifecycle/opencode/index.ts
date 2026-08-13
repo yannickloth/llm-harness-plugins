@@ -1,15 +1,17 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
+import { createLogger } from "../../shared/plugin-logger"
 
-export default async ({ directory, worktree }: Parameters<Plugin>[0]) => {
+export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  const logger = createLogger(client, "session-lifecycle")
   const root = worktree ?? directory
   const pluginDir = path.join(import.meta.dir, "..")
   const classesDir = path.join(pluginDir, "build", "classes")
   const mainClass = "SessionLifecycle"
   const jvmOpts = "--add-opens java.base/java.util=ALL-UNNAMED"
 
-  console.log("[session-lifecycle] plugin active — lifecycle + file-access logging")
+  logger.info("plugin active — lifecycle + file-access logging")
 
   const ACCESS_TOOLS: ReadonlySet<string> = new Set(["read", "edit", "write"])
 

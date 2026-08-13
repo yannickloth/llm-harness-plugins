@@ -1,4 +1,5 @@
 import type { Config, Plugin, tool } from "@opencode-ai/plugin"
+import { createLogger } from "../../shared/plugin-logger"
 import { $ } from "bun"
 import fs from "fs"
 import path from "path"
@@ -42,10 +43,11 @@ function skillEntries(dir: string): Record<string, { file: string }> {
   return entries
 }
 
-export default async ({ directory }: Parameters<Plugin>[0]) => {
-  console.log("[typst-toolkit] plugin active — skill self-registration")
+export default async ({ client, directory }: Parameters<Plugin>[0]) => {
+  const logger = createLogger(client, "typst-toolkit")
+  logger.info("plugin active — skill self-registration")
   const entries = skillEntries(skillsDir)
-  console.log(`[typst-toolkit] discovered ${Object.keys(entries).length} skills`)
+  logger.info(`discovered ${Object.keys(entries).length} skills`)
 
   return {
     config: async (input: Config) => {

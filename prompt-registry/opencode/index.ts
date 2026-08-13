@@ -1,6 +1,7 @@
 import type { Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
+import { createLogger } from "../../shared/plugin-logger"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -12,8 +13,9 @@ function registryDir(context: { worktree?: string; directory: string }): string 
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  const logger = createLogger(client, "prompt-registry")
   const rdir = registryDir({ worktree, directory })
-  console.log("[prompt-registry] plugin active — 5 tools (prompt-commit, prompt-pull, prompt-list, prompt-diff, prompt-test)")
+  logger.info("plugin active — 5 tools (prompt-commit, prompt-pull, prompt-list, prompt-diff, prompt-test)")
 
   return {
     tool: {

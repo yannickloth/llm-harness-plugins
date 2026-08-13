@@ -1,9 +1,11 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { parseInstructionsMd } from "../../shared/instructions-md"
+import { createLogger } from "../../shared/plugin-logger"
 import { existsSync } from "fs"
 import path from "path"
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  const logger = createLogger(client, "context-includes")
   const root = worktree ?? directory
   const files = [
     path.join(root, "CLAUDE.md"),
@@ -24,15 +26,15 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         const { content } = parseInstructionsMd(file, root)
         if (content.trim()) {
           resolvedContents.push(content)
-          console.log("[context-includes] resolved", file)
+          logger.info(`resolved ${file}`)
         }
       } catch (e) {
-        console.error("[context-includes]", file, ":", (e as Error).message)
+        logger.error(`${file}: ${(e as Error).message}`)
       }
     }
 
     if (resolvedContents.length === 0) {
-      console.log("[context-includes] no instruction files found, skipping injection")
+      logger.info("no instruction files found, skipping injection")
       cachedMerged = ""
       return ""
     }
@@ -43,7 +45,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
   async function injectIfResolved(sessionId: string) {
     if (injectionInFlight) {
-      console.log("[context-includes] injection already in flight for", sessionId, "- skipping")
+      logger.info(`injection already in flight for ${sessionId} - skipping`)
       return
     }
     injectionInFlight = true
@@ -59,9 +61,9 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
             parts: [{ type: "text", text: merged }],
           },
         })
-        console.log("[context-includes] injected resolved instructions into session", sessionId)
+        logger.info(`injected resolved instructions into session ${sessionId}`)
       } catch (e) {
-        console.error("[context-includes] injection failed:", (e as Error).message)
+        logger.error(`injection failed: ${(e as Error).message}`)
       }
     } finally {
       injectionInFlight = false
@@ -79,7 +81,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       const sessionId = input?.properties?.session?.id
       if (!sessionId) return
       cachedMerged = null
-      console.log("[context-includes] cache cleared on compaction, re-resolving")
+      logger.info("cache cleared on compaction, re-resolving")
       await injectIfResolved(sessionId)
     },
 

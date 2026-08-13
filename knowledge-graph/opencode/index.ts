@@ -4,6 +4,7 @@ import path from "path"
 import { existsSync } from "fs"
 import { SectionRegistry } from "../../shared/section-registry"
 import { buildPromptWithBoundary, cachedSection, uncachedSection } from "../../shared/cache-boundary"
+import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -33,6 +34,7 @@ let injectedSessionId: string | null = null
 const injectedFiles = new Set<string>()
 
 async function injectContext(
+  logger: PluginLogger,
   client: ReturnType<Parameters<Plugin>[0]["client"]>,
   sessionId: string,
   text: string
@@ -50,14 +52,15 @@ async function injectContext(
       },
     })
   } catch (e) {
-    console.error("[knowledge-graph] inject failed:", (e as Error).message)
+    logger.error(`inject failed: ${(e as Error).message}`)
   }
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
-  console.log("[knowledge-graph] plugin active — kg-query tool + auto-injection hooks")
+  const logger = createLogger(client, "knowledge-graph")
+  logger.info("plugin active — kg-query tool + auto-injection hooks")
   const root = worktree ?? directory
-  const registry = new SectionRegistry()
+  const registry = new SectionRegistry(logger)
 
   registry.section("kg-header", async () => {
     const raw = await $`cat ${path.join(pluginDir, "prompts", "agent-prompt.md")}`.nothrow().text()
@@ -72,7 +75,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
       const gf = graphFile(root)
       if (!existsSync(gf)) {
-        console.log("[knowledge-graph] no graph.json found, skipping context injection")
+        logger.info("no graph.json found, skipping context injection")
         return
       }
 
@@ -83,12 +86,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         registry.section("kg-overview", () => ctxText)
 
         const prompt = await registry.buildPrompt()
-        console.log("[knowledge-graph]", registry.report())
+        logger.info(registry.report())
 
-        await injectContext(client, sessionId, prompt)
-        console.log("[knowledge-graph] injected graph context into session", sessionId)
+        await injectContext(logger, client, sessionId, prompt)
+        logger.info(`injected graph context into session ${sessionId}`)
       } catch (e) {
-        console.error("[knowledge-graph] session.created injection failed:", (e as Error).message)
+        logger.error(`session.created injection failed: ${(e as Error).message}`)
       }
     },
 
@@ -120,9 +123,9 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           "## Graph Impact (edited file)\n" + result,
           "per-file subgraph injection on edit"
         )
-        await injectContext(client, sessionId, buildPromptWithBoundary([section]))
+        await injectContext(logger, client, sessionId, buildPromptWithBoundary([section]))
       } catch (e) {
-        // silently ignore — best-effort injection
+        // silently ignore
       }
     },
 
@@ -157,7 +160,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           "## Graph Context (file read)\n" + result,
           "per-file subgraph injection on read"
         )
-        await injectContext(client, sessionId, buildPromptWithBoundary([section]))
+        await injectContext(logger, client, sessionId, buildPromptWithBoundary([section]))
       } catch (e) {
         // silently ignore
       }

@@ -2,6 +2,7 @@ import type { Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
 import { existsSync, readdirSync, statSync, readFileSync } from "fs"
+import { createLogger } from "../../shared/plugin-logger"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -13,7 +14,8 @@ function java(args: string[]): Promise<{ stdout: string; stderr: string; exitCod
 }
 
 export default async ({ project, client, $_, directory, worktree }: Parameters<Plugin>[0]) => {
-  console.log("[guardrail-chain] plugin active — 4 tools (scan-secrets, check-injection, check-path, transcript-filter)")
+  const logger = createLogger(client, "guardrail-chain")
+  logger.info("plugin active — 4 tools (scan-secrets, check-injection, check-path, transcript-filter)")
   const root = worktree ?? directory
 
   return {
@@ -75,9 +77,9 @@ export default async ({ project, client, $_, directory, worktree }: Parameters<P
       try {
         const parsed = JSON.parse(result)
         if (parsed.blocked) {
-          console.error("[guardrail-chain] SECRET DETECTED in edited file:", input.file)
+          logger.error(`SECRET DETECTED in edited file: ${input.file}`)
           for (const block of parsed.blocks) {
-            console.error("  BLOCKED:", block.source, "-", block.message)
+            logger.error(`  BLOCKED: ${block.source} - ${block.message}`)
           }
         }
       } catch (_) {}

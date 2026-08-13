@@ -6,7 +6,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 
 type Prompt = (...args: any[]) => Promise<void> | void
 interface MockSession { prompt: Prompt; calls: { text: string }[] }
-interface MockClient { session: MockSession }
+interface MockLogEntry { service: string; level: string; message: string }
+interface MockClient { session: MockSession; app: { log: (e: any) => Promise<void> }; logs: MockLogEntry[] }
 
 type PluginHandlers = Awaited<
   ReturnType<(typeof import("./index.ts"))["default"]>
@@ -20,7 +21,11 @@ beforeAll(async () => {
 })
 
 beforeEach(async () => {
-  client = { session: { prompt: async () => {}, calls: [] } }
+  client = {
+    session: { prompt: async () => {}, calls: [] },
+    logs: [],
+    app: { log: async (e: any) => { client.logs.push({ service: e.body.service, level: e.body.level, message: e.body.message }) } },
+  }
   const real = client.session.prompt
   client.session.prompt = (...args: any[]) => {
     const body = args[0]?.body
@@ -192,20 +197,12 @@ describe("context-includes plugin", () => {
     writeAgentsMd("agents content\n@./docs/other.md\n")
     writeClaudeMd(`root rules\n@../${path.basename(escapeTarget)}\n`)
 
-    const origErr = console.error
-    const errored: string[] = []
-    console.error = (...args: any[]) => {
-      errored.push(args.map(String).join(" "))
-      origErr(...args)
-    }
-
     const handlers = await loadPlugin()
     await fire(handlers, "session.created", "s1")
 
-    console.error = origErr
     rmSync(escapeTarget, { force: true })
 
-    expect(errored.some(m => m.includes("escapes root directory"))).toBe(true)
+    expect(client.logs.some(l => l.level === "error" && l.message.includes("escapes root directory"))).toBe(true)
     // AGENTS.md still resolves and injects despite CLAUDE.md failing to parse.
     expect(client.session.calls).toHaveLength(1)
     const text = client.session.calls[0].text
