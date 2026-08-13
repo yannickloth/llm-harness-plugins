@@ -1,0 +1,28 @@
+auto_update: true
+debounce_seconds: 300
+graphrag_binary: graphrag
+index_root: graph-index
+
+models:
+  chat_model: deepseek/deepseek-v4-flash
+  chat_api_key_env: DEEPSEEK_API_KEY
+  chat_api_base: https://api.deepseek.com/v1
+  embedding_provider: openai
+  embedding_model: text-embedding-nomic-embed-text-v1.5
+  embedding_api_base: http://localhost:1234/v1
+  embedding_api_key_env: GRAPHRAG_API_KEY
+
+projects:
+  - name: ivp-book-series
+    root: /home/nicky/code/ivp-book-series
+    latex_root: src/legacy/latex
+    exclude:
+      - result
+      - target
+      - downloads
+      - .git
+      - graph-index
+      - tmp
+      - build
+      - .direnv
+      - literature

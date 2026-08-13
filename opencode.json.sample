@@ -12,6 +12,7 @@
     "./datetime-inject/opencode/index.ts",
     "./agentinsights/opencode/index.ts",
     "./knowledge-graph/opencode/index.ts",
+    "./graphrag/opencode/index.ts",
     "./prompt-registry/opencode/index.ts",
     "./typst-toolkit/opencode/index.ts",
     "./latex-toolkit/opencode/index.ts",

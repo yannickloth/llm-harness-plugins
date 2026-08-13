@@ -68,24 +68,27 @@ run_tests() {
 
 GUARDRAIL_CP="$SCRIPT_DIR/guardrail-chain/build/classes"
 SHARED_CP="$SCRIPT_DIR/shared/build/classes"
+KNOWLEDGE_GRAPH_CP="$SCRIPT_DIR/knowledge-graph/build/classes"
 
 compile_plugin "shared"
 compile_plugin "guardrail-chain"
 compile_plugin "agentmem" "$GUARDRAIL_CP"
 compile_plugin "agentinsights"
 compile_plugin "knowledge-graph"
+compile_plugin "graphrag" "$KNOWLEDGE_GRAPH_CP"
 compile_plugin "tier-router" "$SHARED_CP"
 compile_plugin "semantic-cache"
 compile_plugin "prompt-registry"
 compile_plugin "permission-modes"
 
-compile_plugin "session-lifecycle"
+compile_plugin "session-lifecycle" "$SHARED_CP"
 
 run_tests "agentmem" "$GUARDRAIL_CP"
 echo "--- Running agentmem TS tests ---"
 bun test "$SCRIPT_DIR/agentmem/opencode/helpers.test.ts" || echo "agentmem TS tests: FAILED (bun not available?)"
 echo ""
 run_tests "agentinsights"
+run_tests "graphrag" "$KNOWLEDGE_GRAPH_CP"
 run_tests "semantic-cache"
 run_tests "guardrail-chain"
 run_tests "prompt-registry"
