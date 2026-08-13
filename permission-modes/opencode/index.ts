@@ -17,7 +17,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       .then(r => ({ stdout: r.stdout.toString(), stderr: r.stderr.toString(), exitCode: r.exitCode }))
   }
 
-  function extractFilePath(args: Record<string, unknown>, toolName: string): string {
+  function extractFilePath(args: Record<string, unknown> | undefined, toolName: string): string {
+    if (!args) return ""
     if (toolName === "edit" || toolName === "write") {
       return (args.filePath as string) || (args.path as string) || (args.file as string) || ""
     }
