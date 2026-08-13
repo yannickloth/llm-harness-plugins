@@ -7,7 +7,7 @@ public final class PermissionModesCli {
 
     public static void main(String... args) {
         if (args.length < 1) {
-            System.err.println("usage: permission-modes <check|transition|status|state|load|save> [...]");
+            System.err.println("usage: permission-modes <check|transition|status|state|load|save|immune> [...]");
             System.exit(1);
         }
         var subcommand = args[0];
@@ -22,28 +22,24 @@ public final class PermissionModesCli {
                 var toolName = args[2];
                 var filePath = args.length > 3 ? args[3] : "";
                 var result = modes.checkPermission(toolName, filePath);
-                System.out.printf("""
-                    {"allowed":%s,"reason":"%s","promptUser":%s,"mode":"%s","autoStripped":%s}
-                    """.strip().formatted(
-                        result.allowed(),
-                        safeJson(result.reason()),
-                        result.promptUser(),
-                        modes.currentMode().modeName(),
-                        modes.isAutoStripped()));
+                System.out.println(
+                    "{\"allowed\":" + result.allowed()
+                    + ",\"reason\":\"" + safeJson(result.reason())
+                    + "\",\"promptUser\":" + result.promptUser()
+                    + ",\"mode\":\"" + modes.currentMode().modeName()
+                    + "\",\"autoStripped\":" + modes.isAutoStripped() + "}");
             }
             case "transition" -> {
                 if (args.length < 3) { System.err.println("transition <projectDir> <targetMode>"); System.exit(1); }
                 var targetName = args[2];
                 if (!PermissionModes.Mode.isValid(targetName)) {
-                    System.out.printf("{\"error\":\"unknown mode: %s\"}%n", safeJson(targetName));
+                    System.out.println("{\"error\":\"unknown mode: " + safeJson(targetName) + "\"}");
                     return;
                 }
                 modes.transitionPermissionMode(targetName);
-                System.out.printf("""
-                    {"mode":"%s","symbol":"%s"}
-                    """.strip().formatted(
-                        modes.currentMode().modeName(),
-                        modes.currentMode().symbol()));
+                System.out.println(
+                    "{\"mode\":\"" + modes.currentMode().modeName()
+                    + "\",\"symbol\":\"" + modes.currentMode().symbol() + "\"}");
                 try { modes.saveState(); } catch (IOException e) { System.err.println("save failed: " + e); }
             }
             case "status" -> {
@@ -65,16 +61,14 @@ public final class PermissionModesCli {
                     if (!denys.isEmpty()) denys.append(",");
                     denys.append(d.getKey());
                 }
-                System.out.printf("""
-                    {"mode":"%s","symbol":"%s","blockedCategories":["%s"],"allows":["%s"],"denys":["%s"],"bypassImmuneCount":%d,"autoStripped":%s}
-                    """.strip().formatted(
-                        modes.currentMode().modeName(),
-                        modes.currentMode().symbol(),
-                        blocked.toString(),
-                        allows.toString(),
-                        denys.toString(),
-                        modes.bypassImmunePatterns().size(),
-                        modes.isAutoStripped()));
+                System.out.println(
+                    "{\"mode\":\"" + modes.currentMode().modeName()
+                    + "\",\"symbol\":\"" + modes.currentMode().symbol()
+                    + "\",\"blockedCategories\":[" + toJsonArray(blocked.toString())
+                    + "],\"allows\":[" + toJsonArray(allows.toString())
+                    + "],\"denys\":[" + toJsonArray(denys.toString())
+                    + "],\"bypassImmuneCount\":" + modes.bypassImmunePatterns().size()
+                    + ",\"autoStripped\":" + modes.isAutoStripped() + "}");
             }
             case "state" -> {
                 System.out.println(modes.stateToJson());
@@ -91,13 +85,25 @@ public final class PermissionModesCli {
                 if (args.length < 4) { System.err.println("immune <projectDir> <toolName> <filePath>"); System.exit(1); }
                 var toolName = args[2];
                 var filePath = args[3];
-                System.out.printf("{\"immune\":%s}%n", modes.isBypassImmune(toolName, filePath));
+                System.out.println("{\"immune\":" + modes.isBypassImmune(toolName, filePath) + "}");
             }
             default -> {
                 System.err.println("unknown subcommand: " + subcommand);
                 System.exit(1);
             }
         }
+    }
+
+    private static String toJsonArray(String csv) {
+        if (csv.isEmpty()) return "";
+        var sb = new StringBuilder();
+        var first = true;
+        for (var part : csv.split(",")) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("\"").append(safeJson(part)).append("\"");
+        }
+        return sb.toString();
     }
 
     private static String safeJson(String s) {

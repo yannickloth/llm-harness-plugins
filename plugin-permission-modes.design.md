@@ -16,9 +16,10 @@
           ┌─────────────────┼─────────────────┐
           ▼                 ▼                  ▼
    BYPASS_IMMUNE?    Category blocked?    Mode default
-   (.git/, .opencode/,  (plan: bash=N,     (prompt / allow / deny)
-    .ssh/, .env,        read=Y)
-    AGENTS.md, etc.)
+    (.git/, .opencode/,  (plan: bash=N,     (prompt / allow / deny)
+     .claude/, .ssh/,     read=Y)
+     .env*, AGENTS.md,
+     opencode.json, etc.)
 ```
 
 6-mode state machine with centralized `transitionPermissionMode(mode)` entry point.
@@ -99,15 +100,16 @@ permission-modes/
 ### BYPASS_IMMUNE patterns
 
 ```
-.git/  .opencode/  AGENTS.md
+.git/  .opencode/  .claude/  claude.md  AGENTS.md
 .bashrc  .bash_profile  .zshrc  .profile
-.ssh/  .env  .env.local
-config.json  opencode.json
-settings.json  plugin.json  hooks.json
+.ssh/  .env/  .env.
+opencode.json  config.json  settings.json  plugin.json  hooks.json
 ```
 
-Write-tools only (`edit`, `write`, `bash`, `task`). Read-tools pass through.
+Write-tools only (`edit`, `write`, `bash`, `task`, `skill`, `webfetch`). Read-tools pass through.
 Case-insensitive matching (normalized to lowercase before comparison).
+Segment-anchored: `.git/` matches only `.git/` directory entries, not `.github/` or `.gitignore`.
+`.env/` and `.env.` match env files/dirs without false-positive on `.environment`.
 Configurable via `addBypassImmunePattern()` / `removeBypassImmunePattern()`.
 
 ### Mode-default fallthrough per mode
@@ -151,10 +153,16 @@ Stack-based design handles nested AUTO → other → AUTO transitions.
 
 State serialized to `{projectDir}/tmp/sessions/.permission-modes/state.json`.
 
-Strip/restore state is persisted via `autoStripped` flag. On `loadState()`, if
-`currentMode=AUTO` and `autoStripped=true`, the stripped denys are re-applied
-at construction time — preserving auto-mode safety across fresh-JVM-per-call
-plugin architecture.
+Strip/restore state is persisted via the `autoStripped` flag AND the restore stash
+(`"stash"` array). On `loadState()`, if `currentMode=AUTO`, the stripped denys are
+re-derived and the stash reconstructed — preserving auto-mode safety AND the
+"restore on exit" guarantee across the fresh-JVM-per-call plugin architecture
+(exit AUTO in a later process correctly restores the dangerous-tool allows).
+
+Read/write of state is guarded by an inter-process file lock on
+`{projectDir}/tmp/sessions/.permission-modes/.lock` (with a retry loop + timeout),
+so concurrent tool calls / JVMs cannot corrupt or clobber the state. Writes use
+`ATOMIC_MOVE` + unique temp filenames.
 
 ```json
 {
@@ -168,7 +176,7 @@ plugin architecture.
     },
     ...
   },
-  "bypassImmune": [".git/", ".opencode/", ...]
+      "bypassImmune": [".git/", ".opencode/", ".claude/", ...]
 }
 ```
 

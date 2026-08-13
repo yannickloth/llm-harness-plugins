@@ -2,9 +2,7 @@ package eu.infolead.llmhp.permissionmodes;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public final class PermissionModes {
 
@@ -80,27 +78,33 @@ public final class PermissionModes {
         Map<String, ToolDeny> toolDenys
     ) {}
 
-    private static final Set<String> DEFAULT_DANGEROUS = Set.of("bash", "write", "edit", "webfetch", "task", "skill");
+    private static final Set<String> DANGEROUS_CATEGORY_LABELS = Set.of("bash", "write", "edit", "webfetch", "task", "skill");
 
     private Mode currentMode;
     private final Map<Mode, ModeConfig> modeConfigs;
     private final Set<String> bypassImmunePatterns;
     private final Deque<ModeConfigRestore> stashStack;
     private final Path stateDir;
+    private final Path cwdBase;
     private boolean autoStripped;
 
-    private record ModeConfigRestore(Mode prevMode, Set<String> stashedAllows, Set<String> stashedDenys) {}
+    private record ModeConfigRestore(Mode prevMode, Map<String, ToolAllow> stashedAllows, Map<String, ToolDeny> stashedDenys) {}
 
     public PermissionModes() {
-        this(Path.of("."));
+        this(Path.of("."), Path.of("").toAbsolutePath().normalize());
     }
 
     public PermissionModes(Path stateDir) {
+        this(stateDir, stateDir.toAbsolutePath().normalize());
+    }
+
+    public PermissionModes(Path stateDir, Path cwdBase) {
         this.currentMode = Mode.DEFAULT;
         this.modeConfigs = new EnumMap<>(Mode.class);
         this.bypassImmunePatterns = new LinkedHashSet<>();
         this.stashStack = new ArrayDeque<>();
         this.stateDir = stateDir;
+        this.cwdBase = cwdBase.toAbsolutePath().normalize();
         this.autoStripped = false;
 
         configureDefaults();
@@ -136,11 +140,10 @@ public final class PermissionModes {
 
     private void configureBypassImmune() {
         bypassImmunePatterns.addAll(List.of(
-            ".git/", ".claude/", "claude.md",
+            ".git/", ".opencode/", ".claude/", "claude.md", "agents.md",
             ".bashrc", ".bash_profile", ".zshrc", ".profile",
-            ".ssh/", ".env", ".env.local",
-            "config.json", "opencode.json",
-            "settings.json", "plugin.json", "hooks.json"
+            ".ssh/", ".env/", ".env.", ".env",
+            "opencode.json", "config.json", "settings.json", "plugin.json", "hooks.json"
         ));
     }
 
@@ -156,14 +159,14 @@ public final class PermissionModes {
         return Collections.unmodifiableSet(bypassImmunePatterns);
     }
 
-    public void addToolAllow(Mode mode, String toolName, String note) {
+    public void addToolAllow(Mode mode, String normalizedName, String note) {
         modeConfigs.computeIfAbsent(mode, m -> emptyConfig())
-            .toolAllows().put(toolName, new ToolAllow(toolName, note));
+            .toolAllows().put(normalizedName, new ToolAllow(normalizedName, note));
     }
 
-    public void addToolDeny(Mode mode, String toolName, String reason, boolean bypassImmune) {
+    public void addToolDeny(Mode mode, String normalizedName, String reason, boolean bypassImmune) {
         modeConfigs.computeIfAbsent(mode, m -> emptyConfig())
-            .toolDenys().put(toolName, new ToolDeny(toolName, reason, bypassImmune));
+            .toolDenys().put(normalizedName, new ToolDeny(normalizedName, reason, bypassImmune));
     }
 
     public void addCategoryBlock(Mode mode, ToolCategory category) {
@@ -180,9 +183,24 @@ public final class PermissionModes {
         return new ModeConfig(new HashMap<>(), new HashMap<>(), new HashMap<>());
     }
 
+    public static String normalizeToolName(String toolName) {
+        if (toolName == null) return "";
+        return toolName.toLowerCase();
+    }
+
+    public static boolean isDangerousTool(String toolName) {
+        if (toolName == null) return false;
+        var norm = normalizeToolName(toolName);
+        for (var label : DANGEROUS_CATEGORY_LABELS) {
+            if (norm.equals(label)) return true;
+        }
+        return false;
+    }
+
     // --- permission check ---
 
-    public PermissionResult checkPermission(String toolName, String filePath) {
+    public PermissionResult checkPermission(String rawToolName, String filePath) {
+        var toolName = normalizeToolName(rawToolName);
         var config = modeConfigs.getOrDefault(currentMode, emptyConfig());
         var category = ToolCategory.fromToolName(toolName);
 
@@ -229,7 +247,7 @@ public final class PermissionModes {
             case BYPASS_PERMISSIONS -> new PermissionResult(true, "Bypass: " + toolName, false);
             case DONT_ASK -> new PermissionResult(false, "Silent block: " + toolName, false);
             case AUTO -> {
-                if (autoStripped && DEFAULT_DANGEROUS.contains(toolName)) {
+                if (autoStripped && isDangerousTool(toolName)) {
                     yield new PermissionResult(false,
                         "Auto mode: " + toolName + " stripped (dangerous)", true);
                 }
@@ -278,23 +296,23 @@ public final class PermissionModes {
         var cfg = modeConfigs.get(Mode.AUTO);
         if (cfg == null) return;
 
-        var stashedAllows = new HashSet<String>();
-        var stashedDenys = new HashSet<String>();
+        var stashedAllows = new HashMap<String, ToolAllow>();
+        var stashedDenys = new HashMap<String, ToolDeny>();
 
-        for (var tool : DEFAULT_DANGEROUS) {
-            if (cfg.toolAllows().containsKey(tool)) {
-                stashedAllows.add(tool);
-                cfg.toolAllows().remove(tool);
+        for (var label : DANGEROUS_CATEGORY_LABELS) {
+            if (cfg.toolAllows().containsKey(label)) {
+                stashedAllows.put(label, cfg.toolAllows().get(label));
+                cfg.toolAllows().remove(label);
             }
-            if (cfg.toolDenys().containsKey(tool)) {
-                stashedDenys.add(tool);
-                cfg.toolDenys().remove(tool);
+            if (cfg.toolDenys().containsKey(label)) {
+                stashedDenys.put(label, cfg.toolDenys().get(label));
+                cfg.toolDenys().remove(label);
             }
         }
 
-        for (var tool : DEFAULT_DANGEROUS) {
-            cfg.toolDenys().putIfAbsent(tool,
-                new ToolDeny(tool, "stripped for auto-mode safety", true));
+        for (var label : DANGEROUS_CATEGORY_LABELS) {
+            cfg.toolDenys().putIfAbsent(label,
+                new ToolDeny(label, "stripped for auto-mode safety", true));
         }
 
         stashStack.push(new ModeConfigRestore(Mode.AUTO, stashedAllows, stashedDenys));
@@ -308,36 +326,108 @@ public final class PermissionModes {
         var cfg = modeConfigs.get(Mode.AUTO);
         if (cfg == null) return;
 
-        for (var tool : DEFAULT_DANGEROUS) {
-            var deny = cfg.toolDenys().get(tool);
+        for (var label : DANGEROUS_CATEGORY_LABELS) {
+            var deny = cfg.toolDenys().get(label);
             if (deny != null && deny.reason().contains("stripped for auto-mode safety")) {
-                cfg.toolDenys().remove(tool);
+                cfg.toolDenys().remove(label);
             }
         }
 
-        for (var tool : restore.stashedAllows()) {
-            cfg.toolAllows().put(tool, new ToolAllow(tool, "restored from auto-mode stash"));
+        for (var e : restore.stashedAllows().entrySet()) {
+            cfg.toolAllows().put(e.getKey(), e.getValue());
         }
-        for (var tool : restore.stashedDenys()) {
-            cfg.toolDenys().put(tool,
-                new ToolDeny(tool, "restored from auto-mode stash", false));
+        for (var e : restore.stashedDenys().entrySet()) {
+            cfg.toolDenys().put(e.getKey(), e.getValue());
         }
     }
 
     // --- BYPASS_IMMUNE ---
 
-    private static final Set<String> IMMUNE_WRITE_TOOLS = Set.of("edit", "write", "bash", "task");
+    private static final Set<String> IMMUNE_WRITE_TOOLS = Set.of("edit", "write", "bash", "task", "skill", "webfetch");
 
     public boolean isBypassImmune(String toolName, String filePath) {
         if (filePath == null || filePath.isBlank()) return false;
-        if (!IMMUNE_WRITE_TOOLS.contains(toolName)) return false;
+        var normTool = normalizeToolName(toolName);
+        if (!IMMUNE_WRITE_TOOLS.contains(normTool)) return false;
 
-        var norm = filePath.toLowerCase().replace('\\', '/');
+        var normPath = Path.of(filePath.replace('\\', '/')).normalize()
+            .toString().replace('\\', '/').toLowerCase();
+        var isBashTool = normTool.equals("bash");
+
         for (var pattern : bypassImmunePatterns) {
             var p = pattern.toLowerCase().replace('\\', '/');
-            if (norm.contains(p)) return true;
+            if (p.endsWith("/")) {
+                var dirName = p.substring(0, p.length() - 1);
+                if (matchesSegment(normPath, dirName, true, isBashTool)) return true;
+            } else if (p.startsWith(".")) {
+                if (matchesSegment(normPath, p, false, isBashTool)) return true;
+            } else {
+                if (matchesSegment(normPath, p, false, isBashTool)) return true;
+            }
         }
         return false;
+    }
+
+    private static boolean matchesSegment(String path, String needle, boolean isDir, boolean isBashTool) {
+        if (isBashTool) {
+            if (isDir) return path.contains("/" + needle + "/") || path.startsWith(needle + "/")
+                || path.contains(" " + needle + "/")
+                || path.contains("~/" + needle + "/")
+                || path.contains("=" + needle + "/")
+                || path.contains("=" + needle + " ")
+                || path.endsWith(" " + needle)
+                || path.endsWith("/" + needle)
+                || path.endsWith("~/" + needle)
+                || path.endsWith("=" + needle);
+            if (isBareEnv(needle))
+                return path.equals(needle)
+                    || (path.contains("/" + needle) && !path.contains("/" + needle + "."))
+                    || (path.contains(" " + needle) && !path.contains(" " + needle + "."))
+                    || (path.contains("~" + needle) && !path.contains("~" + needle + "."))
+                    || (path.startsWith(needle) && !path.startsWith(needle + "."));
+            if (isPrefixPattern(needle)) {
+                var idx = path.indexOf(needle);
+                if (idx < 0) return false;
+                var before = idx == 0 ? '/' : path.charAt(idx - 1);
+                var afterIdx = idx + needle.length();
+                if (afterIdx >= path.length()) return false;
+                return (before == '/' || before == ' ' || before == ':' || before == '~' || before == '=');
+            }
+            var idx = path.indexOf(needle);
+            if (idx < 0) return false;
+            var before = idx == 0 ? '/' : path.charAt(idx - 1);
+            var afterIdx = idx + needle.length();
+            var after = afterIdx < path.length() ? path.charAt(afterIdx) : '/';
+            return (before == '/' || before == ' ' || before == ':' || before == '~' || before == '=')
+                && (after == '/' || after == '.' || after == ' ' || after == '\0');
+        }
+        if (isDir) return path.contains("/" + needle + "/") || path.startsWith(needle + "/");
+        if (isBareEnv(needle))
+            return path.equals(needle) || path.endsWith("/" + needle)
+                || path.startsWith(needle + "/");
+        if (isPrefixPattern(needle)) {
+            var idx = path.indexOf(needle);
+            if (idx < 0) return false;
+            var before = idx == 0 ? '/' : path.charAt(idx - 1);
+            var afterIdx = idx + needle.length();
+            if (afterIdx >= path.length()) return false;
+            return (before == '/' || before == ':');
+        }
+        var idx = path.indexOf(needle);
+        if (idx < 0) return false;
+        var before = idx == 0 ? '/' : path.charAt(idx - 1);
+        var afterIdx = idx + needle.length();
+        var after = afterIdx < path.length() ? path.charAt(afterIdx) : '/';
+        return (before == '/' || before == ':')
+            && (after == '/' || after == '.' || after == '\0');
+    }
+
+    private static boolean isBareEnv(String needle) {
+        return needle.equals(".env");
+    }
+
+    private static boolean isPrefixPattern(String needle) {
+        return needle.startsWith(".") && needle.endsWith(".");
     }
 
     public void setBypassImmunePatterns(Set<String> patterns) {
@@ -347,31 +437,84 @@ public final class PermissionModes {
 
     // --- helpers ---
 
-    private static boolean isInCwd(String filePath) {
+    public boolean isInCwd(String filePath) {
         if (filePath == null || filePath.isBlank()) return false;
-        var path = Path.of(filePath).normalize();
-        var cwd = Path.of("").toAbsolutePath().normalize();
+        var normalized = filePath.replace('\\', '/');
+        var path = Path.of(normalized).normalize();
+        var str = path.toString().replace('\\', '/');
 
-        if (path.isAbsolute()) return path.startsWith(cwd);
-        return !path.startsWith("..") && !path.startsWith("/");
+        if (path.isAbsolute()) {
+            var cwdStr = cwdBase.toString().replace('\\', '/') + "/";
+            return (str + "/").startsWith(cwdStr);
+        }
+        return !str.startsWith("..") && !str.startsWith("/");
     }
 
     // --- persistence ---
 
-    public void saveState() throws java.io.IOException {
-        var dir = stateDir.resolve("tmp").resolve("sessions").resolve(".permission-modes");
-        Files.createDirectories(dir);
+    private Path stateFile() {
+        return stateDir.resolve("tmp").resolve("sessions")
+            .resolve(".permission-modes").resolve("state.json");
+    }
 
-        var json = stateToJson();
-        Files.writeString(dir.resolve("state.json"), json);
+    private Path lockFile() {
+        return stateDir.resolve("tmp").resolve("sessions")
+            .resolve(".permission-modes").resolve(".lock");
+    }
+
+    @FunctionalInterface
+    private interface LockedAction {
+        void run() throws java.io.IOException;
+    }
+
+    private void withLock(LockedAction action) throws java.io.IOException {
+        var dir = lockFile().getParent();
+        Files.createDirectories(dir);
+        try (var channel = java.nio.channels.FileChannel.open(lockFile(),
+                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE)) {
+            java.nio.channels.FileLock lock = null;
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (lock == null) {
+                try {
+                    lock = channel.tryLock();
+                    if (lock == null) {
+                        if (System.nanoTime() > deadline) throw new java.io.IOException("timeout acquiring state lock");
+                        Thread.sleep(10);
+                    }
+                } catch (java.nio.channels.OverlappingFileLockException e) {
+                    if (System.nanoTime() > deadline) throw new java.io.IOException("timeout acquiring state lock");
+                    Thread.sleep(10);
+                }
+            }
+            try {
+                action.run();
+            } finally {
+                lock.release();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new java.io.IOException("interrupted acquiring state lock", e);
+        }
+    }
+
+    public void saveState() throws java.io.IOException {
+        withLock(() -> {
+            var json = stateToJson();
+            var stateFile = stateFile();
+            var tmpFile = lockFile().resolveSibling(
+                "state.json.tmp." + Thread.currentThread().threadId() + "." + System.nanoTime());
+            Files.writeString(tmpFile, json);
+            Files.move(tmpFile, stateFile, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        });
     }
 
     public void loadState() throws java.io.IOException {
-        var file = stateDir.resolve("tmp").resolve("sessions")
-            .resolve(".permission-modes").resolve("state.json");
-        if (!Files.exists(file)) return;
-        var json = Files.readString(file);
-        restoreFromJson(json);
+        withLock(() -> {
+            var file = stateFile();
+            if (!Files.exists(file)) return;
+            var json = Files.readString(file);
+            restoreFromJson(json);
+        });
     }
 
     // --- JSON serde ---
@@ -383,7 +526,10 @@ public final class PermissionModes {
         sb.append("\"currentMode\":\"").append(currentMode.modeName()).append("\",");
         sb.append("\"autoStripped\":").append(autoStripped).append(",");
 
-        sb.append("\"configs\":{");
+        sb.append("\"stash\":");
+        stashToJson(sb);
+
+        sb.append(",\"configs\":{");
         var firstCfg = true;
         for (var entry : modeConfigs.entrySet()) {
             if (!firstCfg) sb.append(",");
@@ -406,15 +552,42 @@ public final class PermissionModes {
         return sb.toString();
     }
 
-    private void configToJson(StringBuilder sb, ModeConfig cfg) {
-        sb.append("{");
+    private void stashToJson(StringBuilder sb) {
+        sb.append("[");
+        var first = true;
+        for (var restore : stashStack) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("{\"allows\":{");
+            var firstA = true;
+            for (var e : restore.stashedAllows().entrySet()) {
+                if (!firstA) sb.append(",");
+                firstA = false;
+                sb.append("\"").append(escapeJson(e.getKey())).append("\":\"")
+                  .append(escapeJson(e.getValue().note())).append("\"");
+            }
+            sb.append("},\"denys\":{");
+            var firstD = true;
+            for (var e : restore.stashedDenys().entrySet()) {
+                if (!firstD) sb.append(",");
+                firstD = false;
+                sb.append("\"").append(escapeJson(e.getKey())).append("\":{\"reason\":\"")
+                  .append(escapeJson(e.getValue().reason()))
+                  .append("\",\"immune\":").append(e.getValue().bypassImmune()).append("}");
+            }
+            sb.append("}}");
+        }
+        sb.append("]");
+    }
+
+    private void configToJson(StringBuilder sb, ModeConfig cfg) {        sb.append("{");
 
         sb.append("\"blockedCategories\":[");
-        var blocked = cfg.categoryBlocked().entrySet().stream()
-            .filter(Map.Entry::getValue)
-            .map(e -> "\"" + e.getKey().label() + "\"")
-            .collect(Collectors.joining(","));
-        sb.append(blocked);
+        var blocked = new StringJoiner(",");
+        for (var e : cfg.categoryBlocked().entrySet()) {
+            if (e.getValue()) blocked.add("\"" + e.getKey().label() + "\"");
+        }
+        sb.append(blocked.toString());
         sb.append("],");
 
         sb.append("\"allows\":{");
@@ -455,14 +628,22 @@ public final class PermissionModes {
 
             switch (key) {
                 case "currentMode" -> {
-                    currentMode = Mode.fromName(unquote(val));
+                    try {
+                        currentMode = Mode.fromName(unquote(val));
+                    } catch (IllegalArgumentException ignored) {
+                        currentMode = Mode.DEFAULT;
+                    }
                 }
                 case "autoStripped" -> {
                     autoStripped = Boolean.parseBoolean(val.strip());
                 }
+                case "stash" -> {
+                    stashStack.clear();
+                    restoreStashFromJson(val);
+                }
                 case "bypassImmune" -> {
                     bypassImmunePatterns.clear();
-                    parseArray(val).forEach(bypassImmunePatterns::add);
+                    for (var p : parseArray(val)) bypassImmunePatterns.add(unescapeJson(p));
                 }
                 case "configs" -> {
                     restoreConfigsFromJson(val);
@@ -470,9 +651,95 @@ public final class PermissionModes {
             }
         }
 
-        if (currentMode == Mode.AUTO && !autoStripped) {
-            stripDangerousPermissionsForAutoMode();
-            autoStripped = true;
+        if (currentMode == Mode.AUTO && !autoStripped && stashStack.isEmpty()) {
+            var cfg = modeConfigs.get(Mode.AUTO);
+            if (cfg != null) {
+                var stashedAllows = new HashMap<String, ToolAllow>();
+                var stashedDenys = new HashMap<String, ToolDeny>();
+                for (var label : DANGEROUS_CATEGORY_LABELS) {
+                    if (cfg.toolAllows().containsKey(label)) {
+                        stashedAllows.put(label, cfg.toolAllows().get(label));
+                        cfg.toolAllows().remove(label);
+                    }
+                    if (cfg.toolDenys().containsKey(label)) {
+                        stashedDenys.put(label, cfg.toolDenys().get(label));
+                    }
+                }
+                for (var label : DANGEROUS_CATEGORY_LABELS) {
+                    cfg.toolDenys().putIfAbsent(label,
+                        new ToolDeny(label, "stripped for auto-mode safety", true));
+                }
+                stashStack.push(new ModeConfigRestore(Mode.AUTO, stashedAllows, stashedDenys));
+                autoStripped = true;
+            }
+        }
+        if (currentMode != Mode.AUTO) {
+            autoStripped = false;
+            stashStack.clear();
+        }
+    }
+
+    private void restoreStashFromJson(String json) {
+        var trimmed = json.strip();
+        if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return;
+        var inner = trimmed.substring(1, trimmed.length() - 1).strip();
+        if (inner.isEmpty()) return;
+
+        var parts = splitTopLevel(inner, ',');
+        for (var part : parts) {
+            var restoreJson = part.strip();
+            if (!restoreJson.startsWith("{") || !restoreJson.endsWith("}")) continue;
+            var reopen = restoreJson.substring(1, restoreJson.length() - 1);
+            Map<String, ToolAllow> allows = new HashMap<>();
+            Map<String, ToolDeny> denys = new HashMap<>();
+            for (var field : splitTopLevel(reopen, ',')) {
+                var kv = splitFirst(field, ':');
+                if (kv.length < 2) continue;
+                var k = unquote(kv[0].strip());
+                var v = kv[1].strip();
+                if ("allows".equals(k)) {
+                    var a = v.strip();
+                    if (a.startsWith("{") && a.endsWith("}")) {
+                        var ai = a.substring(1, a.length() - 1).strip();
+                        if (!ai.isEmpty()) {
+                            for (var ap : splitTopLevel(ai, ',')) {
+                                var akv = splitFirst(ap, ':');
+                                if (akv.length < 2) continue;
+                                var name = unquote(akv[0].strip());
+                                var note = unescapeJson(unquote(akv[1].strip()));
+                                allows.put(name, new ToolAllow(name, note));
+                            }
+                        }
+                    }
+                } else if ("denys".equals(k)) {
+                    var d = v.strip();
+                    if (d.startsWith("{") && d.endsWith("}")) {
+                        var di = d.substring(1, d.length() - 1).strip();
+                        if (!di.isEmpty()) {
+                            for (var dp : splitTopLevel(di, ',')) {
+                                var dkv = splitFirst(dp, ':');
+                                if (dkv.length < 2) continue;
+                                var name = unquote(dkv[0].strip());
+                                var denyJson = dkv[1].strip();
+                                if (!denyJson.startsWith("{") || !denyJson.endsWith("}")) continue;
+                                var denyInner = denyJson.substring(1, denyJson.length() - 1);
+                                String reason = "";
+                                boolean immune = false;
+                                for (var ff : splitTopLevel(denyInner, ',')) {
+                                    var fkv = splitFirst(ff, ':');
+                                    if (fkv.length < 2) continue;
+                                    var fk = unquote(fkv[0].strip());
+                                    var fv = fkv[1].strip();
+                                    if ("reason".equals(fk)) reason = unescapeJson(unquote(fv));
+                                    else if ("immune".equals(fk)) immune = Boolean.parseBoolean(fv.strip());
+                                }
+                                denys.put(name, new ToolDeny(name, reason, immune));
+                            }
+                        }
+                    }
+                }
+            }
+            stashStack.push(new ModeConfigRestore(Mode.AUTO, allows, denys));
         }
     }
 
@@ -547,7 +814,7 @@ public final class PermissionModes {
             var kv = splitFirst(part, ':');
             if (kv.length < 2) continue;
             var toolName = unquote(kv[0].strip());
-            var note = unquote(kv[1].strip());
+            var note = unescapeJson(unquote(kv[1].strip()));
             allows.put(toolName, new ToolAllow(toolName, note));
         }
     }
@@ -574,7 +841,7 @@ public final class PermissionModes {
                 if (dkv.length < 2) continue;
                 var dk = unquote(dkv[0].strip());
                 var dv = dkv[1].strip();
-                if ("reason".equals(dk)) reason = unquote(dv);
+                if ("reason".equals(dk)) reason = unescapeJson(unquote(dv));
                 else if ("immune".equals(dk)) immune = Boolean.parseBoolean(dv.strip());
             }
             denys.put(toolName, new ToolDeny(toolName, reason, immune));
@@ -625,6 +892,28 @@ public final class PermissionModes {
     private static String escapeJson(String s) {
         return s.replace("\\", "\\\\").replace("\"", "\\\"")
                  .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+    }
+
+    private static String unescapeJson(String s) {
+        var sb = new StringBuilder(s.length());
+        var i = 0;
+        while (i < s.length()) {
+            var c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                var next = s.charAt(i + 1);
+                switch (next) {
+                    case '"' -> { sb.append('"'); i += 2; continue; }
+                    case '\\' -> { sb.append('\\'); i += 2; continue; }
+                    case '/' -> { sb.append('/'); i += 2; continue; }
+                    case 'n' -> { sb.append('\n'); i += 2; continue; }
+                    case 'r' -> { sb.append('\r'); i += 2; continue; }
+                    case 't' -> { sb.append('\t'); i += 2; continue; }
+                }
+            }
+            sb.append(c);
+            i++;
+        }
+        return sb.toString();
     }
 
     private static List<String> parseArray(String s) {

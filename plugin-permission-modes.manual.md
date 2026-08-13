@@ -51,7 +51,7 @@ Inspect current mode.
 /permission-status
 ```
 
-Returns: `{"mode":"acceptEdits","symbol":"A","blockedCategories":[],"allows":[],"denys":[],"bypassImmuneCount":14,"autoStripped":false}`
+Returns: `{"mode":"acceptEdits","symbol":"A","blockedCategories":[],"allows":[],"denys":[],"bypassImmuneCount":18,"autoStripped":false}`
 
 ### `permission-state`
 
@@ -101,7 +101,7 @@ Use: active implementation when you trust the agent's edits but not arbitrary co
 ### `bypassPermissions` (!) — Trusted fast-follow
 
 Auto-allows: every tool.
-BYPASS_IMMUNE still gates: `.git/`, `.opencode/`, `.ssh/`, `.env`, shell configs, `AGENTS.md`, plugin/config JSON files always prompt for write tools.
+BYPASS_IMMUNE still gates: `.git/`, `.opencode/`, `.claude/`, `.ssh/`, `.env`, shell configs, `AGENTS.md`, plugin/config JSON files always prompt for write tools.
 
 Use: known-safe refactors, scripted batch edits you've already reviewed.
 
@@ -122,17 +122,18 @@ Use: CI pipelines, scheduled maintenance, ant-level agent sessions.
 
 ## BYPASS_IMMUNE — the safety net
 
-These paths always prompt for write tools (edit/write/bash/task), even in `bypassPermissions`:
+These paths always prompt for write and network tools (edit/write/bash/task/skill/webfetch), even in `bypassPermissions`:
 
 ```
-.git/  .opencode/  AGENTS.md
+.git/  .opencode/  .claude/  claude.md  AGENTS.md
 .bashrc  .bash_profile  .zshrc  .profile
-.ssh/  .env  .env.local
-config.json  opencode.json
-settings.json  plugin.json  hooks.json
+.ssh/  .env/  .env.
+opencode.json  config.json  settings.json  plugin.json  hooks.json
 ```
 
-Matching is case-insensitive and substring-based.
+Matching is segment-anchored and case-insensitive.
+`.git/` matches `.git/config` and `.git/hooks/pre-commit` but NOT `.gitignore` or `.github/`.
+`.env/` and `.env.` match `.env`, `.env.local`, `.env.production` but NOT `environment` or `my.env.file`.
 Read tools (read, glob, grep) never trigger immune checks — you can read `.git/config` anytime.
 
 ## Workflow patterns

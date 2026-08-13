@@ -1,17 +1,20 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
+import { createLogger } from "../../shared/plugin-logger"
 
-export default async ({ directory, worktree }: Parameters<Plugin>[0]) => {
+export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  const logger = createLogger(client, "permission-modes")
   const root = worktree ?? directory
   const pluginDir = path.join(import.meta.dir, "..")
   const classesDir = path.join(pluginDir, "build", "classes")
   const mainClass = "eu.infolead.llmhp.permissionmodes.PermissionModesCli"
 
-  console.log("[permission-modes] plugin active — 6-mode state machine with centralized transitionPermissionMode")
+  logger.info("plugin active — 6-mode state machine with centralized transitionPermissionMode")
 
   function java(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return $`java --class-path ${classesDir} ${mainClass} ${args}`.nothrow().quiet()
+      .then(r => ({ stdout: r.stdout.toString(), stderr: r.stderr.toString(), exitCode: r.exitCode }))
   }
 
   function extractFilePath(args: Record<string, unknown>, toolName: string): string {
@@ -36,15 +39,21 @@ export default async ({ directory, worktree }: Parameters<Plugin>[0]) => {
         const result = await java(["check", root, toolName, filePath])
         const parsed = JSON.parse(result.stdout.trim())
 
-        return {
-          allowed: parsed.allowed,
-          reason: parsed.reason,
-          promptUser: parsed.promptUser,
-          mode: parsed.mode,
+        if (parsed.allowed === true) {
+          return { allowed: true, reason: parsed.reason, promptUser: false, mode: parsed.mode }
         }
+        if (parsed.promptUser === true) {
+          return {
+            allowed: undefined,
+            reason: parsed.reason,
+            promptUser: true,
+            mode: parsed.mode,
+          }
+        }
+        return { allowed: false, reason: parsed.reason, promptUser: false, mode: parsed.mode }
       } catch (e) {
-        console.error("[permission-modes] check failed:", e)
-        return { allowed: false, reason: "permission check error", promptUser: true, mode: "default" }
+        logger.error(`check failed: ${(e as Error).message}`)
+        return { allowed: false, reason: "permission check error", promptUser: true, mode: "error" }
       }
     },
 
