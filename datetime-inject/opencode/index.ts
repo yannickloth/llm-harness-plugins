@@ -38,12 +38,21 @@ export default async (
 
   logger.info(`plugin active — datetime per message: ${injectDatetimePerMessage}; platform/toolchain per session`)
 
+  const seenSession = new Set<string>()
+
   return {
     "chat.message": async (
-      _input: unknown,
+      input: { sessionID: string },
       output: { parts: Array<{ type: string; text: string }> },
     ) => {
       if (!injectIntoUserMessage || !injectDatetimePerMessage) return
+      // The first user message of a session determines opencode's auto-title.
+      // Prepending datetime boilerplate there makes the model title the
+      // session from "[current datetime: ...]" instead of the user's intent.
+      if (!seenSession.has(input.sessionID)) {
+        seenSession.add(input.sessionID)
+        return
+      }
       const textPart = output.parts.find(p => p.type === "text")
       if (!textPart || !textPart.text.trim()) return
       const ctx = buildPerMessageContext(flags)
