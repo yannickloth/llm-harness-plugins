@@ -13,6 +13,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`guardrail-chain`](./guardrail-chain) | Shared guardrail pipeline — pre/post execution filters across plugins |
 | [`agentmem`](./agentmem) | Persistent file-based memory system — ADD-only, multi-signal retrieval, hierarchical scoping |
 | [`agentinsights`](./agentinsights) | Session analytics + AI-generated narrative reports — scan transcripts, extract facets via LLM, generate HTML insights |
+| [`graphrag`](./graphrag) | MS GraphRAG semantic layer — LLM-extracted entities/relationships, community summaries, vector-backed local/global/drift search |
 | [`datetime-inject`](./datetime-inject) | Injects current datetime, platform, and repo toolchain context into every LLM prompt |
 
 ---
@@ -40,6 +41,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
     "./llm-harness-plugins/datetime-inject/opencode/index.ts",
     "./llm-harness-plugins/agentinsights/opencode/index.ts",
     "./llm-harness-plugins/knowledge-graph/opencode/index.ts",
+    "./llm-harness-plugins/graphrag/opencode/index.ts",
     "./llm-harness-plugins/prompt-registry/opencode/index.ts",
     "./llm-harness-plugins/typst-toolkit/opencode/index.ts",
     "./llm-harness-plugins/latex-toolkit/opencode/index.ts",
@@ -58,6 +60,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 | 5b | `datetime-inject` | — | Adds datetime/platform/toolchain context to every prompt; loads with the other chat-message consumers |
 | 6 | `agentinsights` | — | Writes reports to `.agentmem/insights/` |
 | 7 | `knowledge-graph` | — | Typst-derived graph; conceptually downstream of `typst-toolkit` |
+| 7b | `graphrag` | — | Semantic index; conceptually downstream of `knowledge-graph` (classpath reuse) |
 | 8 | `prompt-registry` | — | Manages prompt templates across all plugins |
 | 9 | `typst-toolkit` | — | Format-bound skills |
 | 10 | `latex-toolkit` | — | Format-bound skills |
@@ -104,7 +107,7 @@ Plugins that ship agents:
 | `latex-toolkit` | `latex-xref-checker`, `latex-syntax-fixer`, `latex-figure-caption-auditor`, `latex-production-readiness-checker`, `latex-notation-consistency-checker`, `latex-index-auditor`, `latex-citation-checker`, `latex-formatting-fixer` | Use `{file:...}` prompt |
 | `typst-toolkit` | `typst-diagram-checker`, `typst-syntax-fixer`, `typst-citation-checker`, `typst-xref-checker`, `typst-production-readiness-checker`, `typst-formatting-fixer` | Use `{file:...}` prompt |
 
-Plugins without agents: `guardrail-chain`, `semantic-cache`, `agentinsights`, `knowledge-graph`, `prompt-registry`, `session-lifecycle` (tools/hooks only).
+Plugins without agents: `guardrail-chain`, `semantic-cache`, `agentinsights`, `knowledge-graph`, `graphrag`, `prompt-registry`, `session-lifecycle` (tools/hooks only).
 
 ### Adding a plugin agent to your project
 

@@ -15,6 +15,7 @@ Source: _GenAI Design Patterns_ catalog (6 parts, ~30 patterns, 7 candidates) ×
 |--------|-------------|-----|
 | `agentmem` | **Memory Hierarchy** (Pt II, ch16) + **Dual-Tier Memory** (ch25) | Three-tier ADD-only memory (in-band → out-of-band extraction → nightly consolidation), hot/cold storage, decay curves, hierarchical scoping |
 | `knowledge-graph` | **GraphRAG** (Pt II, ch24) + **Hybrid Search** (ch18) | Build-time `.typ` → `graph.json` with Leiden community detection, community summaries, two-tier LLM (Haiku rater → Sonnet/Opus reasoner) |
+| `graphrag` | **GraphRAG** (Pt II, ch24) — full LLM implementation | MS GraphRAG engine: LLM-extracted entities/relationships, community summaries, covariates, vector-backed local/global/drift search; two-speed update (session.idle incremental) |
 | `tier-router` | **Routing** (Pt IV, ch23) + **LLM Cascade** (ch25) | 10-step classification pipeline: intent → cheapest sufficient model tier; keyword match → escalate on low confidence |
 | `agentinsights` | **Observability** (Pt IV, ch27) | Session scan → LLM facet extraction → aggregation → HTML narrative report |
 | `general-skills` | **LLM-as-a-Judge** (Pt VI, ch33) + **LLM Supervisor** (Pt I, ch14) | 10 audit agents (logic, math, proof, style, citations, etc.); `review-convergence` meta-skill orchestrates review/fix rounds |

@@ -1,8 +1,9 @@
-.agentmem/.tmp/
-.agentmem/.consolidate-lock
-.agentmem/.cold/
-.agentmem/.history/
+.agentmem/
 .history/
+.ai/
+.direnv/
+.idea/
+node_modules/
 .opencode/
 tmp/
 .vscode/
