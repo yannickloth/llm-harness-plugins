@@ -1,6 +1,7 @@
 import type { Plugin, tool } from "@opencode-ai/plugin"
-import { $ } from "bun"
 import path from "path"
+import { createLogger } from "../../shared/plugin-logger"
+import { safeSpawn } from "../../shared/safe-spawn"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -14,8 +15,11 @@ async function classifyPrompt(prompt: string): Promise<{
   confidence: number
   rewritten_prompt: string
 }> {
-  const result = await $`java --class-path ${classesDir} ${mainClass} route`.nothrow().stdin(prompt)
-  const stdout = result.stdout.toString().trim()
+  const result = await safeSpawn(
+    ["java", "--class-path", classesDir, mainClass, "route"],
+    { input: prompt },
+  )
+  const stdout = result.stdout.trim()
   try {
     return JSON.parse(stdout)
   } catch {
@@ -31,8 +35,11 @@ async function classifyPrompt(prompt: string): Promise<{
 }
 
 async function checkAmbiguity(prompt: string): Promise<string | null> {
-  const result = await $`java --class-path ${classesDir} ${mainClass} ambiguity`.nothrow().stdin(prompt)
-  const stdout = result.stdout.toString().trim()
+  const result = await safeSpawn(
+    ["java", "--class-path", classesDir, mainClass, "ambiguity"],
+    { input: prompt },
+  )
+  const stdout = result.stdout.trim()
   if (stdout.startsWith("ambiguous:")) {
     return stdout.substring(10)
   }
@@ -115,8 +122,8 @@ REWRITTEN PROMPT: ${result.rewritten_prompt}
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
-  const root = worktree ?? directory
-  console.log("[tier-router] plugin active — 3 tools + auto-rewrite hook (chat.message)")
+  const logger = createLogger(client, "tier-router")
+  logger.info("plugin active — 3 tools + auto-rewrite hook (chat.message)")
 
   const rewritten = new Set<string>()
 
@@ -132,7 +139,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
       const result = await classifyPrompt(textPart.text)
       const directive = generateRoutingDirective(result)
-      console.log("[tier-router] rewrite", { sessionID, tier: result.tier, confidence: result.confidence })
+      logger.info(`rewrite ${JSON.stringify({ sessionID, tier: result.tier, confidence: result.confidence })}`)
 
       textPart.text = directive
     },
@@ -158,8 +165,11 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
             .describe("Target reasoning tier"),
         },
         async execute(args) {
-          const result = await $`java --class-path ${classesDir} ${mainClass} rewrite ${args.tier}`.nothrow().stdin(args.prompt)
-          return result.stdout.toString().trim()
+          const result = await safeSpawn(
+            ["java", "--class-path", classesDir, mainClass, "rewrite", args.tier],
+            { input: args.prompt },
+          )
+          return result.stdout.trim()
         },
       }),
 

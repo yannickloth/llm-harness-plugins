@@ -3,6 +3,8 @@ import { $ } from "bun"
 import path from "path"
 import { existsSync } from "fs"
 import { loadMemIndex, collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
+import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
+import { safeSpawn, safeSpawnSync } from "../../shared/safe-spawn"
 
 const agentmemDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(agentmemDir, "build", "classes")
@@ -16,6 +18,7 @@ let pendingClassifications = 0
 let classificationGeneration = 0
 let flaggedTurnCount = 0
 let keeperBusy = false
+let logger: PluginLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
 
 function memDir(directory: string, worktree?: string): string {
   return worktree ? path.join(worktree, ".agentmem") : path.join(directory, ".agentmem")
@@ -36,9 +39,9 @@ async function parseFrontmatterOutput(raw: string): Promise<string | null> {
 async function injectBudgetedMem(client: ReturnType<Parameters<Plugin>[0]["client"]>, sessionId: string, root: string, header: string, deltaMode: boolean) {
   const mdir = path.join(root, ".agentmem")
   const cmd = deltaMode ? "budget-inject-delta" : "budget-inject"
-  const proc = await $`java --class-path ${classesDir} ${mainClass} ${cmd} ${mdir} ${root} ${sessionId}`.nothrow()
+  const proc = await safeSpawn(["java", "--class-path", classesDir, mainClass, cmd, mdir, root, sessionId])
   if (proc.exitCode !== 0) return
-  const raw = proc.text()
+  const raw = proc.stdout
   const context = await parseFrontmatterOutput(raw)
   if (!context) return
   try {
@@ -47,7 +50,7 @@ async function injectBudgetedMem(client: ReturnType<Parameters<Plugin>[0]["clien
       body: { noReply: true, parts: [{ type: "text", text: header + context }] },
     })
   } catch (e) {
-    console.error("[agentmem] budget injection failed:", (e as Error).message)
+    logger.error(`budget injection failed: ${(e as Error).message}`)
   }
 }
 
@@ -60,7 +63,7 @@ async function injectMemoryAtStartup(client: ReturnType<Parameters<Plugin>[0]["c
   if (!existsSync(path.join(mdir, "MEMORY.md"))) return
   const budgetFile = path.join(mdir, ".sessions", `budget-${sessionId.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`)
   if (!existsSync(budgetFile)) {
-    await $`java --class-path ${classesDir} ${mainClass} budget-init ${mdir} ${sessionId}`.nothrow()
+    await safeSpawn(["java", "--class-path", classesDir, mainClass, "budget-init", mdir, sessionId]).catch(() => {})
   }
   await injectBudgetedMem(client, sessionId, root, [
     "# Persistent Project Memory",
@@ -169,7 +172,7 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
   new Response(keeper.stdout).text().then(() => {
     clearTimeout(kill)
     keeperBusy = false
-    if (reinject && capturedSessionId) reinjectMemory(client, capturedSessionId, root).catch(e => console.error("[agentmem] keeper reinject failed:", (e as Error).message))
+    if (reinject && capturedSessionId) reinjectMemory(client, capturedSessionId, root).catch(e => logger.error(`keeper reinject failed: ${(e as Error).message}`))
   }).catch(() => { clearTimeout(kill); keeperBusy = false })
 }
 
@@ -185,8 +188,8 @@ function trySpawnDreamer(mdir: string) {
   const now = Date.now()
   if (now - lastDreamRun <= DREAM_INTERVAL_MS) return
   if (!existsSync(mdir)) return
-  const lockCheck = Bun.spawnSync(["java", "--class-path", classesDir, mainClass, "lock-check", mdir])
-  if (lockCheck.stdout.toString().trim() !== "FREE") return
+  const lockCheck = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-check", mdir])
+  if (lockCheck.stdout.trim() !== "FREE") return
   lastDreamRun = now
   const dreamer = Bun.spawn(
     ["opencode", "run", "--agent", "memory-dreamer",
@@ -199,7 +202,8 @@ function trySpawnDreamer(mdir: string) {
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
-  console.log("[agentmem] plugin active — 6 tools + classifier + auto-injection hooks")
+  logger = createLogger(client, "agentmem")
+  logger.info("plugin active — 6 tools + classifier + auto-injection hooks")
   const root = rootDir(directory, worktree)
   const mdir = memDir(directory, worktree)
 
@@ -213,8 +217,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           injectedScopes.clear()
           injectedSessionId = sid
           injectMemoryAtStartup(client, sid, root)
-            .then(() => console.log("[agentmem] injected memory into session", sid))
-            .catch(e => console.error("[agentmem] session.created injection failed:", (e as Error).message))
+            .then(() => logger.info(`injected memory into session ${sid}`))
+            .catch(e => logger.error(`session.created injection failed: ${(e as Error).message}`))
           break
         }
         case "file.edited": {
@@ -284,8 +288,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
             args.contradicts ?? "--",
             args.guard_trigger ?? "--"
           ]
-          const proc = await $`${cmd}`.nothrow()
-          const result = proc.text().trim()
+          const proc = await safeSpawn(cmd)
+          const result = proc.stdout.trim()
           if (proc.exitCode === 0) {
             const sid = injectedSessionId ?? (context as any).sessionID
             if (sid) await reinjectMemory(client, sid, root)
@@ -301,8 +305,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         },
         async execute(args, context) {
           const mdir = memDir(context.directory, context.worktree)
-          const proc = await $`java --class-path ${classesDir} ${mainClass} delete ${mdir} ${args.name}`.nothrow()
-          const result = proc.text().trim()
+          const proc = await safeSpawn(["java", "--class-path", classesDir, mainClass, "delete", mdir, args.name])
+          const result = proc.stdout.trim()
           if (proc.exitCode === 0) {
             const sid = injectedSessionId ?? (context as any).sessionID
             if (sid) await reinjectMemory(client, sid, root)
@@ -351,7 +355,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         args: {},
         async execute(_args, context) {
           const mdir = memDir(context.directory, context.worktree)
-          const lockResult = Bun.spawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire", mdir])
+          const lockResult = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire", mdir])
           if (lockResult.exitCode !== 0) return "Dream already in progress (lock busy)."
           try {
             const dreamer = Bun.spawn(
@@ -366,7 +370,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
               return out.trim() || "Dream complete."
             } finally { clearTimeout(kill) }
           } finally {
-            $`java --class-path ${classesDir} ${mainClass} lock-release ${mdir}`.nothrow()
+            await safeSpawn(["java", "--class-path", classesDir, mainClass, "lock-release", mdir]).catch(() => {})
           }
         },
       }),
@@ -377,8 +381,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         async execute(_args, context) {
           const mdir = memDir(context.directory, context.worktree)
           const projRoot = context.worktree ?? context.directory
-          const proc = await $`java --class-path ${classesDir} ${mainClass} verify ${mdir} ${projRoot}`.nothrow()
-          const text = proc.text().trim()
+          const proc = await safeSpawn(["java", "--class-path", classesDir, mainClass, "verify", mdir, projRoot])
+          const text = proc.stdout.trim()
           if (proc.exitCode !== 0) return text || "Verification failed."
           return text || "No file references found in memories."
         },
@@ -390,8 +394,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         async execute(_args, context) {
           const mdir = memDir(context.directory, context.worktree)
           const projRoot = context.worktree ?? context.directory
-          const proc = await $`java --class-path ${classesDir} ${mainClass} verify-report ${mdir} ${projRoot}`.nothrow()
-          const text = proc.text().trim()
+          const proc = await safeSpawn(["java", "--class-path", classesDir, mainClass, "verify-report", mdir, projRoot])
+          const text = proc.stdout.trim()
           if (proc.exitCode !== 0) return text || "Verification report failed."
           return text || "No file references found in memories."
         },

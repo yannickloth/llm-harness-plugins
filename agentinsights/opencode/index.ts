@@ -1,6 +1,7 @@
 import type { Plugin, tool } from "@opencode-ai/plugin"
-import { $ } from "bun"
 import path from "path"
+import { createLogger } from "../../shared/plugin-logger"
+import { safeSpawn } from "../../shared/safe-spawn"
 
 const agentinsightsDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(agentinsightsDir, "build", "classes")
@@ -17,9 +18,9 @@ function insightsDir(context: { worktree?: string; directory: string }): string 
   return path.join(root, ".agentmem", "insights")
 }
 
-export default async ({ client, $: bunDollar, directory, worktree }: Parameters<Plugin>[0]) => {
-  const root = worktree ?? directory
-  console.log("[agentinsights] plugin active — 2 tools")
+export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  const logger = createLogger(client, "agentinsights")
+  logger.info("plugin active — 2 tools")
 
   return {
     tool: {
@@ -42,10 +43,10 @@ export default async ({ client, $: bunDollar, directory, worktree }: Parameters<
             "--insights-dir", insDir,
             "--platform", args.platform
           ]
-          const result = await $`${cmd}`.nothrow()
-          const stdout = result.stdout.toString()
-          const stderr = result.stderr.toString()
-          if (stderr && stderr.trim().length > 0) console.error(stderr)
+          const result = await safeSpawn(cmd)
+          const stdout = result.stdout
+          const stderr = result.stderr
+          if (stderr && stderr.trim().length > 0) logger.error(stderr.trim())
 
           if (stdout.startsWith("REPORT ")) {
             const reportPath = stdout.substring(7, stdout.indexOf("\n"))
@@ -60,8 +61,10 @@ export default async ({ client, $: bunDollar, directory, worktree }: Parameters<
         args: {},
         async execute(_args, context) {
           const insDir = insightsDir(context)
-          const result = await $`java --class-path ${classesDir} ${mainClass} status ${insDir}`.nothrow().text()
-          return result.trim()
+          const result = await safeSpawn(
+            ["java", "--class-path", classesDir, mainClass, "status", insDir],
+          )
+          return result.stdout.trim()
         },
       }),
     },
