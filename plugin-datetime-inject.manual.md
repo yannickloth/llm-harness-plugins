@@ -17,7 +17,7 @@ Add to `opencode.json` plugin array (this repo: already present, after tier-rout
 
 Requires no build step — TypeScript shim only, no Java core. Position relative to other `chat.message` consumers is irrelevant (appends framing, does not rewrite).
 
-On session start: `[datetime-inject] plugin active — injects datetime, platform, toolchain into every LLM prompt`
+On session start: `[datetime-inject] plugin active — datetime per message, platform/toolchain per session`
 
 ## What it injects
 
@@ -72,7 +72,8 @@ Two ways to toggle sections/behavior. Defaults live in `datetime-inject/opencode
   ["../llm-harness-plugins/datetime-inject/opencode/index.ts", {
     "flags": { "datetime": true, "platform": true, "toolchain": true },
     "injectIntoUserMessage": true,
-    "injectIntoSystem": true
+    "injectIntoSystem": true,
+    "injectDatetimePerMessage": true
   }]
 ]
 ```
@@ -86,21 +87,29 @@ Or edit module defaults:
 | `flags.toolchain` | `true` | Toggle toolchain section |
 | `injectIntoUserMessage` | `true` | Prepend to each new user message (visible in transcript) |
 | `injectIntoSystem` | `true` | Add to system prompt (invisible in transcript) |
+| `injectDatetimePerMessage` | `true` | If `false`, **nothing** is sent per message — all context (datetime + platform + toolchain) lives once in the system prompt |
 
-> Visibility tradeoff: `chat.message` path shows the context in the user's message text. Set `injectIntoUserMessage = false` to keep it hidden via system-only injection (system path still fresh per session build).
+> Visibility tradeoff: `chat.message` path shows the context in the user's message text. Set `injectIntoUserMessage = false` or `injectDatetimePerMessage = false` to keep everything hidden inside the system prompt (nothing per-message).
 
-## Hook behavior
+## Hook behavior — cadence split
 
-| Hook | What it does | Dedup |
-|------|--------------|-------|
-| `chat.message` | Prepends full context block to first text part of each new user message | n/a (once per message) |
-| `experimental.chat.system.transform` | Prepends context block to system prompt | Skips if any stable header (`[current datetime`/`[platform]`/`[toolchain]`) already present — prevents stacking on rebuilds |
+Two modes, selected by `injectDatetimePerMessage`:
 
-Dedup uses stable headers, NOT the timestamp — so the changing datetime never causes duplicate accumulation.
+| Mode | Per message (`chat.message`) | Per session (`system.transform`) |
+|------|-------------------------------|----------------------------------|
+| **Default** (`injectDatetimePerMessage: true`) | datetime only (fresh) | platform + toolchain (once) |
+| **System-only** (`injectDatetimePerMessage: false`) | nothing | datetime + platform + toolchain (once) |
+
+The **whole platform/toolchain block is never sent per prompt** — it lives in the system prompt once per session. Per-message traffic is at most the tiny datetime line, and zero in system-only mode.
+
+- `chat.message` (default): prepends **datetime only** to each new user message's first text part — the only thing that changes between turns. In system-only mode it injects nothing.
+- `experimental.chat.system.transform`: prepends the session block once. Skips if any stable header (`[platform]`/`[toolchain]`) already present — prevents stacking on rebuilds.
+
+Datetime is at least present per session (system-only) and fresh per message (default). Dedup uses stable headers, NOT the timestamp — so the changing datetime never causes duplicate accumulation.
 
 ## Testing
 
-`bun test` against `datetime-inject/opencode/index.test.ts` (29 tests, ~60 assertions). Wired into `build.sh`.
+`bun test` against `datetime-inject/opencode/index.test.ts` (38 tests, ~84 assertions). Wired into `build.sh`.
 
 | Coverage | What it verifies |
 |----------|------------------|
@@ -108,15 +117,15 @@ Dedup uses stable headers, NOT the timestamp — so the changing datetime never 
 | platform | header, System/CPU/Memory lines, package-manager mapping by distro ID |
 | toolchain | flake/direnv/lock detection, locked-vs-unlocked, package extraction (buildInputs + nativeBuildInputs), omitted-when-absent |
 | flag permutations | each flag toggles only its section; all-off → empty |
+| cadence split | `buildStaticContext` = platform+toolchain (no datetime); `buildSessionContext` = all three; `buildPerMessageContext` = datetime-only; static omits platform when flagged off |
 | dedup (`hasAnyMarker`) | detects injected system, returns false when clean, matches on changing timestamp (stacking fix) |
-| hooks | chat.message prepends / skips empty / skips no-text, system.transform injects-once-then-dedups, respects `injectIntoSystem=false`, skips when marker present |
+| hooks | chat.message prepends datetime-only / skips empty / skips no-text / never repeats static; system.transform injects platform+toolchain once then dedups, respects `injectIntoSystem=false`, skips when marker present; system-only mode (`injectDatetimePerMessage=false`) injects nothing per message and datetime into system |
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | No context in prompts | Not registered in `plugin[]` | Add `./datetime-inject/opencode/index.ts`; restart OpenCode |
-| Context visible in message text | `injectIntoUserMessage = true` (default) | Set `false` to keep system-only |
-| System datetime seems stale in long session | System prompt injected once per build | Rely on `chat.message` path (fresh per user message) |
+| Context visible in message text | `injectIntoUserMessage = true` (default) | Set `false` to keep system-only (datetime then only in system — static/cadence still works) |
 | Wrong package manager shown | Distro ID not in `packageManagerFor` mapping | Add ID → tool mapping in `datetime-inject/opencode/index.ts` |
 | Wrong/no flake info | `flake.nix`/`.envrc` absent or different layout | Only supports `use flake`/`asdf`/`nix` direnv + `pkgs.*` buildInputs |

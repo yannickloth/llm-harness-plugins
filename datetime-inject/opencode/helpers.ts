@@ -144,6 +144,31 @@ export function buildContext(root: string, flags: Flags = DEFAULT_FLAGS, textRea
   return parts.join("\n\n")
 }
 
+export function buildStaticContext(root: string, flags: Flags = DEFAULT_FLAGS, textReader?: (p: string) => string): string {
+  const parts: string[] = []
+  if (flags.platform) parts.push(platformNote())
+  if (flags.toolchain) {
+    const tc = toolchainNote(root, textReader)
+    if (tc) parts.push(tc)
+  }
+  return parts.join("\n\n")
+}
+
+export function buildSessionContext(root: string, flags: Flags = DEFAULT_FLAGS, textReader?: (p: string) => string): string {
+  const parts: string[] = []
+  if (flags.datetime) parts.push(datetimeNote())
+  if (flags.platform) parts.push(platformNote())
+  if (flags.toolchain) {
+    const tc = toolchainNote(root, textReader)
+    if (tc) parts.push(tc)
+  }
+  return parts.join("\n\n")
+}
+
+export function buildPerMessageContext(flags: Flags = DEFAULT_FLAGS): string {
+  return flags.datetime ? datetimeNote() : ""
+}
+
 export function hasAnyMarker(system: string[]): boolean {
   return system.some(s => STABLE_MARKERS.some(m => s.includes(m)))
 }

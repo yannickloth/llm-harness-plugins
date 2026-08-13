@@ -2,6 +2,9 @@ import { describe, test, expect } from "bun:test"
 import path from "path"
 import {
   buildContext,
+  buildStaticContext,
+  buildSessionContext,
+  buildPerMessageContext,
   currentDatetime,
   datetimeNote,
   DATETIME_HEADER,
@@ -14,7 +17,7 @@ import {
   extractFlakePackages,
 } from "./helpers"
 
-const PLUGIN_DIR = path.join(import.meta.dir, "..")
+const REPO_ROOT = path.join(import.meta.dir, "..", "..")
 
 // Deterministic file reader over an in-memory map (no disk dependency).
 function memReader(files: Record<string, string>) {
@@ -156,6 +159,41 @@ describe("datetime-inject helpers", () => {
     })
   })
 
+  describe("cadence split (static per session vs per-message)", () => {
+    const files = { ".envrc": "use flake" }
+
+    test("buildStaticContext carries platform and toolchain, never datetime", () => {
+      const ctx = buildStaticContext("/proj", { platform: true, toolchain: true, datetime: true }, memReader(files))
+      expect(ctx).toContain(PLATFORM_HEADER)
+      expect(ctx).toContain(TOOLCHAIN_HEADER)
+      expect(ctx).not.toContain(DATETIME_HEADER)
+    })
+
+    test("buildStaticContext omits platform when flag off", () => {
+      const ctx = buildStaticContext("/proj", { platform: false, toolchain: true, datetime: true }, memReader(files))
+      expect(ctx).not.toContain(PLATFORM_HEADER)
+      expect(ctx).toContain(TOOLCHAIN_HEADER)
+    })
+
+    test("buildPerMessageContext is datetime-only", () => {
+      const ctx = buildPerMessageContext({ datetime: true, platform: true, toolchain: true })
+      expect(ctx).toContain(DATETIME_HEADER)
+      expect(ctx).not.toContain(PLATFORM_HEADER)
+      expect(ctx).not.toContain(TOOLCHAIN_HEADER)
+    })
+
+    test("buildPerMessageContext empty when datetime disabled", () => {
+      expect(buildPerMessageContext({ datetime: false })).toBe("")
+    })
+
+    test("buildSessionContext carries datetime + platform + toolchain", () => {
+      const ctx = buildSessionContext("/proj", { datetime: true, platform: true, toolchain: true }, memReader(files))
+      expect(ctx).toContain(DATETIME_HEADER)
+      expect(ctx).toContain(PLATFORM_HEADER)
+      expect(ctx).toContain(TOOLCHAIN_HEADER)
+    })
+  })
+
   describe("dedup markers", () => {
     test("STABLE_MARKERS contains the three section headers", () => {
       expect(STABLE_MARKERS).toEqual([DATETIME_HEADER, PLATFORM_HEADER, TOOLCHAIN_HEADER])
@@ -181,7 +219,7 @@ describe("datetime-inject helpers", () => {
 describe("datetime-inject plugin hooks", () => {
   async function loadHooks(opts: Record<string, unknown> = {}) {
     const mod = await import(`./index.ts?${Date.now()}`)
-    return mod.default({ directory: PLUGIN_DIR, worktree: PLUGIN_DIR }, opts)
+    return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, opts)
   }
 
   test("plugin registers both hooks", async () => {
@@ -190,12 +228,23 @@ describe("datetime-inject plugin hooks", () => {
     expect(hooks["experimental.chat.system.transform"]).toBeDefined()
   })
 
-  test("chat.message prepends context to text part", async () => {
+  test("chat.message prepends datetime to text part", async () => {
     const hooks = await loadHooks()
     const output = { parts: [{ type: "text", text: "what time is it?" }] }
     await hooks["chat.message"]({}, output)
     expect(output.parts[0].text.startsWith(DATETIME_HEADER)).toBe(true)
     expect(output.parts[0].text).toContain("what time is it?")
+  })
+
+  test("chat.message does NOT duplicate session-static sections on each message", async () => {
+    // Frequency fix: platform/toolchain live in the system prompt (once per
+    // session); per-message injection is datetime-only.
+    const hooks = await loadHooks()
+    const output = { parts: [{ type: "text", text: "again" }] }
+    await hooks["chat.message"]({}, output)
+    expect(output.parts[0].text).toContain(DATETIME_HEADER)
+    expect(output.parts[0].text).not.toContain(PLATFORM_HEADER)
+    expect(output.parts[0].text).not.toContain(TOOLCHAIN_HEADER)
   })
 
   test("chat.message leaves empty text untouched", async () => {
@@ -219,15 +268,25 @@ describe("datetime-inject plugin hooks", () => {
     expect(output.parts[0].type).toBe("tool")
   })
 
-  test("system.transform injects once, then dedups on repeat (no stacking)", async () => {
+  test("system.transform injects session-static context once, then dedups (no stacking)", async () => {
     const hooks = await loadHooks()
     const output = { system: ["base system prompt"] }
     await hooks["experimental.chat.system.transform"]({}, output)
+    expect(output.system[0]).toContain(PLATFORM_HEADER)
     expect(hasAnyMarker(output.system)).toBe(true)
     expect(output.system.length).toBe(2)
 
     await hooks["experimental.chat.system.transform"]({}, output)
     expect(output.system.length).toBe(2)
+  })
+
+  test("system.transform carries platform and toolchain but not datetime", async () => {
+    const hooks = await loadHooks()
+    const output = { system: ["base"] }
+    await hooks["experimental.chat.system.transform"]({}, output)
+    expect(output.system[0]).toContain(PLATFORM_HEADER)
+    expect(output.system[0]).toContain(TOOLCHAIN_HEADER)
+    expect(output.system[0]).not.toContain(DATETIME_HEADER)
   })
 
   test("system.transform respects injectIntoSystem=false", async () => {
@@ -243,5 +302,21 @@ describe("datetime-inject plugin hooks", () => {
     const output = { system: [`${PLATFORM_HEADER} already here`] }
     await hooks["experimental.chat.system.transform"]({}, output)
     expect(output.system.length).toBe(1)
+  })
+
+  test("system-only mode injects nothing per message (injectDatetimePerMessage=false)", async () => {
+    const hooks = await loadHooks({ injectDatetimePerMessage: false })
+    const msg = { parts: [{ type: "text", text: "hi" }] }
+    await hooks["chat.message"]({}, msg)
+    expect(msg.parts[0].text).toBe("hi")
+  })
+
+  test("system-only mode puts datetime into system context", async () => {
+    const hooks = await loadHooks({ injectDatetimePerMessage: false })
+    const output = { system: ["base"] }
+    await hooks["experimental.chat.system.transform"]({}, output)
+    expect(output.system[0]).toContain(DATETIME_HEADER)
+    expect(output.system[0]).toContain(PLATFORM_HEADER)
+    expect(output.system.length).toBe(2)
   })
 })
