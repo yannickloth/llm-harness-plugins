@@ -3,11 +3,12 @@
 // After 3 consecutive compaction failures, stop compacting, keep original.
 // Written as a single-file main entry via SessionLifecycle dispatch.
 
-import module java.base;
-
 import eu.infolead.llmhp.shared.CircuitBreaker;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
+class SessionBreakers {
 
 void main() {
     var subcommand = arg(0, "record");
@@ -74,4 +75,6 @@ void reset(Path persistDir) {
     b.reset();
     try { b.save(persistDir); } catch (IOException ignored) {}
     System.out.println("{\"status\":\"reset\"}");
+}
+
 }

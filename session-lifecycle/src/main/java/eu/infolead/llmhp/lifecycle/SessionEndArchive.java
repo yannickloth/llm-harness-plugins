@@ -7,6 +7,8 @@
 
 import module java.base;
 
+class SessionEndArchive {
+
 private static final int RETENTION_DAYS = 30;
 
 void main() {
@@ -93,4 +95,6 @@ void report(String origin, Throwable t) {
             StandardCharsets.UTF_8,
             StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     } catch (Throwable ignored) {}
+}
+
 }

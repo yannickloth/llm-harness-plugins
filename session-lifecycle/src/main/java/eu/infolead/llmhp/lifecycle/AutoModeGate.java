@@ -3,12 +3,13 @@
 // Returns a transform function applied against fresh context to prevent
 // async stale-snapshot races. Mirrors Claude Code's verifyAutoModeGateAccess.
 
-import module java.base;
-
 import eu.infolead.llmhp.shared.CircuitBreaker;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.Function;
+
+class AutoModeGate {
 
 void main() {
     var subcommand = arg(0, "check");
@@ -69,4 +70,6 @@ void status(Path persistDir) {
         """.strip(),
         state.tripped(), state.consecutiveFailures(), state.totalFailures(),
         b.consecutiveMax(), b.totalMax());
+}
+
 }

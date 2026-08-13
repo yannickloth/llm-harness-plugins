@@ -8,6 +8,8 @@
 
 import module java.base;
 
+class SessionEndCommits {
+
 void main() {
     try {
         var json = new String(System.in.readAllBytes(), StandardCharsets.UTF_8);
@@ -87,4 +89,6 @@ void report(String origin, Throwable t) {
             StandardCharsets.UTF_8,
             StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     } catch (Throwable ignored) {}
+}
+
 }

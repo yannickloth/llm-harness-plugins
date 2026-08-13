@@ -6,6 +6,8 @@
 
 import module java.base;
 
+class SessionStartErrors {
+
 void main() {
     try {
         var dir = System.getenv("CLAUDE_PROJECT_DIR");
@@ -29,4 +31,6 @@ void main() {
         System.out.println();
         System.out.println(preview);
     } catch (Throwable ignored) {}
+}
+
 }
