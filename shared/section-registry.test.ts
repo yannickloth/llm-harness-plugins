@@ -100,20 +100,18 @@ describe("SectionRegistry", () => {
   })
 
   test("overwrite warns on duplicate name", async () => {
-    const reg = new SectionRegistry()
-    reg.section("dup", () => "first")
-
-    const origWarn = console.warn
-    let warned = false
-    console.warn = (msg: string) => {
-      if (msg.includes('replacing existing section "dup"')) warned = true
-      origWarn(msg)
+    const warnings: string[] = []
+    const logger = {
+      debug: (..._a: unknown[]) => {},
+      info: (..._a: unknown[]) => {},
+      warn: (...a: unknown[]) => { if (typeof a[0] === "string") warnings.push(a[0]) },
+      error: (..._a: unknown[]) => {},
     }
-
+    const reg = new SectionRegistry(logger)
+    reg.section("dup", () => "first")
     reg.section("dup", () => "second")
 
-    console.warn = origWarn
-    expect(warned).toBe(true)
+    expect(warnings.some(w => w.includes('replacing existing section "dup"'))).toBe(true)
 
     const sections = await reg.resolveSections()
     expect(sections).toHaveLength(1)
@@ -121,21 +119,20 @@ describe("SectionRegistry", () => {
   })
 
   test("failed factory is skipped with error logged", async () => {
-    const reg = new SectionRegistry()
+    const errors: string[] = []
+    const logger = {
+      debug: (..._a: unknown[]) => {},
+      info: (..._a: unknown[]) => {},
+      warn: (..._a: unknown[]) => {},
+      error: (...a: unknown[]) => { if (typeof a[0] === "string") errors.push(a[0]) },
+    }
+    const reg = new SectionRegistry(logger)
     reg.section("fail", () => { throw new Error("boom") })
     reg.section("pass", () => "pass")
 
-    const origErr = console.error
-    let errored = false
-    console.error = (...args: any[]) => {
-      if (typeof args[0] === "string" && args[0].includes('failed resolving section "fail"')) errored = true
-      origErr(...args)
-    }
-
     const sections = await reg.resolveSections()
 
-    console.error = origErr
-    expect(errored).toBe(true)
+    expect(errors.some(w => w.includes('failed resolving section "fail"'))).toBe(true)
     expect(sections).toHaveLength(1)
     expect(sections[0].content).toBe("pass")
   })

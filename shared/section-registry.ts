@@ -5,6 +5,7 @@ import {
   orgCachedSection,
   type ScopedSection,
 } from "./cache-boundary"
+import type { PluginLogger } from "./plugin-logger"
 
 type SectionFactory = () => string | Promise<string> | ScopedSection | Promise<ScopedSection>
 
@@ -15,12 +16,24 @@ export interface SectionEntry {
   reason?: string
 }
 
+const noopLogger: PluginLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+}
+
 export class SectionRegistry {
   private sections = new Map<string, SectionEntry>()
+  private logger: PluginLogger
+
+  constructor(logger: PluginLogger = noopLogger) {
+    this.logger = logger
+  }
 
   section(name: string, factory: SectionFactory): SectionRegistry {
     if (this.sections.has(name)) {
-      console.warn(`[section-registry] replacing existing section "${name}"`)
+      this.logger.warn(`replacing existing section "${name}"`)
     }
     this.sections.set(name, { name, factory, cacheScope: "global" })
     return this
@@ -28,7 +41,7 @@ export class SectionRegistry {
 
   orgSection(name: string, factory: SectionFactory): SectionRegistry {
     if (this.sections.has(name)) {
-      console.warn(`[section-registry] replacing existing section "${name}"`)
+      this.logger.warn(`replacing existing section "${name}"`)
     }
     this.sections.set(name, { name, factory, cacheScope: "org" })
     return this
@@ -36,7 +49,7 @@ export class SectionRegistry {
 
   uncached(name: string, factory: SectionFactory, reason: string): SectionRegistry {
     if (this.sections.has(name)) {
-      console.warn(`[section-registry] replacing existing section "${name}"`)
+      this.logger.warn(`replacing existing section "${name}"`)
     }
     this.sections.set(name, { name, factory, cacheScope: null, reason })
     return this
@@ -67,9 +80,8 @@ export class SectionRegistry {
           }
         }
       } catch (e) {
-        console.error(
-          `[section-registry] failed resolving section "${entry.name}":`,
-          (e as Error).message
+        this.logger.error(
+          `failed resolving section "${entry.name}": ${(e as Error).message}`
         )
       }
     }
