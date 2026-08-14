@@ -13,6 +13,17 @@ import java.util.stream.*;
  */
 public class ProsePatternAnalyzer {
 
+    private String domain = "general";
+
+    // Patterns that are domain-appropriate in scientific writing and should be
+    // reported as tolerated (not flagged as findings).
+    private static final Set<String> SCIENTIFIC_TOLERATED = Set.of(
+        "Passive Voice",
+        "Hedging Stacking",
+        "Formulaic Opening",
+        "Abstract Noun Chain"
+    );
+
     // Pattern regex definitions
     private static final Pattern TRANSITION_STACKING = Pattern.compile(
         "\\b(however|furthermore|moreover|additionally|consequently|therefore|" +
@@ -139,6 +150,10 @@ public class ProsePatternAnalyzer {
         allMatches.addAll(analyzeFalseBalance(text, lines));
         allMatches.addAll(analyzeSummaryInflation(text, lines));
         allMatches.addAll(analyzeOverExplanation(text, lines));
+
+        if ("scientific".equals(domain)) {
+            allMatches.removeIf(m -> SCIENTIFIC_TOLERATED.contains(m.patternName()));
+        }
 
         return allMatches;
     }
@@ -349,6 +364,13 @@ public class ProsePatternAnalyzer {
         metricValues.put("sentenceLengthVariance", calculateSentenceLengthVariance(sentences));
         metricValues.put("vocabularyDiversity", calculateVocabularyDiversity(text));
         metricValues.put("teachingToneDensity", calculateTeachingToneDensity(text));
+        metricValues.put("sentenceLengthCoV", calculateSentenceLengthCoV(text));
+        metricValues.put("wordEntropy", calculateWordEntropy(text));
+        metricValues.put("charEntropy", calculateCharEntropy(text));
+        metricValues.put("perplexityApprox", calculatePerplexityApprox(text));
+        metricValues.put("bigramEntropy", calculateBigramConditionalEntropy(text));
+        metricValues.put("bigramPerplexity", calculateBigramPerplexity(text));
+        metricValues.put("structureTypeDiversity", calculateStructureTypeDiversity(text));
 
         return new DocumentMetrics(
             totalWords,
@@ -456,6 +478,182 @@ public class ProsePatternAnalyzer {
         return words.length > 0 ? (toneCount * 1000.0) / words.length : 0.0;
     }
 
+    // ---------------------------------------------------------------
+    // Statistical layer — burstiness, entropy, and perplexity
+    // ---------------------------------------------------------------
+    // These mirror what professional AI-style detectors measure. They are
+    // reported as CROSS-REFERENCE metrics with domain baselines, never as an
+    // authorship verdict. Detectors have high false-positive rates on formal,
+    // scientific, and non-native English prose.
+
+    /**
+     * Sentence-length coefficient of variation (burstiness proxy).
+     * Human writing is "bursty": it mixes short and long sentences, giving a
+     * higher CoV. Uniform AI-style writing clusters lengths, giving a low CoV.
+     */
+    public double calculateSentenceLengthCoV(String text) {
+        String[] sentences = text.split("[.!?]+");
+        double[] lengths = Arrays.stream(sentences)
+            .map(s -> s.split("\\s+").length)
+            .filter(l -> l > 0)
+            .mapToDouble(Integer::doubleValue)
+            .toArray();
+
+        if (lengths.length == 0) return 0.0;
+
+        double mean = Arrays.stream(lengths).average().orElse(0);
+        if (mean == 0) return 0.0;
+
+        double variance = Arrays.stream(lengths)
+            .map(l -> Math.pow(l - mean, 2))
+            .average()
+            .orElse(0);
+        return Math.sqrt(variance) / mean;
+    }
+
+    /**
+     * Sentence-length bucket distribution (burstiness, structural).
+     * Returns the fraction of sentences in short (<12 words), medium
+     * (12-24), and long (>24) buckets as "short/medium/long".
+     */
+    public String calculateSentenceLengthBuckets(String text) {
+        String[] sentences = text.split("[.!?]+");
+        int shortC = 0, mediumC = 0, longC = 0, total = 0;
+
+        for (String s : sentences) {
+            int len = s.split("\\s+").length;
+            if (len <= 0) continue;
+            total++;
+            if (len < 12) shortC++;
+            else if (len <= 24) mediumC++;
+            else longC++;
+        }
+
+        if (total == 0) return "0/0/0";
+        return String.format("%d/%d/%d (short/med/long)",
+            Math.round(100.0 * shortC / total),
+            Math.round(100.0 * mediumC / total),
+            Math.round(100.0 * longC / total));
+    }
+
+    /**
+     * Word-level Shannon entropy (bits per word). A proxy for lexical
+     * predictability: uniform AI vocabulary yields lower entropy than varied
+     * human vocabulary. Entropy alone is not an authorship signal.
+     */
+    public double calculateWordEntropy(String text) {
+        String[] words = text.toLowerCase().split("[^a-zA-Z']+");
+        return shannonEntropy(Arrays.asList(words));
+    }
+
+    /**
+     * Character-level Shannon entropy (bits per char). Captures morphology
+     * and spelling surprise; a weak, purely statistical perplexity proxy.
+     */
+    public double calculateCharEntropy(String text) {
+        List<Character> chars = new ArrayList<>();
+        for (char c : text.toLowerCase().toCharArray()) {
+            if (Character.isLetterOrDigit(c)) chars.add(c);
+        }
+        return shannonEntropy(chars);
+    }
+
+    /**
+     * Word-unigram perplexity approximation = 2^wordEntropy.
+     * True LLM perplexity requires a trained language model; this is a
+     * purely statistical, corpus-free approximation and MUST be treated as
+     * such. It is not a reliable authorship indicator.
+     */
+    public double calculatePerplexityApprox(String text) {
+        double entropy = calculateWordEntropy(text);
+        return Math.pow(2.0, entropy);
+    }
+
+    /**
+     * Bigram conditional entropy (bits per word). Captures how predictable the
+     * next word is given the previous word — the core of what LLM perplexity
+     * measures — using a corpus-free bigram model. Higher than unigram entropy
+     * gaps between varied (human) and uniform (AI) vocabulary.
+     */
+    public double calculateBigramConditionalEntropy(String text) {
+        String[] words = text.toLowerCase().split("[^a-zA-Z']+");
+        if (words.length < 2) return 0.0;
+
+        Map<String, Map<String, Integer>> transition = new HashMap<>();
+        Map<String, Integer> prefixCount = new HashMap<>();
+        for (int i = 0; i < words.length - 1; i++) {
+            String w = words[i];
+            if (w.isEmpty()) continue;
+            String next = words[i + 1];
+            transition.computeIfAbsent(w, k -> new HashMap<>()).merge(next, 1, Integer::sum);
+            prefixCount.merge(w, 1, Integer::sum);
+        }
+
+        double entropy = 0.0;
+        for (Map.Entry<String, Map<String, Integer>> e : transition.entrySet()) {
+            String prefix = e.getKey();
+            int total = prefixCount.get(prefix);
+            for (int c : e.getValue().values()) {
+                double p = (double) c / total;
+                entropy += p * prefixCount.get(prefix) / (double) (words.length - 1)
+                        * Math.log(p) / Math.log(2);
+            }
+        }
+        return -entropy;
+    }
+
+    /**
+     * Bigram perplexity approximation = 2^bigramConditionalEntropy.
+     * A stronger, order-aware surrogate for LLM perplexity than the unigram
+     * version. Still corpus-free; still not detector-grade.
+     */
+    public double calculateBigramPerplexity(String text) {
+        double entropy = calculateBigramConditionalEntropy(text);
+        return Math.pow(2.0, entropy);
+    }
+
+    /**
+     * Structure-type diversity: fraction of distinct sentence "shapes".
+     * A shape is a coarse clause-structure signature derived from the number
+     * of punctuation delimiters (commas, semicolons, colons, em-dashes) plus
+     * length band. Uniform AI prose repeats few shapes; human prose is more
+     * diverse. 1.0 = every sentence a distinct shape, 0.0 = all identical.
+     */
+    public double calculateStructureTypeDiversity(String text) {
+        String[] sentences = text.split("[.!?]+");
+        Set<String> shapes = new HashSet<>();
+        int count = 0;
+
+        for (String s : sentences) {
+            String t = s.trim();
+            if (t.isEmpty()) continue;
+            count++;
+            int delimiters = 0;
+            for (char c : t.toCharArray()) {
+                if (c == ',' || c == ';' || c == ':' || c == '\u2014' || c == '-') delimiters++;
+            }
+            int len = t.split("\\s+").length;
+            String band = len < 12 ? "S" : (len <= 24 ? "M" : "L");
+            String shape = delimiters + ":" + band;
+            shapes.add(shape);
+        }
+
+        return count > 0 ? (double) shapes.size() / count : 0.0;
+    }
+
+    private static <T> double shannonEntropy(List<T> items) {
+        if (items.isEmpty()) return 0.0;
+        Map<T, Integer> counts = new HashMap<>();
+        for (T item : items) counts.merge(item, 1, Integer::sum);
+        int total = items.size();
+        double entropy = 0.0;
+        for (int c : counts.values()) {
+            double p = (double) c / total;
+            entropy -= p * (Math.log(p) / Math.log(2));
+        }
+        return entropy;
+    }
+
     /**
      * Find line number for character position
      */
@@ -477,87 +675,114 @@ public class ProsePatternAnalyzer {
     /**
      * Generate comprehensive analysis report
      */
-    public String generateReport(List<PatternMatch> matches, DocumentMetrics metrics, String domain) {
+    public String generateReport(List<PatternMatch> matches, DocumentMetrics metrics, String domain, String text) {
         StringBuilder report = new StringBuilder();
 
-        report.append("# AI-Style Pattern Analysis Report\\n\\n");
-        report.append("## Document Information\\n");
-        report.append("- **Total Words**: ").append(metrics.totalWords()).append("\\n");
-        report.append("- **Total Sentences**: ").append(metrics.totalSentences()).append("\\n");
-        report.append("- **Total Paragraphs**: ").append(metrics.totalParagraphs()).append("\\n");
-        report.append("- **Domain**: ").append(domain != null ? domain : "general").append("\\n\\n");
+        report.append("# AI-Style Pattern Analysis Report\n\n");
+        report.append("## Document Information\n");
+        report.append("- **Total Words**: ").append(metrics.totalWords()).append("\n");
+        report.append("- **Total Sentences**: ").append(metrics.totalSentences()).append("\n");
+        report.append("- **Total Paragraphs**: ").append(metrics.totalParagraphs()).append("\n");
+        report.append("- **Domain**: ").append(domain != null ? domain : "general").append("\n\n");
 
         // Categorize findings
         Map<String, List<PatternMatch>> byCategory = matches.stream()
             .collect(Collectors.groupingBy(PatternMatch::category));
 
-        report.append("## Pattern Findings by Category\\n\\n");
+        report.append("## Pattern Findings by Category\n\n");
 
         for (String category : Arrays.asList("Structural", "Lexical", "Syntactic", "Rhetorical")) {
             List<PatternMatch> categoryMatches = byCategory.getOrDefault(category, List.of());
             if (!categoryMatches.isEmpty()) {
-                report.append("### ").append(category).append(" Patterns\\n\\n");
+                report.append("### ").append(category).append(" Patterns\n\n");
 
                 for (PatternMatch match : categoryMatches) {
-                    report.append("- **Line ").append(match.lineNumber()).append("**: ").append(match.patternName()).append("\\n");
-                    report.append("  - **Matched Text**: \"").append(match.matchedText()).append("\"\\n");
+                    report.append("- **Line ").append(match.lineNumber()).append("**: ").append(match.patternName()).append("\n");
+                    report.append("  - **Matched Text**: \"").append(match.matchedText()).append("\"\n");
                 }
-                report.append("\\n");
+                report.append("\n");
             }
         }
 
         // Pattern counts
-        report.append("## Pattern Counts\\n\\n");
+        report.append("## Pattern Counts\n\n");
         metrics.patternCounts().entrySet().stream()
             .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
             .forEach(entry -> report.append("- ").append(entry.getKey())
-                          .append(": ").append(entry.getValue()).append("\\n"));
-        report.append("\\n");
+                          .append(": ").append(entry.getValue()).append("\n"));
+        report.append("\n");
 
         // Quantitative metrics
-        report.append("## Quantitative Metrics\\n\\n");
-        report.append("### Structural Metrics\\n");
+        report.append("## Quantitative Metrics\n\n");
+        report.append("### Structural Metrics\n");
         report.append("- **Transition Density**: ").append(String.format("%.2f", metrics.metricValues().get("transitionDensity")))
-              .append(" per 1000 words\\n");
-        report.append("\\n");
+              .append(" per 1000 words\n");
+        report.append("\n");
 
-        report.append("### Lexical Metrics\\n");
+        report.append("### Lexical Metrics\n");
         report.append("- **Hedge Density**: ").append(String.format("%.2f", metrics.metricValues().get("hedgeDensity")))
-              .append(" per 100 words\\n");
+              .append(" per 100 words\n");
         report.append("- **Abstract Noun Ratio**: ").append(String.format("%.2f", metrics.metricValues().get("abstractNounRatio")))
-              .append("\\n");
+              .append("\n");
         report.append("- **Vocabulary Diversity**: ").append(String.format("%.3f", metrics.metricValues().get("vocabularyDiversity")))
-              .append("\\n\\n");
+              .append("\n\n");
 
-        report.append("### Syntactic Metrics\\n");
+        report.append("### Syntactic Metrics\n");
         report.append("- **Passive Voice Rate**: ").append(String.format("%.1f", metrics.metricValues().get("passiveVoiceRate")))
-              .append("%\\n");
+              .append("%\n");
         report.append("- **Sentence Length Variance**: ").append(String.format("%.2f", metrics.metricValues().get("sentenceLengthVariance")))
-              .append(" words\\n\\n");
+              .append(" words\n\n");
 
-        report.append("### Rhetorical Metrics\\n");
+        report.append("### Statistical Layer (burstiness / entropy / perplexity)\n");
+        report.append("These mirror what professional AI-style detectors compute. They are CROSS-REFERENCE metrics with domain baselines, not an authorship verdict.\n");
+        report.append("- **Sentence-Length CoV (burstiness)**: ").append(String.format("%.3f", metrics.metricValues().get("sentenceLengthCoV")))
+              .append("  (higher = more varied rhythm, human-typical; low = uniform, AI-typical)\n");
+        report.append("- **Sentence-Length Buckets**: ").append(calculateSentenceLengthBuckets(text)).append("\n");
+        report.append("- **Structure-Type Diversity**: ").append(String.format("%.3f", metrics.metricValues().get("structureTypeDiversity")))
+              .append("  (1.0 = every sentence a distinct shape; low = repeated shapes, AI-typical)\n");
+        report.append("- **Word Entropy**: ").append(String.format("%.3f", metrics.metricValues().get("wordEntropy")))
+              .append(" bits/word  (lower = more predictable vocabulary)\n");
+        report.append("- **Char Entropy**: ").append(String.format("%.3f", metrics.metricValues().get("charEntropy")))
+              .append(" bits/char\n");
+        report.append("- **Bigram Conditional Entropy**: ").append(String.format("%.3f", metrics.metricValues().get("bigramEntropy")))
+              .append(" bits/word  (INFORMATIONAL: tracks vocabulary richness/length; NOT a reliable AI-style discriminator — real prose often scores HIGHER than synthetic AI text here)\n");
+        report.append("- **Unigram Perplexity (approx)**: ").append(String.format("%.1f", metrics.metricValues().get("perplexityApprox")))
+              .append("  (word-unigram approx of LLM perplexity; NOT reliable as authorship evidence)\n");
+        report.append("- **Bigram Perplexity (approx)**: ").append(String.format("%.1f", metrics.metricValues().get("bigramPerplexity")))
+              .append("  (INFORMATIONAL; not a reliable AI-style signal)\n\n");
+        report.append("**Reliable discriminator metrics** (these separated AI-typical from human-typical cleanly in validation):\n");
+        report.append("- Sentence-Length CoV (burstiness), Structure-Type Diversity, Word Entropy, Unigram Perplexity.\n\n");
+        report.append("**Domain baselines (indicative, not thresholds):**\n");
+        report.append("- Burstiness (CoV): 0.6-1.2 general prose; formal/scientific can run lower (0.4-0.9).\n");
+        report.append("- Word entropy: ~9-11 bits/word typical English prose.\n");
+        report.append("- A LOW burstiness + LOW entropy + LOW structure diversity + pattern findings together warrant a human read, never a verdict.\n\n");
+
+        report.append("### Rhetorical Metrics\n");
         report.append("- **Teaching Tone Density**: ").append(String.format("%.2f", metrics.metricValues().get("teachingToneDensity")))
-              .append(" per 1000 words\\n\\n");
+              .append(" per 1000 words\n\n");
 
         // Summary
-        report.append("## Summary\\n");
-        report.append("- **Total Findings**: ").append(matches.size()).append("\\n");
-        report.append("- **Categories Affected**: ").append(byCategory.size()).append("\\n");
+        report.append("## Summary\n");
+        report.append("- **Total Findings**: ").append(matches.size()).append("\n");
+        report.append("- **Categories Affected**: ").append(byCategory.size()).append("\n");
 
         if (!matches.isEmpty()) {
             String mostCommon = metrics.patternCounts().entrySet().stream()
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
                 .orElse("N/A");
-            report.append("- **Most Common Pattern**: ").append(mostCommon).append("\\n");
+            report.append("- **Most Common Pattern**: ").append(mostCommon).append("\n");
         } else {
-            report.append("- **Most Common Pattern**: N/A (no findings)\\n");
+            report.append("- **Most Common Pattern**: N/A (no findings)\n");
         }
 
-        report.append("\\n---\\n\\n");
-        report.append("**Note**: This analysis identifies prose patterns that may affect naturalness and readability.\\n");
-        report.append("Findings are based on stylometric analysis, not authorship determination.\\n");
-        report.append("Domain-appropriate patterns should be identified and preserved.\\n");
+        report.append("\n---\n\n");
+        report.append("**Note**: This analysis identifies prose patterns that may affect naturalness and readability.\n");
+        report.append("Findings are based on stylometric analysis, not authorship determination.\n");
+        report.append("The statistical layer (burstiness, entropy, perplexity) is a cross-reference, NOT an AI detector.\n");
+        report.append("Detectors have high false-positive rates on formal, scientific, and non-native English prose.\n");
+        report.append("Do not use any score or metric here as evidence of authorship; use it only to decide where a human read is warranted.\n");
+        report.append("Domain-appropriate patterns should be identified and preserved.\n");
 
         return report.toString();
     }
@@ -566,24 +791,35 @@ public class ProsePatternAnalyzer {
      * Main method for CLI usage
      */
     public static void main(String[] args) {
-        if (args.length == 0) {
-            System.err.println("Usage: java ProsePatternAnalyzer <file> [domain]");
-            System.err.println("  file: Path to text file to analyze");
-            System.err.println("  domain: Optional domain (medical, academic, technical, educational, professional)");
-            System.exit(1);
+        String filePath = null;
+        String domain = "general";
+
+        for (int i = 0; i < args.length; i++) {
+            if ("--domain".equals(args[i]) && i + 1 < args.length) {
+                domain = args[i + 1];
+                i++;
+            } else if (filePath == null) {
+                filePath = args[i];
+            }
         }
 
-        String filePath = args[0];
-        String domain = args.length > 1 ? args[1] : "general";
+        if (filePath == null) {
+            System.err.println("Usage: java ProsePatternAnalyzer <file> [--domain domain]");
+            System.err.println("  file: Path to text file to analyze");
+            System.err.println("  --domain domain: general (default) | medical | academic | technical | educational | professional | scientific");
+            System.err.println("    scientific tolerates passive voice, hedging, formulaic openings, and abstract nouns as conventional.");
+            System.exit(1);
+        }
 
         try {
             String text = Files.readString(Path.of(filePath));
             ProsePatternAnalyzer analyzer = new ProsePatternAnalyzer();
+            analyzer.domain = domain;
 
             List<PatternMatch> findings = analyzer.analyzeAllPatterns(text);
             DocumentMetrics metrics = analyzer.calculateMetrics(text, findings);
 
-            String report = analyzer.generateReport(findings, metrics, domain);
+            String report = analyzer.generateReport(findings, metrics, domain, text);
             System.out.println(report);
 
         } catch (IOException e) {
