@@ -32,6 +32,10 @@ export type LedgerEntry = {
   resource?: ResourceKind
   /** For type === "resource": the resource name (e.g. file path, git ref). */
   file?: string
+  /** For type === "resource": git ref/branch the op targets (best-effort). */
+  ref?: string
+  /** For type === "resource": lifecycle phase — acquire (start) or release (free). */
+  action?: "acquire" | "release"
 }
 
 export type Watermark = {

@@ -17,8 +17,8 @@ describe("buildDigest", () => {
   })
 
   test("claim renders lease", () => {
-    const d = buildDigest([mk("mbp:2", "mbp", 2, "writer", "claim", { task: "draft ch.4", lease: "2026-08-13T23:00:00.000Z" })])
-    expect(d).toContain('claim "draft ch.4" (lease until 2026-08-13T23:00:00.000Z)')
+    const d = buildDigest([mk("mbp:2", "mbp", 2, "writer", "claim", { task: "draft ch.4", lease: "2999-12-31T00:00:00.000Z" })])
+    expect(d).toContain('claim "draft ch.4" (lease until 2999-12-31T00:00:00.000Z)')
   })
 
   test("status renders arrow", () => {
@@ -59,9 +59,52 @@ describe("buildDigest", () => {
     expect(buildDigest([e])).not.toContain("git git")
   })
 
+  test("resource git with ref renders op on branch", () => {
+    const e = { ...mk("mbp:9", "mbp", 9, "writer", "resource", { task: "git push", ref: "main" }), resource: "git" }
+    expect(buildDigest([e])).toContain("- [mbp:9] writer: git push on main")
+  })
+
+  test("resource git release renders 'released'", () => {
+    const e = { ...mk("mbp:9", "mbp", 9, "writer", "resource", { task: "git hold", ref: "main", action: "release" }), resource: "git" }
+    expect(buildDigest([e])).toContain("- [mbp:9] writer: released on main")
+  })
+
+  test("conflict alert on concurrent acquires by different agents", () => {
+    const a = { ...mk("mbp:1", "mbp", 1, "writer", "resource", { task: "git hold", ref: "main", action: "acquire", lease: "2999-12-31T00:00:00.000Z" }), resource: "git" }
+    const b = { ...mk("desk:1", "desk", 1, "auditor", "resource", { task: "git hold", ref: "main", action: "acquire", lease: "2999-12-31T00:00:00.000Z" }), resource: "git" }
+    const d = buildDigest([a, b])
+    expect(d).toContain("possible conflict")
+    expect(d).toContain("writer")
+    expect(d).toContain("auditor")
+  })
+
+  test("no conflict alert when one agent releases before the other acquires", () => {
+    const a = { ...mk("mbp:1", "mbp", 1, "writer", "resource", { task: "git hold", ref: "main", action: "acquire", lease: "2999-12-31T00:00:00.000Z" }), resource: "git", ts: "2026-08-13T22:00:01.000Z" }
+    const r = { ...mk("mbp:2", "mbp", 2, "writer", "resource", { task: "git hold", ref: "main", action: "release" }), resource: "git", ts: "2026-08-13T22:00:02.000Z" }
+    const b = { ...mk("desk:1", "desk", 1, "auditor", "resource", { task: "git hold", ref: "main", action: "acquire", lease: "2999-12-31T00:00:00.000Z" }), resource: "git", ts: "2026-08-13T22:00:03.000Z" }
+    expect(buildDigest([a, r, b])).not.toContain("possible conflict")
+  })
+
+  test("no conflict alert when agents acquire different resources", () => {
+    const a = { ...mk("mbp:1", "mbp", 1, "writer", "resource", { task: "git hold", ref: "main", action: "acquire", lease: "2999-12-31T00:00:00.000Z" }), resource: "git" }
+    const b = { ...mk("desk:1", "desk", 1, "auditor", "resource", { task: "edit", action: "acquire", lease: "2999-12-31T00:00:00.000Z" }), resource: "file", file: "src/a.ts" }
+    expect(buildDigest([a, b])).not.toContain("possible conflict")
+  })
+
+  test("auto touches with no lease do not raise a conflict", () => {
+    const a = { ...mk("mbp:1", "mbp", 1, "writer", "resource", { task: "edit" }), resource: "file", file: "src/a.ts" }
+    const b = { ...mk("desk:1", "desk", 1, "auditor", "resource", { task: "edit" }), resource: "file", file: "src/a.ts" }
+    expect(buildDigest([a, b])).not.toContain("possible conflict")
+  })
+
   test("resource file renders 'touched <path>'", () => {
     const e = { ...mk("mbp:10", "mbp", 10, "writer", "resource", { task: "edit" }), resource: "file", file: "src/a.ts" }
     expect(buildDigest([e])).toContain("- [mbp:10] writer: touched src/a.ts")
+  })
+
+  test("resource file release renders 'released <path>'", () => {
+    const e = { ...mk("mbp:10", "mbp", 10, "writer", "resource", { task: "edit", action: "release" }), resource: "file", file: "src/a.ts" }
+    expect(buildDigest([e])).toContain("- [mbp:10] writer: released src/a.ts")
   })
 
   test("ask and answer render", () => {

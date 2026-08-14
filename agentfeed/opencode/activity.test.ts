@@ -45,6 +45,27 @@ describe("detectActivity", () => {
     expect(a).toEqual({ resource: "file", file: "src/a.ts", detail: "edit" })
   })
 
+  test("git ref/branch captured for ops targeting a branch", () => {
+    expect(detectActivity({ tool: "bash", args: { command: "git push origin main" } })?.ref).toBe("main")
+    expect(detectActivity({ tool: "bash", args: { command: "git checkout feat" } })?.ref).toBe("feat")
+    expect(detectActivity({ tool: "bash", args: { command: "git merge main" } })?.ref).toBe("main")
+    expect(detectActivity({ tool: "bash", args: { command: "git -C /repo push origin dev" } })?.ref).toBe("dev")
+    // commit with no branch target -> no ref
+    expect(detectActivity({ tool: "bash", args: { command: "git commit -m x" } })?.ref).toBeUndefined()
+    // a flag first is not a ref
+    expect(detectActivity({ tool: "bash", args: { command: "git pull --rebase" } })?.ref).toBeUndefined()
+  })
+
+  test("git ref handling for flag-led branch args and non-branch ops", () => {
+    // branch after -b / -u / --force
+    expect(detectActivity({ tool: "bash", args: { command: "git checkout -b new-branch" } })?.ref).toBe("new-branch")
+    expect(detectActivity({ tool: "bash", args: { command: "git push -u origin feature/x" } })?.ref).toBe("feature/x")
+    expect(detectActivity({ tool: "bash", args: { command: "git push --force origin main" } })?.ref).toBe("main")
+    // file-path / commit ops are not branches
+    expect(detectActivity({ tool: "bash", args: { command: "git restore src/a.ts" } })?.ref).toBeUndefined()
+    expect(detectActivity({ tool: "bash", args: { command: "git revert abc123" } })?.ref).toBeUndefined()
+  })
+
   test("write detected with path", () => {
     const a = detectActivity({ tool: "write", args: { path: "docs/x.md" } })
     expect(a).toEqual({ resource: "file", file: "docs/x.md", detail: "write" })
@@ -68,6 +89,13 @@ describe("resourceEntry / coalesceKey", () => {
     expect(e.type).toBe("resource")
     expect(e.resource).toBe("git")
     expect(e.agent).toBe("writer")
+  })
+
+  test("resourceEntry marks auto ops as acquire and carries git ref", () => {
+    const a = detectActivity({ tool: "bash", args: { command: "git push origin main" } })!
+    const e = resourceEntry("writer", a)
+    expect(e.action).toBe("acquire")
+    expect(e.ref).toBe("main")
   })
 
   test("coalesceKey is per agent+resource+file", () => {

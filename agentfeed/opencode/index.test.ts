@@ -38,6 +38,10 @@ describe("agentfeed plugin", () => {
     expect(hooks.tool["coord_log"]).toBeDefined()
     expect(hooks.tool["coord_claim"]).toBeDefined()
     expect(hooks.tool["coord_release"]).toBeDefined()
+    expect(hooks.tool["coord_resource"]).toBeDefined()
+    expect(hooks.tool["coord_handoff"]).toBeDefined()
+    expect(hooks.tool["coord_status"]).toBeDefined()
+    expect(hooks.tool["coord_heartbeat"]).toBeDefined()
     expect(hooks.tool["coord_who_does_what"]).toBeDefined()
     expect(hooks.tool["coord_await"]).toBeDefined()
     expect(hooks.tool["coord_ask"]).toBeDefined()
@@ -236,5 +240,127 @@ describe("agentfeed plugin", () => {
     const raw = await fsp.readFile(`${dir}/ledger.jsonl`, "utf8")
     expect(raw).toContain('"type":"ask"')
     expect(raw).toContain('"type":"answer"')
+  })
+
+  test("coord_resource acquire marks a held resource; release frees it", async () => {
+    const dir = `/tmp/agentfeed-res-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const ctx = { agent: "writer", sessionID: "sr1", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
+
+    const acq = await h.tool["coord_resource"].execute({ resource: "git", name: "main", action: "acquire" }, ctx)
+    expect(acq).toContain("Acquired")
+    let wdw = await h.tool["coord_who_does_what"].execute({}, ctx)
+    expect(wdw).toContain("Held resources")
+    expect(wdw).toContain('holds git "main"')
+
+    const rel = await h.tool["coord_resource"].execute({ resource: "git", name: "main", action: "release" }, ctx)
+    expect(rel).toContain("Released")
+    wdw = await h.tool["coord_who_does_what"].execute({}, ctx)
+    expect(wdw).not.toContain('holds git "main"')
+  })
+
+  test("coord_resource file acquire/release tracked", async () => {
+    const dir = `/tmp/agentfeed-resfile-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const ctx = { agent: "editor", sessionID: "sr2", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
+    await h.tool["coord_resource"].execute({ resource: "file", name: "src/a.ts", action: "acquire" }, ctx)
+    const wdw = await h.tool["coord_who_does_what"].execute({}, ctx)
+    expect(wdw).toContain('holds file "src/a.ts"')
+    await h.tool["coord_resource"].execute({ resource: "file", name: "src/a.ts", action: "release" }, ctx)
+    expect(await h.tool["coord_who_does_what"].execute({}, ctx)).not.toContain('holds file "src/a.ts"')
+  })
+
+  test("resource re-acquire after release is held again (ordering-correct)", async () => {
+    const dir = `/tmp/agentfeed-resreaq-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const ctx = { agent: "editor", sessionID: "srr", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
+    await h.tool["coord_resource"].execute({ resource: "git", name: "feat", action: "acquire" }, ctx)
+    await h.tool["coord_resource"].execute({ resource: "git", name: "feat", action: "release" }, ctx)
+    await h.tool["coord_resource"].execute({ resource: "git", name: "feat", action: "acquire" }, ctx)
+    const wdw = await h.tool["coord_who_does_what"].execute({}, ctx)
+    expect(wdw).toContain('holds git "feat"')
+  })
+
+  test("one agent releasing a resource does not drop another holder's hold", async () => {
+    const dir = `/tmp/agentfeed-rescompete-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const mkCtx = (agent: string, sessionID: string) => ({ agent, sessionID, messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) })
+    const writer = mkCtx("writer", "s-wr")
+    const auditor = mkCtx("auditor", "s-ar")
+
+    await h.tool["coord_resource"].execute({ resource: "git", name: "main", action: "acquire" }, writer)
+    await h.tool["coord_resource"].execute({ resource: "git", name: "main", action: "acquire" }, auditor)
+    const before = await h.tool["coord_who_does_what"].execute({}, auditor)
+    expect(before).toContain('writer holds git "main"')
+    expect(before).toContain('auditor holds git "main"')
+
+    await h.tool["coord_resource"].execute({ resource: "git", name: "main", action: "release" }, writer)
+    const wdw = await h.tool["coord_who_does_what"].execute({}, auditor)
+    expect(wdw).toContain('holds git "main"')
+    expect(wdw).not.toContain('writer holds git "main"')
+  })
+
+  test("coord_handoff closes own claim and opens one for target", async () => {
+    const dir = `/tmp/agentfeed-handoff-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const ctx = { agent: "writer", sessionID: "sh", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
+    await h.tool["coord_claim"].execute({ task: "ch.3", leaseMinutes: 30 }, ctx)
+    const res = await h.tool["coord_handoff"].execute({ task: "ch.3", to: "auditor" }, ctx)
+    expect(res).toContain("Handed")
+    const wdw = await h.tool["coord_who_does_what"].execute({}, ctx)
+    expect(wdw).toContain('auditor claims "ch.3"')
+    expect(wdw).not.toContain('writer claims "ch.3"')
+  })
+
+  test("coord_status records a task state", async () => {
+    const dir = `/tmp/agentfeed-status-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const ctx = { agent: "writer", sessionID: "sst", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
+    const res = await h.tool["coord_status"].execute({ task: "ch.3", state: "done" }, ctx)
+    expect(res).toContain("done")
+    const { promises: fsp } = await import("fs")
+    const raw = await fsp.readFile(`${dir}/ledger.jsonl`, "utf8")
+    expect(raw).toContain('"type":"status"')
+    expect(raw).toContain('"status":"done"')
+  })
+
+  test("coord_heartbeat renews a claim lease (dedupes to latest)", async () => {
+    const dir = `/tmp/agentfeed-hb-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const ctx = { agent: "writer", sessionID: "shb", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
+    await h.tool["coord_claim"].execute({ task: "long task", leaseMinutes: 30 }, ctx)
+    const res = await h.tool["coord_heartbeat"].execute({ task: "long task" }, ctx)
+    expect(res).toContain("Renewed")
+    const wdw = await h.tool["coord_who_does_what"].execute({}, ctx)
+    // only one line for the task despite two claims
+    expect(wdw.match(/claims "long task"/g)).toHaveLength(1)
+  })
+
+  test("coord_heartbeat requires task or resource", async () => {
+    const dir = `/tmp/agentfeed-hbreq-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const ctx = { agent: "writer", sessionID: "shbr", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
+    expect(await h.tool["coord_heartbeat"].execute({}, ctx)).toContain("requires")
+  })
+
+  test("competing claims by different agents both surface; release frees only owner", async () => {
+    const dir = `/tmp/agentfeed-compete-${Date.now()}`
+    const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
+    const mkCtx = (agent: string, sessionID: string) => ({ agent, sessionID, messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) })
+    const writer = mkCtx("writer", "s-w")
+    const auditor = mkCtx("auditor", "s-a")
+
+    await h.tool["coord_claim"].execute({ task: "ch.3", leaseMinutes: 30 }, writer)
+    await h.tool["coord_claim"].execute({ task: "ch.3", leaseMinutes: 30 }, auditor)
+
+    const both = await h.tool["coord_who_does_what"].execute({}, writer)
+    expect(both).toContain('writer claims "ch.3"')
+    expect(both).toContain('auditor claims "ch.3"')
+
+    // writer releasing their own claim must not free auditor's competing claim
+    await h.tool["coord_release"].execute({ task: "ch.3" }, writer)
+    const after = await h.tool["coord_who_does_what"].execute({}, auditor)
+    expect(after).toContain('auditor claims "ch.3"')
+    expect(after).not.toContain('writer claims "ch.3"')
   })
 })

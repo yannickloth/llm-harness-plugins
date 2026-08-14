@@ -1,7 +1,7 @@
 import { type Plugin, tool, type Config } from "@opencode-ai/plugin"
 import path from "path"
 import fs from "fs"
-import { Ledger, entriesNewerThan, watermarkAfter, type LedgerEntry } from "./ledger"
+import { Ledger, entriesNewerThan, watermarkAfter, sortEntries, type LedgerEntry } from "./ledger"
 import { buildDigest } from "./digest"
 import { withLock } from "./lock"
 import { detectActivity, resourceEntry, coalesceKey, type Activity } from "./activity"
@@ -24,6 +24,8 @@ export type AgentfeedOptions = {
   autoFile?: boolean
   /** Min seconds between auto-events for the same agent+resource. */
   resourceCoalesceMs?: number
+  /** Default hold TTL (ms) for auto-detected resource acquires. */
+  resourceLeaseMs?: number
 }
 
 const SYSTEM_NOTE = `## Coordination ledger
@@ -37,20 +39,25 @@ other agents can see where you are working and avoid conflicts — you do not ne
 announce those yourself.
 
 Available tools:
-- coord_who_does_what(): list current open claims — CALL BEFORE starting work
+- coord_who_does_what(): list open claims + held resources — CALL BEFORE starting work
 - coord_claim(task, lease?): claim a task (default lease 30 min)
 - coord_release(task|id): release a claim when done
+- coord_resource(resource, name, action): acquire or release a shared resource (git/file); release frees it
+- coord_handoff(task, to): hand a task to another agent
+- coord_status(task, state): mark a task done/failed/in-progress (task board)
+- coord_heartbeat(task|resource, kind?): renew a claim/hold lease so long-running work isn't reclaimed
 - coord_log(type, text): announce your intent/progress (type: msg | status)
 - coord_ask(question, to?): ask other agents a question
 - coord_answer(answer, questionId|question): answer a question from coord_ask
 - coord_await(position, timeout?): wait until the ledger passes a position
 
 Typical use:
-1. coord_who_does_what() — see what is claimed; do not duplicate.
+1. coord_who_does_what() — see what is claimed/held; do not duplicate.
 2. coord_claim("<task>") — take ownership of unclaimed work.
 3. coord_log("msg", "working on <task>: <brief plan>") — tell others your intent.
 4. coord_ask(...) when blocked or unsure; coord_answer(...) to reply.
-5. coord_release("<task>") when done.
+5. When done: coord_status("<task>", "done") + coord_release("<task>").
+6. After finishing on a shared resource, coord_resource(action: "release") so others know it's free.
 
 Full guidance: use the 'coordinate' skill for the complete coordination protocol.`
 
@@ -67,6 +74,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   const autoGit = options.autoGit ?? true
   const autoFile = options.autoFile ?? true
   const resourceCoalesceMs = options.resourceCoalesceMs ?? 30_000
+  const resourceLeaseMs = options.resourceLeaseMs ?? 30 * 60_000
 
   const ledger = new Ledger()
   const wmStore: WatermarkStore = defaultWatermarkStore
@@ -115,6 +123,9 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
     const last = lastAutoEvent.get(key) ?? 0
     if (now - last < resourceCoalesceMs) return
     lastAutoEvent.set(key, now)
+    // Auto-detected ops are informational "touched X" events — NOT holds. They do
+    // not appear in coord_who_does_what()'s held list (no lease). To signal that a
+    // resource is held and later freed, call coord_resource(acquire/release).
     await publish(resourceEntry(agent, a))
   }
 
@@ -181,6 +192,122 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
     },
 
     tool: {
+      "coord_resource": tool({
+        description:
+          "Acquire or release a shared resource (git or file) so other agents know whether it is held or free. Auto-detected git/file activity marks an acquire; call this with action 'release' when you are done so others can take over.",
+        args: {
+          resource: tool.schema.enum(["git", "file"]).describe("Kind of resource"),
+          name: tool.schema.string().describe("Resource name (git branch/ref, or file path)"),
+          action: tool.schema.enum(["acquire", "release"]).describe("acquire = start using; release = free it"),
+        },
+        async execute(args, ctx) {
+          // Explicit acquires get the same default hold TTL as auto-acquires so a
+          // hold is always reclaimable after expiry (no permanent locks on crash).
+          const lease = args.action === "acquire"
+            ? new Date(Date.now() + resourceLeaseMs).toISOString()
+            : undefined
+          const entry = {
+            agent: ctx.agent,
+            type: "resource" as const,
+            resource: args.resource,
+            file: args.resource === "file" ? args.name : undefined,
+            ref: args.resource === "git" ? args.name : undefined,
+            action: args.action,
+            lease,
+            task: args.action === "acquire" ? (args.resource === "git" ? "git hold" : "file hold") : undefined,
+          }
+          const e = await publish(entry)
+          return args.action === "acquire"
+            ? `Acquired ${args.resource} "${args.name}" (${e.id}) — release it when done`
+            : `Released ${args.resource} "${args.name}" (${e.id}) — now free`
+        },
+      }),
+
+      "coord_handoff": tool({
+        description:
+          "Hand a task to another agent: closes your claim on it and opens a claim for the target. The target sees the handoff in their digest and can coord_claim to accept.",
+        args: {
+          task: tool.schema.string().min(1).describe("Task identifier to hand off"),
+          to: tool.schema.string().min(1).describe("Target agent name"),
+        },
+        async execute(args, ctx) {
+          const now = Date.now()
+          const lease = new Date(now + 30 * 60_000).toISOString()
+          // Close own claim on the task (if any) and open one for the target.
+          await publish({
+            agent: ctx.agent,
+            type: "release",
+            task: args.task,
+          })
+          const e = await publish({
+            agent: args.to,
+            type: "claim",
+            task: args.task,
+            status: "open",
+            lease,
+            target: ctx.agent,
+          })
+          return `Handed "${args.task}" to ${args.to} (${e.id}); they should coord_claim it to accept`
+        },
+      }),
+
+      "coord_status": tool({
+        description:
+          "Report a task's state (done / failed / in-progress) so others can see board progress. Use when you finish or fail a task.",
+        args: {
+          task: tool.schema.string().min(1).describe("Task identifier"),
+          state: tool.schema.enum(["done", "failed", "in-progress"]).describe("Task state"),
+        },
+        async execute(args, ctx) {
+          const e = await publish({
+            agent: ctx.agent,
+            type: "status",
+            task: args.task,
+            status: args.state,
+          })
+          return `Marked "${args.task}" ${args.state} (${e.id})`
+        },
+      }),
+
+      "coord_heartbeat": tool({
+        description:
+          "Renew the lease on a claim (or on a held resource) so long-running work is not reclaimed by another agent after the TTL. Call periodically on long tasks.",
+        args: {
+          task: tool.schema.string().optional().describe("Task to renew (or leave empty to renew a resource)"),
+          resource: tool.schema.string().optional().describe("Resource name to renew (branch or file path)"),
+          kind: tool.schema.enum(["git", "file"]).optional().describe("Resource kind when renewing a resource"),
+        },
+        async execute(args, ctx) {
+          if (!args.task && !args.resource) {
+            return "coord_heartbeat requires 'task' or 'resource'."
+          }
+          const lease = new Date(Date.now() + 30 * 60_000).toISOString()
+          if (args.resource) {
+            // Renew a held resource by re-publishing its acquire with a fresh lease.
+            const kind = args.kind ?? "git"
+            const e = await publish({
+              agent: ctx.agent,
+              type: "resource",
+              resource: kind,
+              file: kind === "file" ? args.resource : undefined,
+              ref: kind === "git" ? args.resource : undefined,
+              action: "acquire",
+              lease,
+              task: kind === "file" ? "file hold" : "git hold",
+            })
+            return `Renewed hold on "${args.resource}" until ${lease} (${e.id})`
+          }
+          const e = await publish({
+            agent: ctx.agent,
+            type: "claim",
+            task: args.task,
+            status: "in-progress",
+            lease,
+          })
+          return `Renewed lease on "${args.task}" until ${lease} (${e.id})`
+        },
+      }),
+
       "coord_log": tool({
         description: "Publish a message or status update to the shared coordination ledger. Other agents and the human reader will see it.",
         args: {
@@ -237,25 +364,50 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
       }),
 
       "coord_who_does_what": tool({
-        description: "List current open task claims (excluding expired leases and released tasks) so you can avoid duplicating another agent's work.",
+        description:
+          "List current open task claims and held shared resources (excluding expired leases, released claims, and released resources) so you can avoid duplicating another agent's work.",
         args: {},
         async execute() {
           const entries = await ledger.read(ledgerFile)
           const now = Date.now()
-          const releasedKeys = new Set(
-            entries
-              .filter((e) => e.type === "release")
-              .map((e) => e.task ?? e.taskID ?? ""),
+          const open = dedupeClaims(
+            entries.filter(
+              (e) =>
+                e.type === "claim" &&
+                (e.status === "open" || e.status === "in-progress") &&
+                !leaseExpired(e.lease, now),
+            ),
           )
-          const open = entries.filter(
-            (e) =>
-              e.type === "claim" &&
-              (e.status === "open" || e.status === "in-progress") &&
-              !leaseExpired(e.lease, now) &&
-              !releasedKeys.has(e.task ?? e.taskID ?? ""),
-          )
-          if (open.length === 0) return "No open claims."
-          return open.map((e) => `- ${e.id}: ${e.agent} claims "${e.task ?? ""}" (lease until ${e.lease ?? "?"})`).join("\n")
+          // A claim by an agent is closed only if THAT agent released the same task
+          // with a position newer than the claim. A release by a different agent does
+          // not free another's claim — those are competing claims, both still open.
+          // (Renewals/handoffs create newer claims for the same agent, which are kept.)
+          const live = open.filter((c) => {
+            const laterReleaseByOwner = entries.some(
+              (e) =>
+                e.type === "release" &&
+                e.agent === c.agent &&
+                (e.task ?? e.taskID ?? "") === (c.task ?? c.taskID ?? "") &&
+                (e.ts > c.ts || (e.ts === c.ts && e.seq > c.seq)),
+            )
+            return !laterReleaseByOwner
+          })
+          const held = heldResources(entries, now)
+          const lines: string[] = []
+          if (live.length > 0) {
+            lines.push("Open claims:")
+            for (const e of live) {
+              lines.push(`- ${e.id}: ${e.agent} claims "${e.task ?? ""}" (lease until ${e.lease ?? "?"})`)
+            }
+          }
+          if (held.length > 0) {
+            lines.push("Held resources:")
+            for (const r of held) {
+              lines.push(`- ${r.id}: ${r.agent} holds ${r.resource} "${r.label}" (acquired ${r.ts})`)
+            }
+          }
+          if (lines.length === 0) return "No open claims or held resources."
+          return lines.join("\n")
         },
       }),
 
@@ -329,6 +481,69 @@ function leaseExpired(lease: string | undefined, now: number): boolean {
   const t = Date.parse(lease)
   if (Number.isNaN(t)) return false
   return t < now
+}
+
+/**
+ * Collapse multiple claims on the same task *by the same agent* to the most recent
+ * (latest lease). Needed because coord_heartbeat renews a claim by re-claiming the
+ * same task. Claims on the same task by *different* agents are genuine conflicts
+ * and must all be surfaced (coord_who_does_what should not hide them).
+ */
+function dedupeClaims(claims: LedgerEntry[]): LedgerEntry[] {
+  const byAgentTask = new Map<string, LedgerEntry>()
+  for (const c of claims) {
+    const key = `${c.agent}|${c.task ?? c.taskID ?? ""}`
+    const existing = byAgentTask.get(key)
+    if (!existing || (c.lease ?? "") > (existing.lease ?? "")) byAgentTask.set(key, c)
+  }
+  return [...byAgentTask.values()]
+}
+
+/**
+ * Shared resources currently held (acquired but not released and lease not expired).
+ * Used by coord_who_does_what to show what is in use — so others know when it frees.
+ *
+ * Ordering is by ledger position (ts, then host, then seq), not raw per-host seq
+ * (two hosts both have seq 1). A resource is held by the *set* of agents who have
+ * an unexpired acquire on it; a release removes only the releasing agent, so a
+ * competing holder's hold is preserved.
+ */
+function heldResources(entries: LedgerEntry[], now: number): Array<{ id: string; agent: string; resource: string; label: string; ts: string }> {
+  const holders = new Map<string, Map<string, LedgerEntry>>() // resourceKey -> agent -> latest acquire
+  for (const e of sortEntries(entries)) {
+    if (e.type !== "resource") continue
+    const key = resourceKey(e)
+    const perAgent = holders.get(key) ?? new Map<string, LedgerEntry>()
+    holders.set(key, perAgent)
+    if (e.action === "release") {
+      perAgent.delete(e.agent)
+      if (perAgent.size === 0) holders.delete(key)
+    } else if (e.lease && !leaseExpired(e.lease, now)) {
+      // Only *held* resources (explicit acquire/heartbeat with a lease) are tracked;
+      // informational auto "touched X" events have no lease and are not holds.
+      perAgent.set(e.agent, e)
+    }
+  }
+  const out: Array<{ id: string; agent: string; resource: string; label: string; ts: string }> = []
+  for (const [key, perAgent] of holders) {
+    // Every competing holder is surfaced (like claims): two agents holding the same
+    // resource is a conflict `coord_who_does_what` should make visible, not hide.
+    for (const e of perAgent.values()) {
+      out.push({
+        id: e.id,
+        agent: e.agent,
+        resource: e.resource ?? "?",
+        label: e.resource === "git" ? (e.ref ?? e.task ?? "?") : (e.file ?? e.task ?? "?"),
+        ts: e.ts,
+      })
+    }
+  }
+  return out
+}
+
+function resourceKey(e: LedgerEntry): string {
+  if (e.resource === "git") return `git:${e.ref ?? e.file ?? e.task ?? ""}`
+  return `file:${e.file ?? ""}`
 }
 
 /** Read the `name:` from a SKILL.md frontmatter block, or the dir name. */
