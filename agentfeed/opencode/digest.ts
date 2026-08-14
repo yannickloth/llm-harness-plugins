@@ -14,7 +14,15 @@ export type DigestOptions = {
 export function buildDigest(entries: LedgerEntry[], options: DigestOptions = {}): string {
   if (entries.length === 0) return ""
   const max = options.maxEntries ?? 50
-  const shown = entries.slice(-max)
+  // Drop low-signal auto "touched X" events (resource entries with no lease and no
+  // release) from the digest so coordination content — claims, status, asks, holds,
+  // releases — is not drowned out. They still land in the ledger (audit trail and
+  // hold tracking) but do not consume the digest window.
+  const informative = entries.filter(
+    (e) => e.type !== "resource" || e.action === "release" || Boolean(e.lease),
+  )
+  if (informative.length === 0) return ""
+  const shown = informative.slice(-max)
   const lines = shown.map(lineFor)
   const alert = conflictAlert(entries)
   return alert ? `${DIGEST_HEADER}\n${lines.join("\n")}\n\n${alert}` : `${DIGEST_HEADER}\n${lines.join("\n")}`

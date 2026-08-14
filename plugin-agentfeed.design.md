@@ -87,6 +87,8 @@ agentfeed/
 
 **Types:** `msg` broadcast · `claim` ownership with lease · `release` explicit · `status` progress · `handoff` (carries target agent + task_id hint) · `heartbeat` liveness (off by default) · `resource` shared-resource lifecycle (`acquire`/`release`, auto-acquire + explicit release) · `ask`/`answer` question and reply.
 
+**Digest filtering:** low-signal auto "touched X" events (resource entries with no lease and no release) are **excluded** from the rendered digest so coordination content is not drowned out. They remain in the ledger for audit and hold tracking. Only holds, releases, claims, status, handoffs, heartbeats, asks/answers, and messages render.
+
 ## Watermark / injection
 
 - **Watermark** = last-rendered global position `(ts, host, seq)` per `(sessionID, agent)`, in `watermarks.json`. New = entries sorting after it.

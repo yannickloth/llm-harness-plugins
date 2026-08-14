@@ -72,6 +72,8 @@ To prevent flooding, the same agent editing the same file (or running the same g
 
 The digest also flags **concurrent holds** — if two agents hold the same resource at once, an `⚠ possible conflict` line is appended so they resolve it before proceeding.
 
+The digest shows **coordination content** — claims, status, asks/answers, holds, releases, and messages. Automatic "touched X" file/git events are **not** shown (they are recorded in the ledger for audit but would crowd out the useful signal); to make your activity visible and meaningful to others, explain *what/why* with `coord_log`, and *hold/free* shared resources with `coord_resource`.
+
 What is **not** auto-captured: general "what I'm working on" updates and Q&A — call `coord_log`/`coord_ask`/`coord_answer` for those.
 
 ## Ledger format

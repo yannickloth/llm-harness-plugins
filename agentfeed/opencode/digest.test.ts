@@ -53,14 +53,13 @@ describe("buildDigest", () => {
     expect(d).toContain("- [mbp:8] writer: rename \"old\" — now new")
   })
 
-  test("resource git renders single 'git <op>' (no double git)", () => {
+  test("auto git touch with no lease is excluded from digest", () => {
     const e = { ...mk("mbp:9", "mbp", 9, "writer", "resource", { task: "git commit" }), resource: "git" }
-    expect(buildDigest([e])).toContain("- [mbp:9] writer: git commit")
-    expect(buildDigest([e])).not.toContain("git git")
+    expect(buildDigest([e])).toBe("")
   })
 
-  test("resource git with ref renders op on branch", () => {
-    const e = { ...mk("mbp:9", "mbp", 9, "writer", "resource", { task: "git push", ref: "main" }), resource: "git" }
+  test("git hold with lease renders op on branch", () => {
+    const e = { ...mk("mbp:9", "mbp", 9, "writer", "resource", { task: "git push", ref: "main", action: "acquire", lease: "2999-12-31T00:00:00.000Z" }), resource: "git" }
     expect(buildDigest([e])).toContain("- [mbp:9] writer: git push on main")
   })
 
@@ -97,9 +96,17 @@ describe("buildDigest", () => {
     expect(buildDigest([a, b])).not.toContain("possible conflict")
   })
 
-  test("resource file renders 'touched <path>'", () => {
+  test("auto file touch with no lease is excluded from digest", () => {
     const e = { ...mk("mbp:10", "mbp", 10, "writer", "resource", { task: "edit" }), resource: "file", file: "src/a.ts" }
-    expect(buildDigest([e])).toContain("- [mbp:10] writer: touched src/a.ts")
+    expect(buildDigest([e])).toBe("")
+  })
+
+  test("auto touches are dropped but coordination content still shows", () => {
+    const touch = { ...mk("mbp:10", "mbp", 10, "writer", "resource", { task: "edit" }), resource: "file", file: "src/a.ts" }
+    const msg = mk("mbp:11", "mbp", 11, "writer", "msg", { text: "why: drafting ch.4" })
+    const d = buildDigest([touch, msg])
+    expect(d).not.toContain("touched src/a.ts")
+    expect(d).toContain("why: drafting ch.4")
   })
 
   test("resource file release renders 'released <path>'", () => {
