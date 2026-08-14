@@ -1,7 +1,7 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
-import { safeSpawn, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV } from "../../shared/safe-spawn"
+import { safeSpawn, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -21,25 +21,6 @@ const CLASSIFY_SYSTEM = [
   "OPUS: deep formal reasoning (prove, formalize, math theorems, algorithm design).",
   "ESCALATE: ambiguous, unclear scope, multiple competing goals, or genuinely uncertain.",
 ].join("\n")
-
-function extractTextParts(out: string): string {
-  // `opencode run --format json` streams newline-delimited JSON events.
-  // Extract the assistant's text replies from `type:"text"` parts.
-  const words: string[] = []
-  for (const line of out.split("\n")) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    try {
-      const evt = JSON.parse(trimmed)
-      if (evt.type === "text" && typeof evt.part?.text === "string") {
-        words.push(evt.part.text)
-      }
-    } catch {
-      // ignore non-JSON lines (e.g. logs)
-    }
-  }
-  return words.join(" ").trim()
-}
 
 async function classifyViaOpencode(prompt: string): Promise<{ decision: string; tier: string; reason: string; confidence: number } | null> {
   // Classify in a detached, throwaway session via `opencode run --format json`.
@@ -62,7 +43,7 @@ async function classifyViaOpencode(prompt: string): Promise<{ decision: string; 
     const kill = setTimeout(() => { try { killProcessTree(proc!) } catch {} }, 20_000)
     const out = await new Response(proc.stdout).text()
     clearTimeout(kill)
-    const text = extractTextParts(out).toUpperCase()
+    const text = extractOpencodeText(out).toUpperCase()
     if (!text) return null
     if (text.includes("ESCALATE")) return { decision: "escalate", tier: "", reason: "LLM: uncertain scope", confidence: 0.7 }
     if (text.startsWith("FABLE")) return { decision: "direct", tier: "fable", reason: "LLM: trivial mechanical task", confidence: 0.9 }
@@ -139,6 +120,23 @@ async function checkAmbiguity(prompt: string): Promise<string | null> {
   return null
 }
 
+const TIER_DIRECTIVES: Record<string, string[]> = {
+  fable: ["Be concise. Answer directly. Minimize output tokens."],
+  haiku: [
+    "Be concise. Answer directly. Minimize output tokens.",
+    "If uncertain or missing info, say so explicitly. Never invent facts or fabricate output.",
+  ],
+  sonnet: [
+    "Be concise. Answer directly. Minimize output tokens.",
+    "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
+  ],
+  opus: [
+    "Be concise. Answer directly. Minimize output tokens.",
+    "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
+    "If uncertain or missing info, say so explicitly. Never invent facts or fabricate output.",
+  ],
+}
+
 function buildPromptContext(result: {
   decision: string
   tier: string
@@ -167,12 +165,17 @@ function buildPromptContext(result: {
     ? `Prompt problems identified:\n${problems.map(p => `- ${p}`).join("\n")}`
     : "Prompt problems identified: none."
 
+  const tierDirectives = TIER_DIRECTIVES[result.tier] ?? TIER_DIRECTIVES.sonnet
+  const directiveBlock = `Prompt standards to apply:\n${tierDirectives.map(d => `- ${d}`).join("\n")}`
+
   const classification = `Classification: ${result.decision} (confidence ${result.confidence.toFixed(2)}). ${result.reason}.`
 
   return `<prompt-annotation>
-The user's request below has been reformulated to the highest prompt standard. Treat the reformulated version as guidance for how to interpret and answer the user's words. Do NOT dispatch to another agent — handle the user's request directly.
+The user's request below is annotated to the highest prompt standard. Preserve the user's words verbatim as the authoritative request, and apply the standards and problem fixes below when answering. Do NOT dispatch to another agent — handle the user's request directly.
 
 ${problemBlock}
+
+${directiveBlock}
 
 ${classification}
 
@@ -223,23 +226,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           prompt: tool.schema.string().describe("The user prompt to classify"),
         },
         async execute(args) {
-          const result = await safeSpawn(
-            ["java", "--class-path", classpath, mainClass, "route"],
-            { input: args.prompt, env: routerEnv },
-          )
-          const stdout = result.stdout.trim()
-          try {
-            return JSON.stringify(JSON.parse(stdout), null, 2)
-          } catch {
-            return JSON.stringify({
-              decision: "escalate",
-              tier: "sonnet",
-              fleet_models: [],
-              reason: "classification failed — defaulting to sonnet",
-              confidence: 0.5,
-              rewritten_prompt: args.prompt,
-            }, null, 2)
-          }
+          const result = await classifyPrompt(args.prompt)
+          return JSON.stringify(result, null, 2)
         },
       }),
 

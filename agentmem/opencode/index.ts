@@ -4,7 +4,7 @@ import path from "path"
 import { existsSync, mkdirSync, openSync, writeFileSync, closeSync, readFileSync, rmSync } from "fs"
 import { loadMemIndex, collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
-import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV } from "../../shared/safe-spawn"
+import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
 
 const agentmemDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(agentmemDir, "build", "classes")
@@ -206,16 +206,16 @@ Answer (YES/NO):`
   try {
     proc = spawnDetached(
       ["opencode", "run", "--model", "deepseek/deepseek-v4-flash",
-       "--agent", "memory-keeper", "--print", "--title", "Memory maintenance (classifier)", "--",
+       "--agent", "memory-keeper", "--format", "json", "--title", "Memory maintenance (classifier)", "--",
        "Answer YES or NO only, based on the prompt in stdin."],
-      { stdout: "pipe", stderr: "pipe" }
+      { stdout: "pipe", stderr: "ignore" }
     )
     proc.stdin!.write(prompt)
     proc.stdin!.end()
     const kill = setTimeout(() => { try { killProcessTree(proc!) } catch {} }, 15_000)
     const out = await new Response(proc.stdout).text()
     clearTimeout(kill)
-    return out.trim().toUpperCase() === "YES"
+    return extractOpencodeText(out).toUpperCase() === "YES"
   } catch {
     try { if (proc) killProcessTree(proc) } catch {}
     return false

@@ -89,6 +89,29 @@ export function safeSpawn(
   }))
 }
 
+/**
+ * Extract the assistant's text replies from `opencode run --format json`
+ * output (newline-delimited JSON events). Text parts are emitted as
+ * `{"type":"text","part":{"text":"..."}}`; non-text events and non-JSON
+ * lines (logs) are ignored. Empty if no text reply was produced.
+ */
+export function extractOpencodeText(out: string): string {
+  const words: string[] = []
+  for (const line of out.split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      const evt = JSON.parse(trimmed)
+      if (evt.type === "text" && typeof evt.part?.text === "string") {
+        words.push(evt.part.text)
+      }
+    } catch {
+      // ignore non-JSON lines (e.g. logs)
+    }
+  }
+  return words.join(" ").trim()
+}
+
 export function safeSpawnSync(
   argv: string[],
   opts: { cwd?: string; env?: Record<string, string> } = {},
