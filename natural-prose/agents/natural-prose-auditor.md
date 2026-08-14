@@ -23,7 +23,12 @@ Read the `$ARGUMENTS` for a `domain` value. Two modes:
 
 - `general` (default) — any prose. Load `references/natural-prose.md`.
 - `scientific` — formal articles, papers, book volumes. Load
-  `references/scientific-ai-prose.md`. If the project is the IVP book series,
+  `references/scientific-ai-prose.md`.
+In both modes, ALSO load `references/reader-guidance-phrases.md`. Use it to
+judge the *reader-guidance* target: flag the absence of connective tissue that
+guides the reader, and flag the formulaic AI transitions it names. Treat its
+phrase list as non-exhaustive — never penalise a well-fitted original phrase
+just because it is not on the list. If the project is the IVP book series,
   ALSO load the project's voice constraints: `.agents/context/writing-style.md`,
   `.agents/context/terminology.md`, and (for `.typ` sources)
   `.agents/context/typst-syntax-rules.md`. Enforce the formal-environment

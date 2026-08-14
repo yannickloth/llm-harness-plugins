@@ -47,6 +47,29 @@ Determine the register of the target before rating.
   hedge-stacking, uniform sentence rhythm, nominalisation chains, or prose that
   "argues" in staccato beats instead of describing.
 
+## Positive human markers (rate on these too)
+
+Like the auditor, judge "reads human" by the *presence* of human markers, not
+just the *absence* of machine tells. Rate how well the passage shows these (the
+list is in the domain registry; load it):
+
+- **General mode**: load `references/natural-prose.md` — voice, analysis,
+  specificity, original examples, human texture, grounded abstractions,
+  concrete scenes, lived experience, deliberate burstiness, committed stance,
+  a defined point of view.
+- **Scientific mode**: load `references/scientific-ai-prose.md` — authorial
+  voice, depth, specificity, original examples, active sources, reader
+  guidance, epistemic stance, staged gap, question-led paragraphs, honest
+  limitations.
+- **Both modes**: load `references/reader-guidance-phrases.md` — judge whether
+  the prose guides the reader through the artifact (openings, signposts,
+  transitions). Its phrase list is non-exhaustive; never penalise a
+  well-fitted original phrase just because it is not on the list.
+
+A passage that merely lacks machine tells but also lacks voice, specificity,
+stance, and reader guidance is not "fully human" — rate it lower and note which
+positive markers are missing, so the naturalizer knows what to add.
+
 ## Rating rubric
 
 Rate each file 1-10, where:
@@ -58,9 +81,12 @@ For each file report:
 2. **Justification** — 1-2 sentences.
 3. **Predictability note** — varied (human-typical) or uniform (AI-typical);
    note the strongest signal.
-4. **Findings** — quoted tell-word / formulaic / hedge-stacking /
+4. **Positive markers** — which human markers are present and which are
+   missing (voice, specificity, stance, reader guidance, per the loaded
+   reference).
+5. **Findings** — quoted tell-word / formulaic / hedge-stacking /
    uniform-rhythm instances with file:line, or "none."
-5. **Naturalise?** — which passages would benefit, or "none."
+6. **Naturalise?** — which passages would benefit, or "none."
 
 ## Distinguish structural vs lexical uniformity
 

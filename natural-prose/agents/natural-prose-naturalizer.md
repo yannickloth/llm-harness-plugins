@@ -27,6 +27,11 @@ Read the `$ARGUMENTS` for a `domain` value. Two modes:
   constraints (`.agents/context/writing-style.md`,
   `.agents/context/terminology.md`, and for `.typ` sources
   `.agents/context/typst-syntax-rules.md`).
+In both modes, ALSO load `references/reader-guidance-phrases.md`. Use it to
+write connective tissue that guides the reader. Its phrase list is
+**non-exhaustive by design** — invent the phrase that fits the actual
+sentence; do not treat the list as a closed vocabulary to paste from. Never
+insert formulaic AI transitions (moreover, furthermore, it's worth noting).
 
 ## Process
 
@@ -44,9 +49,16 @@ Read the `$ARGUMENTS` for a `domain` value. Two modes:
 2. Read the flagged passage.
 3. Read it aloud mentally.
 4. Classify the passage (see "Intentional rhetoric vs uniformity").
-5. Rewrite to natural prose per the active reference, honouring the
+5. **Add reader-guidance where it is missing.** Beyond fixing flagged machine
+   patterns, look for connective tissue that guides the reader: openings,
+   signposts, and transitions. Where the auditor flagged the *absence* of a
+   human marker (e.g. a paragraph that just drops a claim with no
+   orientation), insert a phrase from `reader-guidance-phrases.md` — invented
+   to fit, sparse, and specific. Never add guidance that the content cannot
+   support, and never expand the body into a lecture.
+6. Rewrite to natural prose per the active reference, honouring the
    house-style guard.
-6. **Self-verify meaning preservation** (see "Meaning-preservation self-verify").
+7. **Self-verify meaning preservation** (see "Meaning-preservation self-verify").
 
 ## Intentional rhetoric vs uniformity (HARD guard)
 
