@@ -26,13 +26,13 @@ Three mechanisms, one shared append-only JSONL ledger (`agentfeed/ledger.jsonl`,
 
 | Tool | Purpose |
 |------|---------|
-| `coord.log(type, text)` | Publish a `msg` or `status` update |
-| `coord.claim(task, leaseMinutes?)` | Claim a task (default lease 30 min); returns claim id |
-| `coord.release(task\|id)` | Release a claim |
-| `coord.who_does_what()` | List current open claims (expired leases + released tasks excluded) — call before starting work to avoid duplicating |
-| `coord.await(position, timeoutSeconds?)` | Wait until the ledger advances past a position. `position` = an entry id (`host:seq`) or a watermark (`ts\|host\|seq`) |
-| `coord.ask(question, to?)` | Broadcast a question; others see it in their digest |
-| `coord.answer(answer, questionId\|question)` | Answer a question from `coord.ask` |
+| `coord_log(type, text)` | Publish a `msg` or `status` update |
+| `coord_claim(task, leaseMinutes?)` | Claim a task (default lease 30 min); returns claim id |
+| `coord_release(task\|id)` | Release a claim |
+| `coord_who_does_what()` | List current open claims (expired leases + released tasks excluded) — call before starting work to avoid duplicating |
+| `coord_await(position, timeoutSeconds?)` | Wait until the ledger advances past a position. `position` = an entry id (`host:seq`) or a watermark (`ts\|host\|seq`) |
+| `coord_ask(question, to?)` | Broadcast a question; others see it in their digest |
+| `coord_answer(answer, questionId\|question)` | Answer a question from `coord_ask` |
 
 ## Auto resource events
 
@@ -43,7 +43,7 @@ Shared-resource activity is recorded **automatically** — you don't need to cal
 
 These let other agents see where you're working and avoid conflicts. To prevent flooding, the same agent editing the same file (or running the same git operation) is recorded at most once per 30s — distinct operations (e.g. a commit then a push) are each recorded. Disable per-kind via `autoGit`/`autoFile`.
 
-What is **not** auto-captured: general "what I'm working on" updates and Q&A — call `coord.log`/`coord.ask`/`coord.answer` for those.
+What is **not** auto-captured: general "what I'm working on" updates and Q&A — call `coord_log`/`coord_ask`/`coord_answer` for those.
 
 ## Ledger format
 
@@ -67,11 +67,11 @@ What is **not** auto-captured: general "what I'm working on" updates and Q&A —
 ## Concurrency
 
 - **Same host:** an advisory lockfile (`agentfeed/.ledger.lock`) serializes appends so two processes can't reuse a seq. Stale locks (crash) are stolen after 60s.
-- **Cross host:** no mutual exclusion by design — coordination is git merge of host-qualified ids. Two hosts can both claim a task; resolve via `coord.who_does_what()` + lease TTLs.
+- **Cross host:** no mutual exclusion by design — coordination is git merge of host-qualified ids. Two hosts can both claim a task; resolve via `coord_who_does_what()` + lease TTLs.
 
 ## Feed regeneration
 
-After every mutating `coord.*` write, the plugin spawns the compiled `AtomCli` (Java ≥25, from `build/classes` — run `build.sh` first, like permission-modes) to regenerate feeds. Spawn is **fire-and-forget** (never blocks the tool response). If you hit latency, set `liveFeeds: false` in plugin options and regenerate manually:
+After every mutating `coord_*` write, the plugin spawns the compiled `AtomCli` (Java ≥25, from `build/classes` — run `build.sh` first, like permission-modes) to regenerate feeds. Spawn is **fire-and-forget** (never blocks the tool response). If you hit latency, set `liveFeeds: false` in plugin options and regenerate manually:
 
 ```
 java --class-path agentfeed/build/classes eu.infolead.llmhp.agentfeed.AtomCli --ledger agentfeed/ledger.jsonl --out agentfeed/feeds

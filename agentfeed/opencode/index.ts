@@ -35,15 +35,15 @@ Shared-resource activity (git operations, file edits) is recorded automatically 
 other agents can see where you are working and avoid conflicts.
 
 Available tools:
-- coord.log(type, text): publish a message or status update
-- coord.claim(task, lease?): claim a task (default lease 30 min)
-- coord.release(task|id): release a claim
-- coord.who_does_what(): list current open claims
-- coord.await(position, timeout?): wait until the ledger passes a position
-- coord.ask(question, to?): ask other agents a question
-- coord.answer(answer, questionId|question): answer a question from coord.ask
+- coord_log(type, text): publish a message or status update
+- coord_claim(task, lease?): claim a task (default lease 30 min)
+- coord_release(task|id): release a claim
+- coord_who_does_what(): list current open claims
+- coord_await(position, timeout?): wait until the ledger passes a position
+- coord_ask(question, to?): ask other agents a question
+- coord_answer(answer, questionId|question): answer a question from coord_ask
 
-Call coord.who_does_what() before starting work to avoid duplicating another agent's task.`
+Call coord_who_does_what() before starting work to avoid duplicating another agent's task.`
 
 export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], options: AgentfeedOptions = {}) => {
   const logger: PluginLogger = createLogger(client, "agentfeed")
@@ -161,7 +161,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
     },
 
     tool: {
-      "coord.log": tool({
+      "coord_log": tool({
         description: "Publish a message or status update to the shared coordination ledger. Other agents and the human reader will see it.",
         args: {
           type: tool.schema.enum(["msg", "status"]),
@@ -177,7 +177,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         },
       }),
 
-      "coord.claim": tool({
+      "coord_claim": tool({
         description: "Claim a task with a TTL lease so other agents know you own it.",
         args: {
           task: tool.schema.string().min(1).describe("Task identifier to claim"),
@@ -196,7 +196,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         },
       }),
 
-      "coord.release": tool({
+      "coord_release": tool({
         description: "Release a claim you previously made, by task name or claim id.",
         args: {
           task: tool.schema.string().optional(),
@@ -204,7 +204,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         },
         async execute(args, ctx) {
           if (!args.task && !args.id) {
-            return "coord.release requires either 'task' or 'id'."
+            return "coord_release requires either 'task' or 'id'."
           }
           const e = await publish({
             agent: ctx.agent,
@@ -216,7 +216,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         },
       }),
 
-      "coord.who_does_what": tool({
+      "coord_who_does_what": tool({
         description: "List current open task claims (excluding expired leases and released tasks) so you can avoid duplicating another agent's work.",
         args: {},
         async execute() {
@@ -239,7 +239,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         },
       }),
 
-      "coord.await": tool({
+      "coord_await": tool({
         description: "Wait until the ledger has new entries after the given position, or a timeout elapses. Useful for waiting on a handoff. Pass an entry id (host:seq) or a full position 'ts|host|seq'.",
         args: {
           position: tool.schema.string().describe("Entry id 'host:seq' or watermark 'ts|host|seq'"),
@@ -262,8 +262,8 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         },
       }),
 
-      "coord.ask": tool({
-        description: "Broadcast a question to other agents. It appears in everyone's coordination digest; others can answer with coord.answer.",
+      "coord_ask": tool({
+        description: "Broadcast a question to other agents. It appears in everyone's coordination digest; others can answer with coord_answer.",
         args: {
           question: tool.schema.string().min(1).describe("The question to ask"),
           to: tool.schema.string().optional().describe("Optional: direct the question to a specific agent"),
@@ -279,8 +279,8 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         },
       }),
 
-      "coord.answer": tool({
-        description: "Answer a question previously posted with coord.ask. Pass the question id or re-state the question text.",
+      "coord_answer": tool({
+        description: "Answer a question previously posted with coord_ask. Pass the question id or re-state the question text.",
         args: {
           answer: tool.schema.string().min(1).describe("Your answer"),
           questionId: tool.schema.string().optional().describe("The ask entry id (host:seq) you are answering"),
@@ -288,7 +288,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         },
         async execute(args, ctx) {
           if (!args.questionId && !args.question) {
-            return "coord.answer requires either 'questionId' or 'question'."
+            return "coord_answer requires either 'questionId' or 'question'."
           }
           const e = await publish({
             agent: ctx.agent,
@@ -312,7 +312,7 @@ function leaseExpired(lease: string | undefined, now: number): boolean {
 }
 
 /**
- * Resolve a coord.await position argument to a ledger watermark.
+ * Resolve a coord_await position argument to a ledger watermark.
  * Accepts either an entry id ("host:seq") — resolved to that entry's actual
  * position — or a full "ts|host|seq" triple.
  */

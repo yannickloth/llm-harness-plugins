@@ -34,13 +34,13 @@ describe("agentfeed plugin", () => {
     expect(hooks["chat.message"]).toBeDefined()
     expect(hooks["experimental.chat.system.transform"]).toBeDefined()
     expect(hooks["tool.execute.after"]).toBeDefined()
-    expect(hooks.tool["coord.log"]).toBeDefined()
-    expect(hooks.tool["coord.claim"]).toBeDefined()
-    expect(hooks.tool["coord.release"]).toBeDefined()
-    expect(hooks.tool["coord.who_does_what"]).toBeDefined()
-    expect(hooks.tool["coord.await"]).toBeDefined()
-    expect(hooks.tool["coord.ask"]).toBeDefined()
-    expect(hooks.tool["coord.answer"]).toBeDefined()
+    expect(hooks.tool["coord_log"]).toBeDefined()
+    expect(hooks.tool["coord_claim"]).toBeDefined()
+    expect(hooks.tool["coord_release"]).toBeDefined()
+    expect(hooks.tool["coord_who_does_what"]).toBeDefined()
+    expect(hooks.tool["coord_await"]).toBeDefined()
+    expect(hooks.tool["coord_ask"]).toBeDefined()
+    expect(hooks.tool["coord_answer"]).toBeDefined()
   })
 
   test("system.transform injects coordination note once", async () => {
@@ -72,11 +72,11 @@ describe("agentfeed plugin", () => {
     const ctx = { agent: "writer", sessionID: "sw", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
 
     // expired claim (lease in the past)
-    await h.tool["coord.claim"].execute({ task: "old task", leaseMinutes: -1 }, ctx)
+    await h.tool["coord_claim"].execute({ task: "old task", leaseMinutes: -1 }, ctx)
     // live claim
-    await h.tool["coord.claim"].execute({ task: "current task", leaseMinutes: 30 }, ctx)
+    await h.tool["coord_claim"].execute({ task: "current task", leaseMinutes: 30 }, ctx)
 
-    const wdw = await h.tool["coord.who_does_what"].execute({}, ctx)
+    const wdw = await h.tool["coord_who_does_what"].execute({}, ctx)
     expect(wdw).toContain("current task")
     expect(wdw).not.toContain("old task")
   })
@@ -86,41 +86,41 @@ describe("agentfeed plugin", () => {
     const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
     const ctx = { agent: "writer", sessionID: "sr", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
 
-    await h.tool["coord.claim"].execute({ task: "task to release", leaseMinutes: 30 }, ctx)
-    await h.tool["coord.release"].execute({ task: "task to release" }, ctx)
+    await h.tool["coord_claim"].execute({ task: "task to release", leaseMinutes: 30 }, ctx)
+    await h.tool["coord_release"].execute({ task: "task to release" }, ctx)
 
-    const wdw = await h.tool["coord.who_does_what"].execute({}, ctx)
+    const wdw = await h.tool["coord_who_does_what"].execute({}, ctx)
     expect(wdw).not.toContain("task to release")
   })
 
-  test("coord.release requires task or id", async () => {
+  test("coord_release requires task or id", async () => {
     const dir = `/tmp/agentfeed-relreq-${Date.now()}`
     const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
     const ctx = { agent: "writer", sessionID: "srr", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
-    const res = await h.tool["coord.release"].execute({}, ctx)
+    const res = await h.tool["coord_release"].execute({}, ctx)
     expect(res).toContain("requires either")
   })
 
-  test("coord.await resolves entry id to a position", async () => {
+  test("coord_await resolves entry id to a position", async () => {
     const dir = `/tmp/agentfeed-await-${Date.now()}`
     const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
     const ctx = { agent: "writer", sessionID: "sa", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
 
-    const claimed = await h.tool["coord.claim"].execute({ task: "t1", leaseMinutes: 30 }, ctx)
+    const claimed = await h.tool["coord_claim"].execute({ task: "t1", leaseMinutes: 30 }, ctx)
     const id = claimed.match(/as ([^ ]+)/)?.[1]
     expect(id).toBeTruthy()
 
     // awaiting at id with no newer entries should time out quickly
-    const res = await h.tool["coord.await"].execute({ position: id!, timeoutSeconds: 0.1 }, ctx)
+    const res = await h.tool["coord_await"].execute({ position: id!, timeoutSeconds: 0.1 }, ctx)
     expect(res).toContain("Timed out")
   })
 
-  test("coord.await resolves full ts|host|seq position", async () => {
+  test("coord_await resolves full ts|host|seq position", async () => {
     const dir = `/tmp/agentfeed-awaitfull-${Date.now()}`
     const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
     const ctx = { agent: "writer", sessionID: "sb", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
 
-    const claimed = await h.tool["coord.claim"].execute({ task: "t2", leaseMinutes: 30 }, ctx)
+    const claimed = await h.tool["coord_claim"].execute({ task: "t2", leaseMinutes: 30 }, ctx)
     const id = claimed.match(/as ([^ ]+)/)?.[1]
     // read the entry's real ts from the ledger
     const { promises: fsp } = await import("fs")
@@ -128,7 +128,7 @@ describe("agentfeed plugin", () => {
     const entry = JSON.parse(raw.trim().split("\n").pop()!)
 
     // position = its own watermark -> no newer entries -> timeout
-    const res = await h.tool["coord.await"].execute(
+    const res = await h.tool["coord_await"].execute(
       { position: `${entry.ts}|${entry.host}|${entry.seq}`, timeoutSeconds: 0.1 },
       ctx,
     )
@@ -136,11 +136,11 @@ describe("agentfeed plugin", () => {
     expect(id).toBeTruthy()
   })
 
-  test("coord.await rejects unknown position", async () => {
+  test("coord_await rejects unknown position", async () => {
     const dir = `/tmp/agentfeed-awaitbad-${Date.now()}`
     const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
     const ctx = { agent: "writer", sessionID: "sc", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
-    const res = await h.tool["coord.await"].execute({ position: "nohost:99", timeoutSeconds: 0.1 }, ctx)
+    const res = await h.tool["coord_await"].execute({ position: "nohost:99", timeoutSeconds: 0.1 }, ctx)
     expect(res).toContain("Unknown position")
   })
 
@@ -214,14 +214,14 @@ describe("agentfeed plugin", () => {
     expect(raw.trim()).toBe("")
   })
 
-  test("coord.ask and coord.answer publish to ledger", async () => {
+  test("coord_ask and coord_answer publish to ledger", async () => {
     const dir = `/tmp/agentfeed-qa-${Date.now()}`
     const h = await loadHooks({ ledgerDir: dir, javaBinary: "true" })
     const ctx = { agent: "writer", sessionID: "sq", messageID: "m", directory: dir, worktree: dir, abort: new AbortController().signal, metadata: () => {}, ask: () => ({}) }
-    const askRes = await h.tool["coord.ask"].execute({ question: "who owns ch.4?" }, ctx)
+    const askRes = await h.tool["coord_ask"].execute({ question: "who owns ch.4?" }, ctx)
     const id = askRes.match(/\(([^)]+)\)$/)?.[1]
     expect(id).toBeTruthy()
-    const ansRes = await h.tool["coord.answer"].execute({ answer: "I do", questionId: id }, ctx)
+    const ansRes = await h.tool["coord_answer"].execute({ answer: "I do", questionId: id }, ctx)
     expect(ansRes).toContain("Answered")
     const { promises: fsp } = await import("fs")
     const raw = await fsp.readFile(`${dir}/ledger.jsonl`, "utf8")
