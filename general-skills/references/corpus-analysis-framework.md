@@ -175,9 +175,10 @@ public record DocumentMetrics(
 ) {}
 
 public class ProsePatternAnalyzer {
-    // Pattern detection methods
-    public List<PatternMatch> analyzeTransitions(String text);
-    public List<PatternMatch> analyzeHedging(String text);
+    // Pattern detection methods (stacking uses a bounded token window within
+    // the same sentence, not an unbounded .* regex that over-spans)
+    public List<PatternMatch> analyzeTransitions(String text, String[] lines);
+    public List<PatternMatch> analyzeHedging(String text, String[] lines);
     public List<PatternMatch> analyzeAbstractNouns(String text);
     public List<PatternMatch> analyzePassiveVoice(String text);
     public List<PatternMatch> analyzeTeachingTone(String text);
@@ -192,21 +193,22 @@ public class ProsePatternAnalyzer {
 }
 ```
 
-**Pattern Regex Definitions:**
+**Stacking detector (shared):** flags two words from `TRANSITION_WORDS` /
+`HEDGING_WORDS` only when they occur within `WINDOW` tokens of each other in the
+same sentence. Sentence boundaries reset the window.
 
 ```java
-// Transition patterns
-private static final Pattern TRANSITION_STACKING = 
-    Pattern.compile("\\b(however|furthermore|moreover|additionally|consequently)\\b.*" +
-                  "\\b(furthermore|moreover|additionally|consequently)\\b", 
-                  Pattern.CASE_INSENSITIVE);
+private List<PatternMatch> analyzeStacking(String text, String[] lines,
+    Set<String> words, String name, String category) {
+    // tokenize text into [A-Za-z']+ and sentence punctuation [.!?]
+    // for each word in `words`, look ahead <= WINDOW tokens in the same
+    // sentence; on the next `words` hit, record one match and break.
+}
+```
 
-// Hedging patterns
-private static final Pattern HEDGE_STACKING = 
-    Pattern.compile("\\b(might|could|may|possibly|potentially|perhaps)\\b.*" +
-                  "\\b(might|could|may|possibly|potentially|perhaps)\\b", 
-                  Pattern.CASE_INSENSITIVE);
+**Pattern Regex Definitions (non-stacking patterns remain regex-based):**
 
+```java
 // Teaching tone patterns
 private static final Pattern TEACHING_TONE = 
     Pattern.compile("\\b(let's|let us|it's helpful to|we can see that|" +
@@ -228,9 +230,9 @@ private static final Pattern PASSIVE_VOICE =
 **Metric Calculation Methods:**
 
 ```java
-public double calculateTransitionDensity(String text) {
+public double calculateTransitionDensity(String text, String[] lines) {
     int wordCount = text.split("\\s+").length;
-    int transitionCount = analyzeTransitions(text).size();
+    int transitionCount = analyzeTransitions(text, lines).size();
     return (transitionCount * 1000.0) / wordCount;
 }
 

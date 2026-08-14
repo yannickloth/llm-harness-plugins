@@ -25,22 +25,6 @@ public class ProsePatternAnalyzer {
     );
 
     // Pattern regex definitions
-    private static final Pattern TRANSITION_STACKING = Pattern.compile(
-        "\\b(however|furthermore|moreover|additionally|consequently|therefore|" +
-        "moreover|nevertheless|nonetheless|meanwhile|furthermore)\\b.*" +
-        "\\b(furthermore|moreover|additionally|consequently|therefore|" +
-        "nevertheless|nonetheless|meanwhile)\\b",
-        Pattern.CASE_INSENSITIVE
-    );
-
-    private static final Pattern HEDGE_STACKING = Pattern.compile(
-        "\\b(might|could|may|possibly|potentially|perhaps|arguably|apparently|" +
-        "seemingly|supposedly|presumably|ostensibly)\\b.*" +
-        "\\b(might|could|may|possibly|potentially|perhaps|arguably|apparently|" +
-        "seemingly|supposedly|presumably|ostensibly)\\b",
-        Pattern.CASE_INSENSITIVE
-    );
-
     private static final Pattern TEACHING_TONE = Pattern.compile(
         "\\b(let's|let us|it's helpful to|we can see that|" +
         "it's worth noting|it's important to understand|let's explore|" +
@@ -159,42 +143,64 @@ public class ProsePatternAnalyzer {
     }
 
     /**
-     * Analyze transition stacking patterns
+     * Analyze transition stacking patterns.
+     * Genuine stacking means two transition words in close proximity within the
+     * same sentence (e.g. "However, furthermore, moreover"). The unbounded .*
+     * regex over-spans and flags far-apart transitions that serve distinct
+     * rhetorical roles, so we bound the check to a small token window.
      */
     public List<PatternMatch> analyzeTransitions(String text, String[] lines) {
-        List<PatternMatch> matches = new ArrayList<>();
-        Matcher matcher = TRANSITION_STACKING.matcher(text);
-
-        while (matcher.find()) {
-            int lineNumber = findLineNumber(text, matcher.start(), lines);
-            matches.add(new PatternMatch(
-                "Transition Stacking",
-                lineNumber,
-                matcher.group().trim(),
-                "Structural"
-            ));
-        }
-
-        return matches;
+        return analyzeStacking(text, lines, TRANSITION_WORDS, "Transition Stacking", "Structural");
     }
 
     /**
-     * Analyze hedging stacking patterns
+     * Analyze hedging stacking patterns.
+     * Bound to a small token window in the same sentence, as with transitions.
      */
     public List<PatternMatch> analyzeHedging(String text, String[] lines) {
-        List<PatternMatch> matches = new ArrayList<>();
-        Matcher matcher = HEDGE_STACKING.matcher(text);
+        return analyzeStacking(text, lines, HEDGING_WORDS, "Hedging Stacking", "Lexical");
+    }
 
-        while (matcher.find()) {
-            int lineNumber = findLineNumber(text, matcher.start(), lines);
-            matches.add(new PatternMatch(
-                "Hedging Stacking",
-                lineNumber,
-                matcher.group().trim(),
-                "Lexical"
-            ));
+    /**
+     * Shared stacking detector: flag two words from {@code words} only when they
+     * occur within {@code WINDOW} tokens of each other in the same sentence.
+     * Sentence boundaries reset the window. Returns each flagged pair once.
+     */
+    private List<PatternMatch> analyzeStacking(String text, String[] lines, Set<String> words, String name, String category) {
+        List<PatternMatch> matches = new ArrayList<>();
+        List<String> tokens = new ArrayList<>();
+        List<Integer> tokenPositions = new ArrayList<>();
+        List<Integer> tokenLineNumbers = new ArrayList<>();
+
+        java.util.regex.Pattern tokenP = java.util.regex.Pattern.compile("[A-Za-z']+|[.!?]");
+        java.util.regex.Matcher tm = tokenP.matcher(text);
+        while (tm.find()) {
+            tokens.add(tm.group());
+            tokenPositions.add(tm.start());
+            tokenLineNumbers.add(findLineNumber(text, tm.start(), lines));
         }
 
+        final int WINDOW = 5;
+        for (int i = 0; i < tokens.size(); i++) {
+            String tok = tokens.get(i);
+            if (tok.equals(".") || tok.equals("!") || tok.equals("?")) {
+                continue;
+            }
+            if (!words.contains(tok.toLowerCase())) continue;
+            // Look ahead within WINDOW tokens, staying in the same sentence.
+            for (int j = i + 1; j < tokens.size() && j - i <= WINDOW; j++) {
+                if (tokens.get(j).equals(".") || tokens.get(j).equals("!") || tokens.get(j).equals("?")) break;
+                if (words.contains(tokens.get(j).toLowerCase())) {
+                    matches.add(new PatternMatch(
+                        name,
+                        tokenLineNumbers.get(i),
+                        text.substring(tokenPositions.get(i), tokenPositions.get(j) + tokens.get(j).length()).trim(),
+                        category
+                    ));
+                    break; // one pair per anchor word
+                }
+            }
+        }
         return matches;
     }
 

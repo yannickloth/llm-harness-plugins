@@ -8,6 +8,7 @@ node_modules/
 **/tmp/
 .vscode/
 **/build/
+*.class
 agentfeed/feeds/
 agentfeed/.agentfeed/
 agentfeed/.ledger.lock

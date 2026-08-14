@@ -230,8 +230,10 @@ describe("datetime-inject plugin hooks", () => {
     expect(hooks["experimental.chat.system.transform"]).toBeDefined()
   })
 
-  test("chat.message prepends datetime to text part", async () => {
+  test("chat.message prepends datetime to text part (from second message on)", async () => {
     const hooks = await loadHooks()
+    // First message of a session is skipped to keep the session auto-title clean.
+    await hooks["chat.message"]({}, { parts: [{ type: "text", text: "ignored warm-up" }] })
     const output = { parts: [{ type: "text", text: "what time is it?" }] }
     await hooks["chat.message"]({}, output)
     expect(output.parts[0].text.startsWith(DATETIME_HEADER)).toBe(true)
@@ -242,6 +244,7 @@ describe("datetime-inject plugin hooks", () => {
     // Frequency fix: platform/toolchain live in the system prompt (once per
     // session); per-message injection is datetime-only.
     const hooks = await loadHooks()
+    await hooks["chat.message"]({}, { parts: [{ type: "text", text: "ignored warm-up" }] })
     const output = { parts: [{ type: "text", text: "again" }] }
     await hooks["chat.message"]({}, output)
     expect(output.parts[0].text).toContain(DATETIME_HEADER)
