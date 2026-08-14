@@ -39,7 +39,13 @@ Per round:
 
 ## Checkpoint
 
-Every 3 rounds → `tmp/review-checkpoint-convergence.md`: round, reviewers, cumulative findings, stranded issues, resume steps.
+Every 3 rounds → write a continuation checkpoint (round, reviewers, cumulative
+findings, stranded issues, resume steps) to an **ephemeral, out-of-repo** location
+— never into the working tree, `tmp/`, or any tracked config directory:
+
+- Prefer `$XDG_RUNTIME_DIR/review-convergence-checkpoint.md` (tmpfs, user-private).
+- Fallback if `$XDG_RUNTIME_DIR` is unset: `$TMPDIR` or `~/.cache/review-convergence-checkpoint.md`.
+- Checkpoint is a throwaway resume aid. Do not commit it; delete it once the loop converges.
 
 ## Constraints
 
