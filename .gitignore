@@ -12,3 +12,4 @@ node_modules/
 agentfeed/feeds/
 agentfeed/.agentfeed/
 agentfeed/.ledger.lock
+agentfeed/ledger.jsonl
