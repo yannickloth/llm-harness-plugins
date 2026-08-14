@@ -49,6 +49,8 @@ agentfeed/
 │   └── AtomCli.java        # CLI entry: --ledger <path> --out <dir>
 ├── src/test/java/eu/infolead/llmhp/agentfeed/
 │   └── AtomFeedTest.java   # Java test harness (void main, run via build.sh)
+├── skills/coordinate/
+│   └── SKILL.md            # coordination protocol guide (self-registered skill)
 ├── feeds/                  # generated *.xml — git-ignored
 ├── plugin-agentfeed.design.md
 └── plugin-agentfeed.manual.md
@@ -95,7 +97,8 @@ agentfeed/
 ```
 
 - **No-op → no injection** (skip when nothing new; save tokens). First user message skipped (session-title hygiene, mirrors datetime-inject).
-- **`experimental.chat.system.transform`** injects a static once-per-session note: ledger exists, use `coord_*`.
+- **`experimental.chat.system.transform`** injects a static once-per-session note: ledger exists, use `coord_*` — including a condensed use-case summary pointing to the `coordinate` skill.
+- **`config` hook** self-registers the `coordinate` skill (`agentfeed/skills/coordinate/SKILL.md`) so agents can load the full coordination protocol on demand (mirrors general-skills).
 
 ## Tools
 
@@ -136,7 +139,8 @@ Shared-resource activity is recorded **automatically** (no explicit tool call) s
 | Hook | Behavior |
 |------|----------|
 | `chat.message` | Prepend digest; advance watermark; record session→agent |
-| `experimental.chat.system.transform` | Static coord note, once/session |
+| `experimental.chat.system.transform` | Static coord note + condensed use-case summary, once/session |
+| `config` | Self-register the `coordinate` skill |
 | `tool.execute.after` | Auto-record resource events (git/file), coalesced |
 | `tool` | `coord_*` via `@opencode-ai/plugin` `tool()` |
 | post-`coord_*` | Regen feeds (live) |

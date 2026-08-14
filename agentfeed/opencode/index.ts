@@ -1,5 +1,6 @@
-import { type Plugin, tool } from "@opencode-ai/plugin"
+import { type Plugin, tool, type Config } from "@opencode-ai/plugin"
 import path from "path"
+import fs from "fs"
 import { Ledger, entriesNewerThan, watermarkAfter, type LedgerEntry } from "./ledger"
 import { buildDigest } from "./digest"
 import { withLock } from "./lock"
@@ -32,18 +33,26 @@ same project can publish to and read from it so they can tell each other what th
 doing, coordinate task ownership, and resolve conflicts over shared resources.
 
 Shared-resource activity (git operations, file edits) is recorded automatically so
-other agents can see where you are working and avoid conflicts.
+other agents can see where you are working and avoid conflicts — you do not need to
+announce those yourself.
 
 Available tools:
-- coord_log(type, text): publish a message or status update
+- coord_who_does_what(): list current open claims — CALL BEFORE starting work
 - coord_claim(task, lease?): claim a task (default lease 30 min)
-- coord_release(task|id): release a claim
-- coord_who_does_what(): list current open claims
-- coord_await(position, timeout?): wait until the ledger passes a position
+- coord_release(task|id): release a claim when done
+- coord_log(type, text): announce your intent/progress (type: msg | status)
 - coord_ask(question, to?): ask other agents a question
 - coord_answer(answer, questionId|question): answer a question from coord_ask
+- coord_await(position, timeout?): wait until the ledger passes a position
 
-Call coord_who_does_what() before starting work to avoid duplicating another agent's task.`
+Typical use:
+1. coord_who_does_what() — see what is claimed; do not duplicate.
+2. coord_claim("<task>") — take ownership of unclaimed work.
+3. coord_log("msg", "working on <task>: <brief plan>") — tell others your intent.
+4. coord_ask(...) when blocked or unsure; coord_answer(...) to reply.
+5. coord_release("<task>") when done.
+
+Full guidance: use the 'coordinate' skill for the complete coordination protocol.`
 
 export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], options: AgentfeedOptions = {}) => {
   const logger: PluginLogger = createLogger(client, "agentfeed")
@@ -66,6 +75,8 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   const lastAutoEvent = new Map<string, number>()
   const classesDir = path.join(import.meta.dir, "..", "build", "classes")
   const mainClass = "eu.infolead.llmhp.agentfeed.AtomCli"
+  const skillFile = path.join(import.meta.dir, "..", "skills", "coordinate", "SKILL.md")
+  const skillName = skillNameFrom(skillFile)
 
   logger.info(`plugin active — ledger: ${ledgerFile}; live feeds: ${liveFeeds}; autoGit: ${autoGit}; autoFile: ${autoFile}`)
 
@@ -108,6 +119,15 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   }
 
   return {
+    config: async (input: Config) => {
+      // Self-register the 'coordinate' skill so agents can load the full
+      // coordination protocol on demand (mirrors the general-skills pattern).
+      if (skillName) {
+        const existing = (input as any).skills ?? {}
+        ;(input as any).skills = { ...existing, [skillName]: { file: path.relative(import.meta.dir, skillFile) } }
+      }
+    },
+
     "chat.message": async (
       input: { sessionID: string; agent?: string },
       output: { parts: Array<{ type: string; text?: string }> },
@@ -309,6 +329,24 @@ function leaseExpired(lease: string | undefined, now: number): boolean {
   const t = Date.parse(lease)
   if (Number.isNaN(t)) return false
   return t < now
+}
+
+/** Read the `name:` from a SKILL.md frontmatter block, or the dir name. */
+function skillNameFrom(skillFile: string): string {
+  try {
+    const content = fs.readFileSync(skillFile, "utf-8")
+    if (content.startsWith("---")) {
+      const end = content.indexOf("---", 3)
+      if (end !== -1) {
+        const fm = content.slice(3, end)
+        const m = fm.match(/^name:\s*(.+)$/m)
+        if (m) return m[1].trim()
+      }
+    }
+  } catch {
+    // skill file missing — registration is best-effort
+  }
+  return path.basename(path.dirname(skillFile))
 }
 
 /**

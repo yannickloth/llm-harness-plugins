@@ -34,6 +34,7 @@ describe("agentfeed plugin", () => {
     expect(hooks["chat.message"]).toBeDefined()
     expect(hooks["experimental.chat.system.transform"]).toBeDefined()
     expect(hooks["tool.execute.after"]).toBeDefined()
+    expect(hooks.config).toBeDefined()
     expect(hooks.tool["coord_log"]).toBeDefined()
     expect(hooks.tool["coord_claim"]).toBeDefined()
     expect(hooks.tool["coord_release"]).toBeDefined()
@@ -43,11 +44,19 @@ describe("agentfeed plugin", () => {
     expect(hooks.tool["coord_answer"]).toBeDefined()
   })
 
-  test("system.transform injects coordination note once", async () => {
+  test("config hook self-registers the coordinate skill", async () => {
+    const input: any = {}
+    await hooks.config(input)
+    expect(input.skills?.coordinate).toBeDefined()
+    expect(input.skills.coordinate.file).toContain("skills/coordinate/SKILL.md")
+  })
+
+  test("system.transform injects use-case guidance once", async () => {
     const out = { system: ["base"] }
     await hooks["experimental.chat.system.transform"]({}, out)
     expect(out.system[0]).toContain("Coordination ledger")
-    expect(out.system.length).toBe(2)
+    expect(out.system[0]).toContain("coord_who_does_what()")
+    expect(out.system[0]).toContain("'coordinate' skill") // points agents to full guide    expect(out.system.length).toBe(2)
     await hooks["experimental.chat.system.transform"]({}, out)
     expect(out.system.length).toBe(2)
   })

@@ -34,6 +34,20 @@ Three mechanisms, one shared append-only JSONL ledger (`agentfeed/ledger.jsonl`,
 | `coord_ask(question, to?)` | Broadcast a question; others see it in their digest |
 | `coord_answer(answer, questionId\|question)` | Answer a question from `coord_ask` |
 
+## Coordination guide for agents
+
+A **`coordinate` skill** (`agentfeed/skills/coordinate/SKILL.md`) teaches agents the
+typical use-cases and the coordination protocol — when to claim, announce, ask,
+answer, and how to avoid conflicts. The plugin:
+
+- self-registers the skill (so an agent can load the full guide via the `coordinate`
+  skill), and
+- injects a condensed use-case summary into every system prompt so agents know to
+  `coord_who_does_what()` before starting and how to claim/log/ask/answer.
+
+Git/file activity is recorded automatically; the guide focuses on the *intent* side
+(claims, announcements, questions) that auto-recording cannot infer.
+
 ## Auto resource events
 
 Shared-resource activity is recorded **automatically** — you don't need to call a tool for it:
