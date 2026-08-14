@@ -80,6 +80,7 @@ compile_plugin "tier-router" "$SHARED_CP"
 compile_plugin "semantic-cache"
 compile_plugin "prompt-registry"
 compile_plugin "permission-modes"
+compile_plugin "agentfeed"
 
 compile_plugin "session-lifecycle" "$SHARED_CP"
 
@@ -100,3 +101,25 @@ bun test "$SCRIPT_DIR/permission-modes/opencode/index.test.ts" || echo "permissi
 
 echo "--- Running datetime-inject TS tests ---"
 bun test "$SCRIPT_DIR/datetime-inject/opencode/index.test.ts" || echo "datetime-inject TS tests: FAILED (bun not available?)"
+
+echo "--- Running agentfeed Java tests ---"
+run_tests "agentfeed"
+
+echo "--- Running agentfeed TS tests ---"
+bun test "$SCRIPT_DIR/agentfeed/opencode/ledger.test.ts" \
+          "$SCRIPT_DIR/agentfeed/opencode/digest.test.ts" \
+          "$SCRIPT_DIR/agentfeed/opencode/activity.test.ts" \
+          "$SCRIPT_DIR/agentfeed/opencode/index.test.ts" || echo "agentfeed TS tests: FAILED (bun not available?)"
+
+echo "--- Running agentfeed CLI feed validity check ---"
+CLI_DIR="${XDG_RUNTIME_DIR:-/tmp/opencode}/agentfeed-cli"
+rm -rf "$CLI_DIR"
+mkdir -p "$CLI_DIR/feeds"
+printf '{"id":"host:1","host":"host","seq":1,"ts":"2026-08-13T22:22:05.000Z","agent":"auditor","type":"msg","text":"smoke \\"test\\" <ok> \001"}\n' > "$CLI_DIR/ledger.jsonl"
+java --class-path "$SCRIPT_DIR/agentfeed/build/classes" eu.infolead.llmhp.agentfeed.AtomCli \
+  --ledger "$CLI_DIR/ledger.jsonl" --out "$CLI_DIR/feeds" >/dev/null 2>&1 \
+  && [ -s "$CLI_DIR/feeds/feed.xml" ] \
+  && xmllint --noout "$CLI_DIR/feeds/feed.xml" 2>/dev/null \
+  && echo "agentfeed CLI feed validity: PASSED" \
+  || echo "agentfeed CLI feed validity: FAILED"
+rm -rf "$CLI_DIR"
