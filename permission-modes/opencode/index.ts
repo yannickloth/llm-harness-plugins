@@ -32,29 +32,23 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
   }
 
   return {
-    "tool.execute.before": async (event: { tool: string; args: Record<string, unknown> }) => {
-      const toolName = event.tool
-      const filePath = extractFilePath(event.args, toolName)
+    "tool.execute.before": async (input: { tool: string }, output: { args: any }) => {
+      const toolName = input.tool
+      const filePath = extractFilePath(output.args, toolName)
 
       try {
         const result = await java(["check", root, toolName, filePath])
         const parsed = JSON.parse(result.stdout.trim())
 
-        if (parsed.allowed === true) {
-          return { allowed: true, reason: parsed.reason, promptUser: false, mode: parsed.mode }
+        if (parsed.allowed !== true) {
+          throw new Error(parsed.reason ?? "permission denied")
         }
-        if (parsed.promptUser === true) {
-          return {
-            allowed: undefined,
-            reason: parsed.reason,
-            promptUser: true,
-            mode: parsed.mode,
-          }
-        }
-        return { allowed: false, reason: parsed.reason, promptUser: false, mode: parsed.mode }
       } catch (e) {
+        if ((e as Error).message !== "permission check error") {
+          throw e
+        }
         logger.error(`check failed: ${(e as Error).message}`)
-        return { allowed: false, reason: "permission check error", promptUser: true, mode: "error" }
+        throw new Error("permission check error")
       }
     },
 
