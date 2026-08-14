@@ -1,10 +1,10 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
-import { existsSync } from "fs"
+import { existsSync, mkdirSync, openSync, writeFileSync, closeSync, readFileSync, rmSync } from "fs"
 import { loadMemIndex, collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
-import { safeSpawn, safeSpawnSync } from "../../shared/safe-spawn"
+import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV } from "../../shared/safe-spawn"
 
 const agentmemDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(agentmemDir, "build", "classes")
@@ -19,6 +19,36 @@ let classificationGeneration = 0
 let flaggedTurnCount = 0
 let keeperBusy = false
 let logger: PluginLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+
+/**
+ * The per-message classifier spawns `opencode run --agent memory-keeper` — a
+ * heavyweight subprocess (own model connection + memory). With many opencode
+ * sessions and one spawn per chat message, this is an unbounded spawn storm.
+ * These limits cap both concurrency (one in flight per process) and rate
+ * (one spawn per window, shared across all sessions via a coordination file
+ * in `.agentmem/`).
+ */
+const CLASSIFY_MIN_INTERVAL_MS = 30_000
+let classifierBusy = false
+let lastClassifyAt = 0
+const CLASSIFY_LOCK_FILE = ".classify-lock"
+const CLASSIFY_LAST_FILE = ".classify-last"
+
+/**
+ * Remove a coordination lock file left by a session that crashed while holding
+ * it. Only steals when the recorded owner PID is dead, so we never block a
+ * live holder. Mirrors the graphrag plugin's lock-steal logic.
+ */
+function stealStaleLock(lockFile: string): void {
+  if (!existsSync(lockFile)) return
+  const pid = parseInt(readFileSync(lockFile, "utf8").trim().split("\n")[0] ?? "", 10)
+  if (!Number.isFinite(pid) || pid <= 0) return
+  if (Bun.spawnSync(["kill", "-0", String(pid)]).exitCode !== 0) {
+    try {
+      rmSync(lockFile, { force: true })
+    } catch { /* best effort */ }
+  }
+}
 
 function memDir(directory: string, worktree?: string): string {
   return worktree ? path.join(worktree, ".agentmem") : path.join(directory, ".agentmem")
@@ -112,6 +142,43 @@ function handleFileEditScoped(client: ReturnType<Parameters<Plugin>[0]["client"]
   }).catch(() => {})
 }
 
+/**
+ * Rate-limited, mutex-guarded wrapper around classifyMessage. Returns null
+ * when a classification is already in flight in this process or one ran too
+ * recently (cross-session, via a shared timestamp file), so we never spawn
+ * an `opencode run` subprocess per message under load.
+ */
+async function shouldClassifyNow(mdir: string): Promise<boolean> {
+  if (classifierBusy) return false
+  const now = Date.now()
+  if (now - lastClassifyAt < CLASSIFY_MIN_INTERVAL_MS) return false
+
+  const lockFile = path.join(mdir, CLASSIFY_LOCK_FILE)
+  mkdirSync(mdir, { recursive: true })
+  stealStaleLock(lockFile)
+  try {
+    const fd = openSync(lockFile, "wx")
+    writeFileSync(fd, `${process.pid}\n`)
+    closeSync(fd)
+  } catch (err: any) {
+    if (err?.code === "EEXIST") return false
+    throw err
+  }
+  try {
+    const lastFile = path.join(mdir, CLASSIFY_LAST_FILE)
+    if (existsSync(lastFile)) {
+      const last = parseInt(readFileSync(lastFile, "utf8").trim(), 10)
+      if (Number.isFinite(last) && now - last < CLASSIFY_MIN_INTERVAL_MS) return false
+    }
+    writeFileSync(lastFile, String(now))
+    classifierBusy = true
+    lastClassifyAt = now
+    return true
+  } finally {
+    rmSync(lockFile, { force: true })
+  }
+}
+
 async function classifyMessage(text: string): Promise<boolean> {
   const prompt = `Classify whether this message contains information worth remembering across sessions. Answer YES or NO only.
 
@@ -134,21 +201,23 @@ Answer (YES/NO):`
 
   let proc: ReturnType<typeof Bun.spawn> | null = null
   try {
-    proc = Bun.spawn(
+    proc = spawnDetached(
       ["opencode", "run", "--model", "deepseek/deepseek-v4-flash",
        "--agent", "memory-keeper", "--print", "--",
        "Answer YES or NO only, based on the prompt in stdin."],
-      { stdin: "pipe", stdout: "pipe", stderr: "pipe" }
+      { stdout: "pipe", stderr: "pipe" }
     )
-    proc.stdin.write(prompt)
-    proc.stdin.end()
-    const kill = setTimeout(() => { try { proc!.kill() } catch {} }, 15_000)
+    proc.stdin!.write(prompt)
+    proc.stdin!.end()
+    const kill = setTimeout(() => { try { killProcessTree(proc!) } catch {} }, 15_000)
     const out = await new Response(proc.stdout).text()
     clearTimeout(kill)
     return out.trim().toUpperCase() === "YES"
   } catch {
-    try { proc?.kill() } catch {}
+    try { if (proc) killProcessTree(proc) } catch {}
     return false
+  } finally {
+    classifierBusy = false
   }
 }
 
@@ -158,7 +227,7 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
   const capturedSessionId = sessionId ?? injectedSessionId
   let keeper: ReturnType<typeof Bun.spawn>
   try {
-    keeper = Bun.spawn(
+    keeper = spawnDetached(
       ["opencode", "run", "--agent", "memory-keeper",
        "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
        "Extract non-derivable learnings from the most recent conversation and persist them to .agentmem/."],
@@ -168,7 +237,7 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
     keeperBusy = false
     return
   }
-  const kill = setTimeout(() => { try { keeper.kill() } catch {} finally { keeperBusy = false } }, 120_000)
+  const kill = setTimeout(() => { try { killProcessTree(keeper) } catch {} finally { keeperBusy = false } }, 120_000)
   new Response(keeper.stdout).text().then(() => {
     clearTimeout(kill)
     keeperBusy = false
@@ -177,6 +246,7 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
 }
 
 function flushFlaggedTurns(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, reinject: boolean = true) {
+  if (process.env[NO_SUBSPAWN_ENV] === "1") return
   if (flaggedTurnCount <= 0 && pendingClassifications <= 0) return
   flaggedTurnCount = 0
   classificationGeneration++
@@ -185,20 +255,35 @@ function flushFlaggedTurns(client: ReturnType<Parameters<Plugin>[0]["client"]>, 
 }
 
 function trySpawnDreamer(mdir: string) {
+  // A plugin-loaded child opencode process must never re-launch its own
+  // dreamer/keeper/classifier subprocesses. Without this guard, `session.idle`
+  // in the spawned `opencode run` fires this handler again, recursively
+  // spawning an unbounded spawn storm (observed: dozens of `memory-dreamer`
+  // processes at ~400MB RSS each).
+  if (process.env[NO_SUBSPAWN_ENV] === "1") return
   const now = Date.now()
   if (now - lastDreamRun <= DREAM_INTERVAL_MS) return
   if (!existsSync(mdir)) return
-  const lockCheck = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-check", mdir])
-  if (lockCheck.stdout.trim() !== "FREE") return
+  // Atomically claim the consolidation slot so only one dreamer runs host-wide.
+  // `lock-check` is read-only and racy; `lock-acquire` writes + verifies the
+  // PID, returning ACQUIRED only to the sole winner. This is what the design
+  // doc's `ConsolidationLock check == ACQUIRED` gate intended.
+  const lockResult = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire", mdir])
+  if (lockResult.exitCode !== 0 || lockResult.stdout.trim() !== "ACQUIRED") return
   lastDreamRun = now
-  const dreamer = Bun.spawn(
+  const dreamer = spawnDetached(
     ["opencode", "run", "--agent", "memory-dreamer",
      "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
      "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
     { stdout: "pipe", stderr: "pipe" }
   )
-  const kill = setTimeout(() => { try { dreamer.kill() } catch {} }, 300_000)
-  new Response(dreamer.stdout).text().then(() => clearTimeout(kill)).catch(() => clearTimeout(kill))
+  const kill = setTimeout(() => { try { killProcessTree(dreamer) } catch {} }, 300_000)
+  new Response(dreamer.stdout).text()
+    .then(() => clearTimeout(kill))
+    .catch(() => clearTimeout(kill))
+    .finally(() => {
+      safeSpawn(["java", "--class-path", classesDir, mainClass, "lock-release", mdir]).catch(() => {})
+    })
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
@@ -240,6 +325,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     "chat.message": async (input, output) => {
       const text = output.parts?.map((p: any) => p.text ?? "").join(" ") ?? ""
       if (!text || text.length < 10) return
+      const allow = await shouldClassifyNow(mdir)
+      if (!allow) return
       pendingClassifications++
       const gen = classificationGeneration
       classifyMessage(text).then(interesting => {
@@ -358,13 +445,13 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           const lockResult = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire", mdir])
           if (lockResult.exitCode !== 0) return "Dream already in progress (lock busy)."
           try {
-            const dreamer = Bun.spawn(
+            const dreamer = spawnDetached(
               ["opencode", "run", "--agent", "memory-dreamer",
                "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
                "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
               { stdout: "pipe", stderr: "pipe" }
             )
-            const kill = setTimeout(() => { try { dreamer.kill() } catch {} }, 300_000)
+            const kill = setTimeout(() => { try { killProcessTree(dreamer) } catch {} }, 300_000)
             try {
               const out = await new Response(dreamer.stdout).text()
               return out.trim() || "Dream complete."

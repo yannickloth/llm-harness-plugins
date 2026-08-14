@@ -82,8 +82,7 @@ public final class IndexCli {
         System.out.println("[init] running graphrag index...");
         int exit = runGraphrag(config, indexRoot, "index");
         if (exit != 0) {
-            System.err.println("[init] graphrag index failed with exit code " + exit);
-            System.exit(exit);
+            throw new IOException("[init] graphrag index failed with exit code " + exit);
         }
 
         writeManifest(config, indexRoot, List.of());
@@ -139,8 +138,7 @@ public final class IndexCli {
         String subcommand = (firstRun || !hasIndex) ? "index" : "update";
         int exit = runGraphrag(config, indexRoot, subcommand);
         if (exit != 0) {
-            System.err.println("[update] graphrag " + subcommand + " failed with exit code " + exit);
-            System.exit(exit);
+            throw new IOException("[update] graphrag " + subcommand + " failed with exit code " + exit);
         }
 
         if (!firstRun) promote(indexRoot);
@@ -416,10 +414,19 @@ public final class IndexCli {
         var lock = indexRoot.resolve(".lock");
         if (Files.exists(lock)) {
             var content = Files.readString(lock).strip().split("\n");
-            if (content.length >= 2) {
+            long ownerPid = -1;
+            try {
+                ownerPid = Long.parseLong(content[0]);
+            } catch (Exception ignored) {}
+            boolean ownerDead = ownerPid > 0 && ProcessHandle.of(ownerPid).isEmpty();
+            if (ownerDead) {
+                Files.deleteIfExists(lock);
+            } else {
                 try {
-                    var ts = Instant.parse(content[1]);
-                    if (Instant.now().getEpochSecond() - ts.getEpochSecond() < STALE_LOCK_SECONDS) {
+                    var ts = content.length >= 2 ? Instant.parse(content[1]) : null;
+                    boolean fresh = ts != null
+                        && Instant.now().getEpochSecond() - ts.getEpochSecond() < STALE_LOCK_SECONDS;
+                    if (fresh) {
                         return false;
                     }
                 } catch (Exception ignored) {}

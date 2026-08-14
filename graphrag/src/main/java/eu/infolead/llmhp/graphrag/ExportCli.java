@@ -2,6 +2,7 @@ package eu.infolead.llmhp.graphrag;
 
 import java.io.*;
 import java.nio.file.*;
+import java.nio.file.attribute.*;
 import java.util.*;
 import java.util.stream.*;
 import eu.infolead.llmhp.graph.GraphQueryEngine;
@@ -239,15 +240,35 @@ public final class ExportCli {
             return result;
         }
 
-        try (var walk = Files.walk(root)) {
-            walk.filter(f -> f.toString().endsWith(ext))
-                .filter(f -> !isExcluded(root.relativize(f).toString(), config.excludeDirs()))
-                .filter(f -> ext.equals(".tex")
-                    ? f.startsWith(latexRoot)
-                    : !f.startsWith(latexRoot))
-                .sorted()
-                .forEach(result::add);
-        }
+        var exclude = config.excludeDirs();
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                if (!dir.equals(root) && isExcluded(root.relativize(dir).toString(), exclude)) {
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path f, BasicFileAttributes attrs) {
+                if (!f.toString().endsWith(ext)) return FileVisitResult.CONTINUE;
+                if (isExcluded(root.relativize(f).toString(), exclude)) return FileVisitResult.CONTINUE;
+                if (ext.equals(".tex") != f.startsWith(latexRoot)) return FileVisitResult.CONTINUE;
+                result.add(f);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path f, IOException exc) {
+                // Tolerate a path that vanished mid-walk (transient .git/submodule
+                // churn). Any other failure (unreadable root, permission denied)
+                // is a real error and must propagate, not be silently swallowed.
+                if (exc instanceof NoSuchFileException) return FileVisitResult.CONTINUE;
+                throw new UncheckedIOException(exc);
+            }
+        });
+        result.sort(null);
         return result;
     }
 

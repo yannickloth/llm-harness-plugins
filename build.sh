@@ -90,6 +90,8 @@ bun test "$SCRIPT_DIR/agentmem/opencode/helpers.test.ts" || echo "agentmem TS te
 echo ""
 run_tests "agentinsights"
 run_tests "graphrag" "$KNOWLEDGE_GRAPH_CP"
+echo "--- Running graphrag TS tests ---"
+bun test "$SCRIPT_DIR/graphrag/opencode/index.test.ts" || echo "graphrag TS tests: FAILED (bun not available?)"
 run_tests "semantic-cache"
 run_tests "guardrail-chain"
 run_tests "prompt-registry"

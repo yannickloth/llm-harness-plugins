@@ -2,6 +2,7 @@ package eu.infolead.llmhp.graphrag;
 
 import java.io.*;
 import java.nio.file.*;
+import java.time.*;
 import java.util.*;
 import eu.infolead.llmhp.graphrag.DocumentWriter.ExportedDocument;
 import eu.infolead.llmhp.graphrag.LatexExporter.LatexChunk;
@@ -434,6 +435,91 @@ public class ExportTest {
             DocumentWriter.render(doc2, List.of()).contains("[THEOREM cites: def:z]"));
     }
 
+    // --- Lock staleness ---
+
+    /** Returns the PID of a short-lived child, once the OS has confirmed it is fully gone. */
+    static long deadPid() throws Exception {
+        var proc = new ProcessBuilder("sleep", "0").start();
+        long pid = proc.pid();
+        proc.waitFor();
+        long deadline = System.nanoTime() + 5_000_000_000L; // up to 5s
+        while (ProcessHandle.of(pid).isPresent() && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        return pid;
+    }
+
+    static void testLockStolenWhenOwnerDead() throws Exception {
+        var dir = tmpDir().resolve("lock-dead");
+        Files.createDirectories(dir);
+        var dead = deadPid();
+        Files.writeString(dir.resolve(".lock"), dead + "\n" + Instant.now() + "\n");
+
+        assert_true("lock: stolen when owner pid dead", IndexCli.acquireLock(dir));
+        assert_true("lock: re-acquired and present after steal", Files.exists(dir.resolve(".lock")));
+        IndexCli.releaseLock(dir);
+    }
+
+    static void testLockHeldWhenOwnerAlive() throws Exception {
+        var dir = tmpDir().resolve("lock-alive");
+        Files.createDirectories(dir);
+        var pid = ProcessHandle.current().pid();
+        Files.writeString(dir.resolve(".lock"), pid + "\n" + Instant.now() + "\n");
+
+        assert_true("lock: not stolen when owner alive", !IndexCli.acquireLock(dir));
+        assert_true("lock: still present while held", Files.exists(dir.resolve(".lock")));
+        Files.delete(dir.resolve(".lock"));
+    }
+
+    static void testLockFreshMalformedStillHeld() throws Exception {
+        var dir = tmpDir().resolve("lock-malformed");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve(".lock"), "not-a-pid\n" + Instant.now() + "\n");
+
+        assert_true("lock: malformed fresh lock not stolen", !IndexCli.acquireLock(dir));
+        Files.delete(dir.resolve(".lock"));
+    }
+
+    // --- findFiles pruning ---
+
+    static void testFindFilesPrunesExcludedDirs() throws Exception {
+        var dir = tmpDir().resolve("prune");
+        Files.createDirectories(dir.resolve("src/main/typst/vol-1"));
+        Files.createDirectories(dir.resolve(".git/modules/sub"));
+        Files.createDirectories(dir.resolve("result"));
+        Files.writeString(dir.resolve("src/main/typst/vol-1/a.typ"), "body");
+        Files.writeString(dir.resolve(".git/modules/sub/hidden.typ"), "secret");
+        Files.writeString(dir.resolve("result/generated.typ"), "generated");
+
+        var config = new ExportConfig("test", dir,
+            "src/legacy/latex", List.of(".git", "result"),
+            new ExportConfig.Models("", "", "", "", "", "", ""),
+            false, 0, "graphrag", "graph-index");
+
+        var found = ExportCli.findFiles(config, ".typ", null);
+        assert_equals("prune: only src file found", List.of(
+            dir.resolve("src/main/typst/vol-1/a.typ").normalize()),
+            found.stream().map(Path::normalize).sorted().toList());
+    }
+
+    static void testFindFilesPrunesNestedExcluded() throws Exception {
+        var dir = tmpDir().resolve("prune-nested");
+        Files.createDirectories(dir.resolve("src/main/typst/vol-1/.git/config"));
+        Files.createDirectories(dir.resolve("src/main/typst/vol-1"));
+        Files.writeString(dir.resolve("src/main/typst/vol-1/keep.typ"), "keep");
+        Files.writeString(dir.resolve("src/main/typst/vol-1/.git/config/inner.typ"), "ignore");
+
+        var config = new ExportConfig("test", dir,
+            "src/legacy/latex", List.of(".git"),
+            new ExportConfig.Models("", "", "", "", "", "", ""),
+            false, 0, "graphrag", "graph-index");
+
+        var found = ExportCli.findFiles(config, ".typ", null);
+        assert_equals("prune-nested: only keep.typ", List.of(
+            dir.resolve("src/main/typst/vol-1/keep.typ").normalize()),
+            found.stream().map(Path::normalize).sorted().toList());
+    }
+
     public static void main(String[] args) throws Exception {
         testTypstTheoremWithClaim();
         testTypstProofWithStrategy();
@@ -455,6 +541,11 @@ public class ExportTest {
         testExclusion();
         testProofLinking();
         testProofMarkerVerb();
+        testLockStolenWhenOwnerDead();
+        testLockHeldWhenOwnerAlive();
+        testLockFreshMalformedStillHeld();
+        testFindFilesPrunesExcludedDirs();
+        testFindFilesPrunesNestedExcluded();
         cleanup();
 
         System.out.println("ExportTests: " + passed + " passed, " + failed + " failed");
