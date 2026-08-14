@@ -1,7 +1,7 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
-import { safeSpawn, spawnDetached, killProcessTree } from "../../shared/safe-spawn"
+import { safeSpawn, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV } from "../../shared/safe-spawn"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -22,8 +22,27 @@ const CLASSIFY_SYSTEM = [
   "ESCALATE: ambiguous, unclear scope, multiple competing goals, or genuinely uncertain.",
 ].join("\n")
 
+function extractTextParts(out: string): string {
+  // `opencode run --format json` streams newline-delimited JSON events.
+  // Extract the assistant's text replies from `type:"text"` parts.
+  const words: string[] = []
+  for (const line of out.split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      const evt = JSON.parse(trimmed)
+      if (evt.type === "text" && typeof evt.part?.text === "string") {
+        words.push(evt.part.text)
+      }
+    } catch {
+      // ignore non-JSON lines (e.g. logs)
+    }
+  }
+  return words.join(" ").trim()
+}
+
 async function classifyViaOpencode(prompt: string): Promise<{ decision: string; tier: string; reason: string; confidence: number } | null> {
-  // Classify in a detached, throwaway session via `opencode run --print`.
+  // Classify in a detached, throwaway session via `opencode run --format json`.
   // Never call session.prompt on the live session here: that would (a) append a
   // duplicate copy of the user's prompt and the classifier's reply into the real
   // conversation and (b) block the chat.message hook on a full LLM round-trip
@@ -34,16 +53,16 @@ async function classifyViaOpencode(prompt: string): Promise<{ decision: string; 
   try {
     proc = spawnDetached(
       ["opencode", "run", "--model", process.env.TIER_ROUTER_CLASSIFY_MODEL ?? "deepseek/deepseek-v4-flash",
-       "--print", "--title", "Tier classification", "--",
+       "--format", "json", "--title", "Tier classification", "--",
        "Classify the task in stdin per the system prompt. Reply with ONE word only."],
-      { stdout: "pipe", stderr: "pipe" },
+      { stdout: "pipe", stderr: "ignore" },
     )
     proc.stdin!.write(classifierPrompt)
     proc.stdin!.end()
     const kill = setTimeout(() => { try { killProcessTree(proc!) } catch {} }, 20_000)
     const out = await new Response(proc.stdout).text()
     clearTimeout(kill)
-    const text = out.trim().toUpperCase()
+    const text = extractTextParts(out).toUpperCase()
     if (!text) return null
     if (text.includes("ESCALATE")) return { decision: "escalate", tier: "", reason: "LLM: uncertain scope", confidence: 0.7 }
     if (text.startsWith("FABLE")) return { decision: "direct", tier: "fable", reason: "LLM: trivial mechanical task", confidence: 0.9 }
@@ -66,6 +85,7 @@ async function classifyPrompt(prompt: string): Promise<{
   reason: string
   confidence: number
   rewritten_prompt: string
+  failed?: boolean
 }> {
   const llm = await classifyViaOpencode(prompt)
   if (llm) {
@@ -102,6 +122,7 @@ async function classifyPrompt(prompt: string): Promise<{
       reason: "classification failed — defaulting to sonnet",
       confidence: 0.5,
       rewritten_prompt: prompt,
+      failed: true,
     }
   }
 }
@@ -167,11 +188,18 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
   logger.info("plugin active — 3 tools + auto-rewrite hook (chat.message)")
 
   const rewritten = new Set<string>()
+  const REWRITTEN_MAX = 10_000
 
   return {
     "chat.message": async (input, output) => {
+      // A plugin-loaded child opencode process (launched headlessly for
+      // classification below) must never re-launch its own classifier — that
+      // would spawn an unbounded recursion storm. Guards mirror agentmem.
+      if (process.env[NO_SUBSPAWN_ENV] === "1") return
       const sessionID = input.sessionID
       if (rewritten.has(sessionID)) return
+      // Bound memory: keep only the most recently seen sessions.
+      if (rewritten.size >= REWRITTEN_MAX) rewritten.clear()
       rewritten.add(sessionID)
 
       const textPart = output.parts.find(p => p.type === "text") as { id: string; sessionID: string; messageID: string; text: string } | undefined
@@ -179,6 +207,9 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       if (!textPart.text.trim()) return
 
       const result = await classifyPrompt(textPart.text)
+      // Never inject a fabricated classification into the user's real message
+      // when classification failed entirely — leave the message untouched.
+      if (result.failed) return
       logger.info(`annotate ${JSON.stringify({ sessionID, tier: result.tier, confidence: result.confidence })}`)
 
       const annotation = buildPromptContext(result)
