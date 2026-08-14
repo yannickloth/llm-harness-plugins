@@ -1,9 +1,14 @@
-import type { Config, Plugin } from "@opencode-ai/plugin"
+import { type Config, type Plugin, tool } from "@opencode-ai/plugin"
 import fs from "fs"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 
 const skillsDir = path.join(import.meta.dir, "..", "skills")
+
+// The deterministic prose analyzer lives in the sibling general-skills plugin.
+// Resolve its absolute path once at plugin load (import.meta.dir = <root>/natural-prose/opencode).
+const analyzerDir = path.join(import.meta.dir, "..", "..", "general-skills", "tools")
+const analyzerPath = () => path.join(analyzerDir, "ProsePatternAnalyzer.java")
 
 function extractName(skillFile: string, dirName: string): string {
   const content = fs.readFileSync(skillFile, "utf-8")
@@ -42,6 +47,18 @@ export default async ({ client, directory }: Parameters<Plugin>[0]) => {
       const existing = (input as any).skills ?? {}
       ;(input as any).skills = { ...existing, ...entries }
     },
-    tool: {},
+    tool: {
+      "naturalize-analyzer-path": tool({
+        description: "Resolve the absolute path to the deterministic prose analyzer (ProsePatternAnalyzer.java). Returns 'NOT FOUND: <path>' if the file is missing. Use this instead of hardcoding or searching for the analyzer path.",
+        args: {},
+        async execute() {
+          const p = analyzerPath()
+          if (fs.existsSync(p)) {
+            return p
+          }
+          return `NOT FOUND: ${p}`
+        },
+      }),
+    },
   }
 }
