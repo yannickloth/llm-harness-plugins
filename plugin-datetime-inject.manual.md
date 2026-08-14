@@ -23,13 +23,13 @@ On session start: `[datetime-inject] plugin active — datetime per message, pla
 
 Three sections, joined by blank lines, regenerated fresh per request.
 
-### datetime — always fresh
+### datetime — always fresh, compact ISO 8601 with local timezone + offset
 
 ```
-[current datetime: 07 Aug 2026, 13:20:05 UTC]
+[current datetime: 2026-08-14T11:07:45+02:00 (Europe/Brussels)]
 ```
 
-UTC, `toLocaleString("en-GB")`, `dateStyle:medium` + `timeStyle:medium` + 24h.
+Local time in `YYYY-MM-DDTHH:mm:ss±HH:MM` ISO 8601, the IANA timezone name from `Intl.DateTimeFormat().resolvedOptions().timeZone`, and the numeric UTC offset — one compact token carrying local clock, zone, and offset.
 
 ### platform — condensed (not full hardware dump)
 
@@ -113,7 +113,7 @@ Datetime is at least present per session (system-only) and fresh per message (de
 
 | Coverage | What it verifies |
 |----------|------------------|
-| datetime | header prefix, UTC marker, round-trippable format |
+| datetime | header prefix, ISO offset, timezone name, round-trippable format |
 | platform | header, System/CPU/Memory lines, package-manager mapping by distro ID |
 | toolchain | flake/direnv/lock detection, locked-vs-unlocked, package extraction (buildInputs + nativeBuildInputs), omitted-when-absent |
 | flag permutations | each flag toggles only its section; all-off → empty |

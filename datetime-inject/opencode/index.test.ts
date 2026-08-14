@@ -6,6 +6,7 @@ import {
   buildSessionContext,
   buildPerMessageContext,
   currentDatetime,
+  localTimeZone,
   datetimeNote,
   DATETIME_HEADER,
   PLATFORM_HEADER,
@@ -30,9 +31,10 @@ describe("datetime-inject helpers", () => {
       expect(datetimeNote().startsWith(DATETIME_HEADER)).toBe(true)
     })
 
-    test("datetimeNote contains UTC marker and ends bracket", () => {
+    test("datetimeNote contains local timezone and offset and ends bracket", () => {
       const note = datetimeNote()
-      expect(note).toContain(" UTC]")
+      expect(note).toContain(`(${localTimeZone()})`)
+      expect(note).toMatch(/T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/)
       expect(note.endsWith("]")).toBe(true)
     })
 
@@ -200,7 +202,7 @@ describe("datetime-inject helpers", () => {
     })
 
     test("hasAnyMarker detects an already-injected system", () => {
-      const injected = [`${DATETIME_HEADER}: 07 Aug 2026, 13:20:05 UTC]\n\n${PLATFORM_HEADER}`]
+      const injected = [`${DATETIME_HEADER}: 2026-08-14T11:07:45+02:00 (Europe/Brussels)]\n\n${PLATFORM_HEADER}`]
       expect(hasAnyMarker(injected)).toBe(true)
     })
 
@@ -210,7 +212,7 @@ describe("datetime-inject helpers", () => {
     })
 
     test("hasAnyMarker matches on prefix even when timestamp differs (the stacking fix)", () => {
-      const before = [`${DATETIME_HEADER}: 01 Jan 2024, 00:00:00 UTC]`]
+      const before = [`${DATETIME_HEADER}: 2024-01-01T00:00:00+00:00 (UTC)]`]
       expect(hasAnyMarker(before)).toBe(true)
     })
   })

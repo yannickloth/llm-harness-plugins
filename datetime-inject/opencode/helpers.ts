@@ -19,17 +19,46 @@ export const PLATFORM_HEADER = "[platform]"
 export const TOOLCHAIN_HEADER = "[toolchain]"
 export const STABLE_MARKERS = [DATETIME_HEADER, PLATFORM_HEADER, TOOLCHAIN_HEADER]
 
+export function localTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0")
+}
+
+function isoOffsetMs(d: Date): number {
+  // Offset in ms east of UTC for this instant in the local zone.
+  const asUtc = new Date(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate(),
+    d.getUTCHours(),
+    d.getUTCMinutes(),
+    d.getUTCSeconds(),
+  )
+  return d.getTime() - asUtc.getTime()
+}
+
+function formatOffset(offsetMs: number): string {
+  const sign = offsetMs < 0 ? "-" : "+"
+  const abs = Math.abs(offsetMs)
+  const h = Math.floor(abs / 3_600_000)
+  const m = Math.floor((abs % 3_600_000) / 60_000)
+  return `${sign}${pad(h)}:${pad(m)}`
+}
+
 export function currentDatetime(): string {
-  return new Date().toLocaleString("en-GB", {
-    timeZone: "UTC",
-    dateStyle: "medium",
-    timeStyle: "medium",
-    hour12: false,
-  })
+  const d = new Date()
+  const offsetMs = isoOffsetMs(d)
+  const local = new Date(d.getTime() + offsetMs)
+  const date = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`
+  const time = `${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}`
+  return `${date}T${time}${formatOffset(offsetMs)}`
 }
 
 export function datetimeNote(): string {
-  return `${DATETIME_HEADER}: ${currentDatetime()} UTC]`
+  return `${DATETIME_HEADER}: ${currentDatetime()} (${localTimeZone()})]`
 }
 
 export function readText(p: string): string {
