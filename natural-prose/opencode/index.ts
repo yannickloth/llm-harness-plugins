@@ -1,4 +1,4 @@
-import { type Config, type Plugin, tool } from "@opencode-ai/plugin"
+import { type Config, type Plugin } from "@opencode-ai/plugin"
 import fs from "fs"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
@@ -48,7 +48,7 @@ export default async ({ client, directory }: Parameters<Plugin>[0]) => {
       ;(input as any).skills = { ...existing, ...entries }
     },
     tool: {
-      "naturalize-analyzer-path": tool({
+      "naturalize-analyzer-path": {
         description: "Resolve the absolute path to the deterministic prose analyzer (ProsePatternAnalyzer.java). Returns 'NOT FOUND: <path>' if the file is missing. Use this instead of hardcoding or searching for the analyzer path.",
         args: {},
         async execute() {
@@ -58,7 +58,7 @@ export default async ({ client, directory }: Parameters<Plugin>[0]) => {
           }
           return `NOT FOUND: ${p}`
         },
-      }),
+      },
     },
   }
 }
