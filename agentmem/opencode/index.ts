@@ -149,6 +149,9 @@ function handleFileEditScoped(client: ReturnType<Parameters<Plugin>[0]["client"]
  * an `opencode run` subprocess per message under load.
  */
 async function shouldClassifyNow(mdir: string): Promise<boolean> {
+  // A plugin-loaded child opencode process must never re-launch its own
+  // classifier; this is what prevents the recursive spawn storm.
+  if (process.env[NO_SUBSPAWN_ENV] === "1") return false
   if (classifierBusy) return false
   const now = Date.now()
   if (now - lastClassifyAt < CLASSIFY_MIN_INTERVAL_MS) return false
