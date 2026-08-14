@@ -13,3 +13,4 @@ agentfeed/feeds/
 agentfeed/.agentfeed/
 agentfeed/.ledger.lock
 agentfeed/ledger.jsonl
+tier-router/iron-gate.json
