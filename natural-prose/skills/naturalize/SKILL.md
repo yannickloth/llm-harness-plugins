@@ -65,7 +65,7 @@ Usage: `/naturalize <scope> [domain]`
   scan (which the skill runs first).
 - `natural-prose-naturalizer` — edits flagged passages to natural prose,
   preserving domain-appropriate conventions and (scientific mode) all formal
-  content.
+  content. It also adds reader-guidance connective tissue where it is missing.
 
 ## See also
 
@@ -73,3 +73,5 @@ Usage: `/naturalize <scope> [domain]`
   `general` mode overlaps but adds the positive human targets and the
   structural-rewrite principle.
 - `scientific-ai-prose.md` — the scientific registry (loaded by scientific mode).
+- `reader-guidance-phrases.md` — the six transition functions and rules the
+  agents use to guide the reader through the artifact (non-exhaustive).

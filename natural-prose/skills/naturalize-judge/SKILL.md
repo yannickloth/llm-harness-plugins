@@ -37,7 +37,9 @@ verdict.
    not silently skip the deterministic baseline.
 2. **Judge.** Run `natural-prose-perplexity-judge` on the scope, passing it the
    statistical-layer output. It rates each file 1-10, notes predictability,
-   quotes findings with file:line, and ranks "naturalise first" candidates.
+   checks positive human markers (voice, specificity, stance, reader guidance)
+   against the loaded registry, quotes findings with file:line, and ranks
+   "naturalise first" candidates.
 3. **Reconcile.** Compare the judge's ratings against the statistical layer.
    Agreement = high confidence; disagreement = note it, do not silently override.
 4. **Report.** Overall verdict + ranked naturalisation list. If the user asked

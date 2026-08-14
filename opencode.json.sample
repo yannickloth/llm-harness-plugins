@@ -17,6 +17,7 @@
     "./typst-toolkit/opencode/index.ts",
     "./latex-toolkit/opencode/index.ts",
     "./general-skills/opencode/index.ts",
+    "./natural-prose/opencode/index.ts",
     "./permission-modes/opencode/index.ts"
   ],
   "agent": {
@@ -37,6 +38,18 @@
         "edit": "allow",
         "bash": "allow"
       }
+    },
+    "natural-prose-auditor": {
+      "file": "./natural-prose/agents/natural-prose-auditor.md",
+      "mode": "subagent"
+    },
+    "natural-prose-naturalizer": {
+      "file": "./natural-prose/agents/natural-prose-naturalizer.md",
+      "mode": "subagent"
+    },
+    "natural-prose-perplexity-judge": {
+      "file": "./natural-prose/agents/natural-prose-perplexity-judge.md",
+      "mode": "subagent"
     }
   },
   "command": {
