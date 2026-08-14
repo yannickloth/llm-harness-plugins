@@ -44,3 +44,21 @@
 {"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/agentfeed/opencode/activity.ts","task":"edit","id":"laptop-p16:44","host":"laptop-p16","seq":44,"ts":"2026-08-14T10:11:44.135Z"}
 {"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/agentfeed/opencode/activity.test.ts","task":"edit","id":"laptop-p16:45","host":"laptop-p16","seq":45,"ts":"2026-08-14T10:12:20.827Z"}
 {"agent":"build","type":"resource","resource":"git","action":"acquire","task":"git commit","id":"laptop-p16:46","host":"laptop-p16","seq":46,"ts":"2026-08-14T10:17:49.676Z"}
+{"agent":"build","type":"resource","resource":"git","action":"acquire","task":"git commit","id":"laptop-p16:47","host":"laptop-p16","seq":47,"ts":"2026-08-14T10:18:20.053Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/agentfeed/opencode/digest.ts","action":"acquire","task":"edit","id":"laptop-p16:48","host":"laptop-p16","seq":48,"ts":"2026-08-14T10:21:08.356Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/plugin-agentfeed.design.md","action":"acquire","task":"edit","id":"laptop-p16:49","host":"laptop-p16","seq":49,"ts":"2026-08-14T10:21:15.793Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/plugin-agentfeed.manual.md","action":"acquire","task":"edit","id":"laptop-p16:50","host":"laptop-p16","seq":50,"ts":"2026-08-14T10:21:19.686Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/agentfeed/opencode/digest.test.ts","action":"acquire","task":"edit","id":"laptop-p16:51","host":"laptop-p16","seq":51,"ts":"2026-08-14T10:21:29.556Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/agentfeed/opencode/digest.ts","action":"acquire","task":"edit","id":"laptop-p16:52","host":"laptop-p16","seq":52,"ts":"2026-08-14T10:21:39.751Z"}
+{"agent":"build","type":"resource","resource":"git","action":"acquire","task":"git commit","id":"laptop-p16:53","host":"laptop-p16","seq":53,"ts":"2026-08-14T10:21:45.367Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/agentfeed/tools/AppendOnlyMergeDriver.java","task":"write","id":"laptop-p16:54","host":"laptop-p16","seq":54,"ts":"2026-08-14T10:43:33.022Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/.gitattributes","task":"write","id":"laptop-p16:55","host":"laptop-p16","seq":55,"ts":"2026-08-14T10:43:38.159Z"}
+{"agent":"build","type":"resource","resource":"git","task":"git commit","id":"laptop-p16:56","host":"laptop-p16","seq":56,"ts":"2026-08-14T10:43:58.327Z"}
+{"agent":"build","type":"resource","resource":"git","task":"git branch","id":"laptop-p16:57","host":"laptop-p16","seq":57,"ts":"2026-08-14T10:44:01.973Z"}
+{"agent":"build","type":"resource","resource":"git","task":"git merge","id":"laptop-p16:58","host":"laptop-p16","seq":58,"ts":"2026-08-14T10:44:13.802Z"}
+{"agent":"build","type":"resource","resource":"git","task":"git checkout","id":"laptop-p16:59","host":"laptop-p16","seq":59,"ts":"2026-08-14T10:44:19.340Z"}
+{"agent":"build","type":"resource","resource":"git","task":"git commit","id":"laptop-p16:60","host":"laptop-p16","seq":60,"ts":"2026-08-14T10:44:47.343Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/plugin-agentfeed.design.md","task":"edit","id":"laptop-p16:61","host":"laptop-p16","seq":61,"ts":"2026-08-14T10:45:10.162Z"}
+{"agent":"build","type":"resource","resource":"file","file":"/home/nicky/code/llm-harness-plugins/plugin-agentfeed.manual.md","task":"edit","id":"laptop-p16:62","host":"laptop-p16","seq":62,"ts":"2026-08-14T10:45:28.334Z"}
+{"agent":"build","type":"resource","resource":"git","task":"git branch","id":"laptop-p16:63","host":"laptop-p16","seq":63,"ts":"2026-08-14T11:30:19.569Z"}
+{"agent":"build","type":"resource","resource":"git","task":"git commit","id":"laptop-p16:64","host":"laptop-p16","seq":64,"ts":"2026-08-14T11:30:42.542Z"}
