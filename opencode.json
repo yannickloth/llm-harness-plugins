@@ -1,59 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "./guardrail-chain/opencode/index.ts",
-    "./general-skills/opencode/index.ts",
-    "./latex-toolkit/opencode/index.ts",
-    "./typst-toolkit/opencode/index.ts",
     "./datetime-inject/opencode/index.ts",
-    "./agentfeed/opencode/index.ts",
     "./ivp/opencode/index.ts"
   ],
   "agent": {
-    "guardrail-chain": {
-      "file": "./guardrail-chain/prompts/agent-prompt.md",
-      "mode": "subagent"
-    },
-    "bibliography-auditor": {
-      "file": "./general-skills/agents/bibliography-auditor.md",
-      "mode": "subagent"
-    },
-    "citation-fidelity-auditor": {
-      "file": "./general-skills/agents/citation-fidelity-auditor.md",
-      "mode": "subagent"
-    },
-    "config-auditor": {
-      "file": "./general-skills/agents/config-auditor.md",
-      "mode": "subagent"
-    },
-    "logic-auditor": {
-      "file": "./general-skills/agents/logic-auditor.md",
-      "mode": "subagent"
-    },
-    "math-verifier": {
-      "file": "./general-skills/agents/math-verifier.md",
-      "mode": "subagent"
-    },
-    "proof-soundness-auditor": {
-      "file": "./general-skills/agents/proof-soundness-auditor.md",
-      "mode": "subagent"
-    },
-    "redundancy-auditor": {
-      "file": "./general-skills/agents/redundancy-auditor.md",
-      "mode": "subagent"
-    },
-    "style-auditor": {
-      "file": "./general-skills/agents/style-auditor.md",
-      "mode": "subagent"
-    },
-    "style-naturalizer": {
-      "file": "./general-skills/agents/style-naturalizer.md",
-      "mode": "subagent"
-    },
-    "xref-checker": {
-      "file": "./general-skills/agents/xref-checker.md",
-      "mode": "subagent"
-    },
     "driver-identifier": {
       "file": "./ivp/agents/driver-identifier.md",
       "mode": "subagent"
@@ -73,22 +24,6 @@
     "ivp-refactor-auditor": {
       "file": "./ivp/agents/ivp-refactor-auditor.md",
       "mode": "subagent"
-    },
-    "content-splitter": {
-      "file": "./typst-toolkit/agents/content-splitter.md",
-      "mode": "subagent",
-      "model": "deepseek/deepseek-v4-pro"
-    },
-    "structure-auditor": {
-      "file": "./typst-toolkit/agents/structure-auditor.md",
-      "mode": "subagent",
-      "model": "deepseek/deepseek-v4-flash"
-    },
-    "typst-writer": {
-      "file": "./typst-toolkit/agents/typst-writer.md",
-      "mode": "subagent",
-      "model": "deepseek/deepseek-v4-pro",
-      "thinking": { "type": "enabled" }
     }
   }
 }
