@@ -19,7 +19,6 @@ public class ProsePatternAnalyzer {
     // reported as tolerated (not flagged as findings).
     private static final Set<String> SCIENTIFIC_TOLERATED = Set.of(
         "Passive Voice",
-        "Hedging Stacking",
         "Formulaic Opening",
         "Abstract Noun Chain"
     );
@@ -82,6 +81,16 @@ public class ProsePatternAnalyzer {
         "generalization", "specification", "formalization"
     );
 
+    // AI-hype filler adjectives: vacuous intensifiers that add no information.
+    // Dense use is a subtle AI-style signal. Only the clearly vacuous/marketing
+    // ones are listed; ordinary academic intensifiers ("key", "significant",
+    // "various", "substantial", "robust") are common in careful writing and are
+    // deliberately NOT listed to avoid false positives.
+    private static final Set<String> FILLER_ADJECTIVES = Set.of(
+        "multifaceted", "holistic", "innovative", "seamless", "cutting-edge",
+        "revolutionary", "game-changing", "state-of-the-art", "comprehensive"
+    );
+
     // Transition words
     private static final Set<String> TRANSITION_WORDS = Set.of(
         "however", "furthermore", "moreover", "additionally", "consequently",
@@ -131,6 +140,7 @@ public class ProsePatternAnalyzer {
         allMatches.addAll(analyzeFormulaicOpenings(text, lines));
         allMatches.addAll(analyzePassiveVoice(text, lines));
         allMatches.addAll(analyzeAbstractNouns(text, lines));
+        allMatches.addAll(analyzeNominalisationBloat(text, lines));
         allMatches.addAll(analyzeFalseBalance(text, lines));
         allMatches.addAll(analyzeSummaryInflation(text, lines));
         allMatches.addAll(analyzeOverExplanation(text, lines));
@@ -150,23 +160,26 @@ public class ProsePatternAnalyzer {
      * rhetorical roles, so we bound the check to a small token window.
      */
     public List<PatternMatch> analyzeTransitions(String text, String[] lines) {
-        return analyzeStacking(text, lines, TRANSITION_WORDS, "Transition Stacking", "Structural");
+        return analyzeStacking(text, lines, TRANSITION_WORDS, "Transition Stacking", "Structural", 5);
     }
 
     /**
      * Analyze hedging stacking patterns.
-     * Bound to a small token window in the same sentence, as with transitions.
+     * Genuine hedge-bloat clusters hedges adjacently ("may potentially possibly").
+     * Legitimate scientific hedging distributes "may" across different clauses
+     * for different epistemic claims, so use a TIGHT window (at most 1
+     * intervening token) to avoid flagging legitimate distributed hedging.
      */
     public List<PatternMatch> analyzeHedging(String text, String[] lines) {
-        return analyzeStacking(text, lines, HEDGING_WORDS, "Hedging Stacking", "Lexical");
+        return analyzeStacking(text, lines, HEDGING_WORDS, "Hedging Stacking", "Lexical", 1);
     }
 
     /**
      * Shared stacking detector: flag two words from {@code words} only when they
-     * occur within {@code WINDOW} tokens of each other in the same sentence.
+     * occur within {@code window} tokens of each other in the same sentence.
      * Sentence boundaries reset the window. Returns each flagged pair once.
      */
-    private List<PatternMatch> analyzeStacking(String text, String[] lines, Set<String> words, String name, String category) {
+    private List<PatternMatch> analyzeStacking(String text, String[] lines, Set<String> words, String name, String category, int window) {
         List<PatternMatch> matches = new ArrayList<>();
         List<String> tokens = new ArrayList<>();
         List<Integer> tokenPositions = new ArrayList<>();
@@ -180,15 +193,14 @@ public class ProsePatternAnalyzer {
             tokenLineNumbers.add(findLineNumber(text, tm.start(), lines));
         }
 
-        final int WINDOW = 5;
         for (int i = 0; i < tokens.size(); i++) {
             String tok = tokens.get(i);
             if (tok.equals(".") || tok.equals("!") || tok.equals("?")) {
                 continue;
             }
             if (!words.contains(tok.toLowerCase())) continue;
-            // Look ahead within WINDOW tokens, staying in the same sentence.
-            for (int j = i + 1; j < tokens.size() && j - i <= WINDOW; j++) {
+            // Look ahead within `window` tokens, staying in the same sentence.
+            for (int j = i + 1; j < tokens.size() && j - i <= window; j++) {
                 if (tokens.get(j).equals(".") || tokens.get(j).equals("!") || tokens.get(j).equals("?")) break;
                 if (words.contains(tokens.get(j).toLowerCase())) {
                     matches.add(new PatternMatch(
@@ -279,6 +291,58 @@ public class ProsePatternAnalyzer {
                 matcher.group().trim(),
                 "Lexical"
             ));
+        }
+
+        return matches;
+    }
+
+    /**
+     * Analyze nominalisation bloat and filler-adjective density.
+     * Catches the subtle AI-style signal that crude tells miss: chains of
+     * "the X of the Y of the Z" with abstract nouns, and dense filler
+     * adjectives ("comprehensive", "multifaceted", "various", ...). These are
+     * AI-bloat even in scientific prose, so this pattern is NOT suppressed in
+     * scientific mode.
+     */
+    public List<PatternMatch> analyzeNominalisationBloat(String text, String[] lines) {
+        List<PatternMatch> matches = new ArrayList<>();
+
+        // (a) of-of-of chains around abstract nouns: "the implementation of the
+        // utilization of the optimization". Requires at least two consecutive
+        // "X of" links (three abstract nouns) so ordinary "the diversity of
+        // modularization" (a single of-link) is NOT flagged.
+        Pattern chain = Pattern.compile(
+            "(?:the\\s+)?([a-z]+(?:ation|ization|ment|ness|ity)\\s+of\\s+(?:the\\s+)?){2,}" +
+            "[a-z]+(?:ation|ization|ment|ness|ity)",
+            Pattern.CASE_INSENSITIVE
+        );
+        Matcher cm = chain.matcher(text);
+        while (cm.find()) {
+            matches.add(new PatternMatch(
+                "Nominalisation Bloat",
+                findLineNumber(text, cm.start(), lines),
+                cm.group().trim(),
+                "Lexical"
+            ));
+        }
+
+        // (b) filler-adjective density: flag the line if it contains >= 2
+        // distinct filler adjectives (a local density signal).
+        String[] lines2 = text.split("\\R");
+        for (int i = 0; i < lines2.length; i++) {
+            Set<String> found = new HashSet<>();
+            String lower = lines2[i].toLowerCase();
+            for (String adj : FILLER_ADJECTIVES) {
+                if (lower.contains(adj)) found.add(adj);
+            }
+            if (found.size() >= 2) {
+                matches.add(new PatternMatch(
+                    "Filler Adjective Density",
+                    i + 1,
+                    String.join(", ", found),
+                    "Lexical"
+                ));
+            }
         }
 
         return matches;
@@ -784,6 +848,9 @@ public class ProsePatternAnalyzer {
 
         report.append("\n---\n\n");
         report.append("**Note**: This analysis identifies prose patterns that may affect naturalness and readability.\n");
+        report.append("A zero-finding result means NO CRUDE TELLS WERE DETECTED; it does NOT prove the prose is human-written.\n");
+        report.append("The analyzer has low recall: it misses subtle AI style (nominalisation bloat, uniform rhythm, vocabulary\n");
+        report.append("compression) that does not hit the listed patterns. Confirm with a contextual LLM/human read.\n");
         report.append("Findings are based on stylometric analysis, not authorship determination.\n");
         report.append("The statistical layer (burstiness, entropy, perplexity) is a cross-reference, NOT an AI detector.\n");
         report.append("Detectors have high false-positive rates on formal, scientific, and non-native English prose.\n");
