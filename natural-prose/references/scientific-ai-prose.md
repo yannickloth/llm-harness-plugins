@@ -96,6 +96,72 @@ robotic patterns.
    generated — the most durable marker of human authorship.
 5. **Handle sources actively, not decoratively.** Each citation should carry
    the argument forward and be interpreted, not cited and abandoned.
+6. **Guide the reader, don't just report — and don't write a textbook.** The
+   goal is *reader guidance at the phrase level*, not full exposition. Invite
+   the reader to learn something and steer them through the artifact via the
+   linking phrases, introductions, and transitions that orient. See
+   `reader-guidance-phrases.md` for a non-exhaustive repertoire of voicings
+   ("to see why, note that…", "with that in place, …", "here's the catch").
+   In a *focused* paper or post you do **not** open out into a lecture — the
+   conditional/causal/mechanism framing ("what happens when X", "how KLM
+   influences RST") is used *in passing* to help a claim land, never as a
+   textbook walk-through. The artifact stays focused; the guidance is light
+   touch, in the connective tissue, not the body.
+7. **Mark the interpretive stance, don't hide behind the passive.** Prefer
+   first-person epistemic verbs — "we find", "this suggests", "we suspect",
+   "the data indicate" — over pure neutral restatement. These signal a
+   reasoning author actively separating data from inference, the closest
+   sibling to reader-guidance. (Active-voice *agency* stays
+   governed by the passive-voice tolerances below: objectivity sections keep
+   the passive when the genre demands it; the epistemic marker is about
+   *stance*, not voice.)
+8. **Stage the gap.** Name what is known, what is not known, and what the
+   paper does about it — the "And / But / Therefore" engine. The *BUT* (the
+   missing piece, the surprise, what prior work overlooked) is what a human
+   narrator adds that a data-dump omits. A gap statement sets the reader's
+   expectation for what the paper delivers.
+9. **Open results paragraphs with the question they answer.** "To verify that
+   there are no artifacts…", "We next tested whether…", "What is the
+   test-retest reliability…". Let the reader follow the author's chain of
+   logic rather than handing over conclusions. This is the paragraph-level
+   form of "to see why, note that…".
+10. **Acknowledge limitations, anomalies, and negative results.** Name what the
+    method does *not* handle, deviations from expectation, and results that
+    do not support the story (or park them in supplementary material). Honest
+    uncertainty — "your readers will doubt your authority if you overlook a
+    key piece of data that doesn't square with your perspective" — signals a
+    careful human anticipating doubt, not an omniscient machine. Qualify
+    conclusions where the data cannot support them ("supported/indicated/
+    suggested" over "proves").
+
+## Reach limits (what NOT to over-do)
+
+Two candidate techniques are tempting but should be held back, per the
+sourced guidance and the registry's own discipline:
+
+| Technique | Hold back because |
+|-----------|-------------------|
+| Chronological false-starts / dead-ends in the narrative | Readers "do not care about the chronological path by which you reached a result; they just care about the ultimate claim and the logic supporting it" (Mensh & Kording, Rule 3). Keep its mild, defensible form — acknowledging what did *not* work or anomalous results (#10) — not a tour of failed attempts. |
+| Counterfactual / degenerate-case reasoning as a named *prose* move | It is real, and lives naturally inside the reader-guidance phrasing (#6: "the degenerate case, the parameter sweep"), but no writing-guide authority treats it as a standalone prose technique. Frame it as part of guiding the reader through a claim, not as its own citable category. |
+
+## Didactic parallelism vs. rote parallelism
+
+A deliberate phrase-level contrast (a "what happens when X… what changes if
+ABC…" pair) invites the reader to hold two cases together — good guidance.
+Keep it from decaying into the formulaic repetition the registry already
+flags:
+
+| Didactic (positive) | Rote (flag) |
+|---------------------|-------------|
+| "What happens when X: the invariant collapses. What changes if ABC is instead required: the proof goes through." | "What happens when X, what happens when Y, what happens when Z." — unvarying skeleton, filler items |
+| Vary the *grammar* of the contrast (conditional / question / clause / modal) even when the *concept* is parallel | Identical opening phrase repeated in lockstep; only the subject noun changes |
+| Each branch adds a distinct causal claim or mechanism | Branches restate the same claim with swapped labels |
+| Parallelism is the point of the sentence (a deliberate either/or, a case split) | Parallelism is accidental rhythm from list-shaped filler |
+
+A phrase-level contrast is a scaffold for *reasoning*; it earns its place when
+each arm carries new content. When the arms only re-skin one idea, the variation
+is cosmetic and reads mechanical — treat it as the formulaic-parallelism pattern
+above.
 
 ## Domain tolerances (what NOT to flag)
 
@@ -163,7 +229,14 @@ unigram/bigram perplexity approximations. Use it strictly as a cross-reference.
 
 Techniques synthesised from public 2026 guidance on natural AI-assisted
 writing and on reducing detection risk in academic work (Surfer; UChicago
-ePortfolio essay on AI detection in academic writing). Claims about detector
-behaviour are reported as tendencies, not as a guarantee. The positive
-targets (voice, depth, specificity, original examples, active sources) follow
-standard academic-writing guidance and the project's own voice conventions.
+ePortfolio essay on AI detection in academic writing). The positive targets
+for *human scientific voice* (#7–#10, and the reach limits) follow verified
+writing-guide sources: UNC Writing Center ("Scientific Reports", "Scientific
+Writing"); Mensh & Kording, *Ten simple rules for structuring papers* (PLOS
+Comput Biol 2017); MIT CEE Communication Lab, "Scientific Storytelling: The
+ABT Method"; Montagnes, Montagnes & Yang, *Finding your scientific story by
+writing backwards* (2022). Counterfactual/degenerate-case reasoning is held
+as part of the teaching tone (#6) because no writing-guide authority treats it
+as a standalone prose category. Claims about detector behaviour are reported
+as tendencies, not as a guarantee. The positive targets follow standard
+academic-writing guidance and the project's own voice conventions.
