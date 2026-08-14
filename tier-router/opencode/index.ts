@@ -5,9 +5,64 @@ import { safeSpawn } from "../../shared/safe-spawn"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
+const sharedClassesDir = path.join(pluginDir, "..", "shared", "build", "classes")
+const classpath = `${classesDir}${path.delimiter}${sharedClassesDir}`
 const mainClass = "eu.infolead.llmhp.router.RouterCli"
+const routerEnv: Record<string, string> = {
+  TIER_ROUTER_PLUGIN_ROOT: pluginDir,
+}
 
-async function classifyPrompt(prompt: string): Promise<{
+const CLASSIFY_SYSTEM = [
+  "You are a prompt classifier. Classify the user's task by reasoning complexity.",
+  "Reply with ONLY one word: FABLE, HAIKU, SONNET, OPUS, or ESCALATE.",
+  "FABLE: trivial single actions (close bracket, add semicolon, append text).",
+  "HAIKU: mechanical edits with clear scope (fix typo, rename, format, lint).",
+  "SONNET: reasoning/analysis required (analyze, implement, refactor, review, debug, explain).",
+  "OPUS: deep formal reasoning (prove, formalize, math theorems, algorithm design).",
+  "ESCALATE: ambiguous, unclear scope, multiple competing goals, or genuinely uncertain.",
+].join("\n")
+
+async function classifyViaOpencode(
+  client: ReturnType<Parameters<Plugin>[0]["client"]>,
+  sessionID: string,
+  prompt: string,
+  model: { providerID: string; modelID: string } | undefined,
+): Promise<{ decision: string; tier: string; reason: string; confidence: number } | null> {
+  try {
+    const resp = await client.session.prompt({
+      path: { id: sessionID },
+      body: {
+        noReply: true,
+        model,
+        system: CLASSIFY_SYSTEM,
+        parts: [{ type: "text", text: prompt }],
+      },
+    })
+    const text = (resp.parts ?? [])
+      .filter(p => p.type === "text")
+      .map(p => (p as { text: string }).text)
+      .join(" ")
+      .trim()
+      .toUpperCase()
+    if (!text) return null
+    if (text.includes("ESCALATE")) return { decision: "escalate", tier: "", reason: "LLM: uncertain scope", confidence: 0.7 }
+    if (text.startsWith("FABLE")) return { decision: "direct", tier: "fable", reason: "LLM: trivial mechanical task", confidence: 0.9 }
+    if (text.startsWith("HAIKU")) return { decision: "direct", tier: "haiku", reason: "LLM: mechanical edit with clear scope", confidence: 0.9 }
+    if (text.startsWith("OPUS")) return { decision: "direct", tier: "opus", reason: "LLM: deep formal reasoning", confidence: 0.9 }
+    if (text.startsWith("SONNET")) return { decision: "direct", tier: "sonnet", reason: "LLM: reasoning/analysis required", confidence: 0.9 }
+    return null
+  } catch (e) {
+    console.warn(`[tier-router] opencode LLM classification failed: ${(e as Error).message}`)
+    return null
+  }
+}
+
+async function classifyPrompt(
+  client: ReturnType<Parameters<Plugin>[0]["client"]>,
+  sessionID: string,
+  prompt: string,
+  model: { providerID: string; modelID: string } | undefined,
+): Promise<{
   decision: string
   tier: string
   fleet_models: string[]
@@ -15,13 +70,33 @@ async function classifyPrompt(prompt: string): Promise<{
   confidence: number
   rewritten_prompt: string
 }> {
+  const llm = await classifyViaOpencode(client, sessionID, prompt, model)
+  if (llm) {
+    return {
+      decision: llm.decision,
+      tier: llm.tier,
+      fleet_models: [],
+      reason: llm.reason,
+      confidence: llm.confidence,
+      rewritten_prompt: prompt,
+    }
+  }
+
   const result = await safeSpawn(
-    ["java", "--class-path", classesDir, mainClass, "route"],
-    { input: prompt },
+    ["java", "--class-path", classpath, mainClass, "route"],
+    { input: prompt, env: routerEnv },
   )
   const stdout = result.stdout.trim()
   try {
-    return JSON.parse(stdout)
+    const parsed = JSON.parse(stdout)
+    return {
+      decision: parsed.decision ?? "escalate",
+      tier: parsed.tier ?? "",
+      fleet_models: parsed.fleet_models ?? [],
+      reason: parsed.reason ?? "keyword classification",
+      confidence: parsed.confidence ?? 0.5,
+      rewritten_prompt: parsed.rewritten_prompt ?? prompt,
+    }
   } catch {
     return {
       decision: "escalate",
@@ -36,8 +111,8 @@ async function classifyPrompt(prompt: string): Promise<{
 
 async function checkAmbiguity(prompt: string): Promise<string | null> {
   const result = await safeSpawn(
-    ["java", "--class-path", classesDir, mainClass, "ambiguity"],
-    { input: prompt },
+    ["java", "--class-path", classpath, mainClass, "ambiguity"],
+    { input: prompt, env: routerEnv },
   )
   const stdout = result.stdout.trim()
   if (stdout.startsWith("ambiguous:")) {
@@ -46,7 +121,7 @@ async function checkAmbiguity(prompt: string): Promise<string | null> {
   return null
 }
 
-function generateRoutingDirective(result: {
+function buildPromptContext(result: {
   decision: string
   tier: string
   fleet_models: string[]
@@ -54,71 +129,40 @@ function generateRoutingDirective(result: {
   confidence: number
   rewritten_prompt: string
 }): string {
-  const fleetModels = result.fleet_models ?? []
-  const hasFleet = fleetModels.length > 0
+  const original = result.rewritten_prompt
+  const problems: string[] = []
 
-  if (result.decision === "escalate") {
-    return `<routing-recommendation>
-ROUTING DIRECTIVE — MANDATORY ACTION REQUIRED. No interpretation allowed.
-
-Decision: ESCALATE
-Target: router agent
-Reason: ${result.reason}
-Confidence: ${result.confidence.toFixed(2)}
-
-ACTION INSTRUCTIONS:
-- You MUST NOT handle this request directly
-- You MUST use the Task tool to invoke a router agent (sonnet-general or the project router)
-- You MUST NOT ask clarifying questions about routing
-- Execute immediately with no hesitation
-
-ORIGINAL PROMPT (rewritten): ${result.rewritten_prompt}
-</routing-recommendation>`
+  if (/^(can you|could you|would you|i want|i need|help me|maybe|perhaps|possibly)\b/i.test(original)) {
+    problems.push("weak opener — converted to a direct imperative")
+  }
+  if (/—{2,}/.test(original)) {
+    problems.push("excessive em-dashes — replaced for clarity")
+  }
+  if (/\b(the relationship):/i.test(original)) {
+    problems.push("template language — simplified")
+  }
+  if (result.confidence < 0.4) {
+    problems.push(`low routing confidence (${result.confidence.toFixed(2)}) — prompt may lack specificity`)
   }
 
-  if (hasFleet) {
-    const [initial, specialist] = fleetModels
-    const specialistLine = specialist
-      ? `\n  2 [SPECIALIST]: ${specialist}\n  If ${initial} fails to converge after 2 rounds, escalate to ${specialist} — quality-specialist for this skill axis.`
-      : ""
+  const problemBlock = problems.length > 0
+    ? `Prompt problems identified:\n${problems.map(p => `- ${p}`).join("\n")}`
+    : "Prompt problems identified: none."
 
-    return `<routing-recommendation>
-ROUTING DIRECTIVE — MANDATORY ACTION REQUIRED. No interpretation allowed.
+  const classification = `Classification: ${result.decision} (confidence ${result.confidence.toFixed(2)}). ${result.reason}.`
 
-Decision: DIRECT
-Skill Axis Match — Fleet Models (try in order):
-  1 [INITIAL]:  ${initial}${specialistLine}
-Reason: ${result.reason}
-Confidence: ${result.confidence.toFixed(2)}
+  return `<prompt-annotation>
+The user's request below has been reformulated to the highest prompt standard. Treat the reformulated version as guidance for how to interpret and answer the user's words. Do NOT dispatch to another agent — handle the user's request directly.
 
-ACTION INSTRUCTIONS:
-- You MUST NOT handle this request directly
-- You MUST use the Task tool to invoke an agent using model: ${initial}
-- You MUST pass the user's original request below
-- You MUST NOT ask clarifying questions
-- Execute immediately with no hesitation
+${problemBlock}
 
-ORIGINAL PROMPT: ${result.rewritten_prompt}
-</routing-recommendation>`
-  }
+${classification}
 
-  return `<routing-recommendation>
-ROUTING DIRECTIVE — MANDATORY ACTION REQUIRED. No interpretation allowed.
-
-Decision: DIRECT
-Target tier: ${result.tier}-general
-Reason: ${result.reason}
-Confidence: ${result.confidence.toFixed(2)}
-
-ACTION INSTRUCTIONS:
-- You MUST NOT handle this request directly
-- You MUST use the Task tool to invoke the ${result.tier}-general agent
-- You MUST pass the rewritten prompt below to the agent
-- You MUST NOT ask clarifying questions
-- Execute immediately with no hesitation
-
-REWRITTEN PROMPT: ${result.rewritten_prompt}
-</routing-recommendation>`
+User's original request (authoritative):
+"""
+${original}
+"""
+</prompt-annotation>`
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
@@ -137,11 +181,11 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       if (!textPart) return
       if (!textPart.text.trim()) return
 
-      const result = await classifyPrompt(textPart.text)
-      const directive = generateRoutingDirective(result)
-      logger.info(`rewrite ${JSON.stringify({ sessionID, tier: result.tier, confidence: result.confidence })}`)
+      const result = await classifyPrompt(client, sessionID, textPart.text, input.model)
+      logger.info(`annotate ${JSON.stringify({ sessionID, tier: result.tier, confidence: result.confidence })}`)
 
-      textPart.text = directive
+      const annotation = buildPromptContext(result)
+      textPart.text = `${textPart.text}\n\n${annotation}`
     },
 
     tool: {
@@ -151,8 +195,23 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           prompt: tool.schema.string().describe("The user prompt to classify"),
         },
         async execute(args) {
-          const result = await classifyPrompt(args.prompt)
-          return JSON.stringify(result, null, 2)
+          const result = await safeSpawn(
+            ["java", "--class-path", classpath, mainClass, "route"],
+            { input: args.prompt, env: routerEnv },
+          )
+          const stdout = result.stdout.trim()
+          try {
+            return JSON.stringify(JSON.parse(stdout), null, 2)
+          } catch {
+            return JSON.stringify({
+              decision: "escalate",
+              tier: "sonnet",
+              fleet_models: [],
+              reason: "classification failed — defaulting to sonnet",
+              confidence: 0.5,
+              rewritten_prompt: args.prompt,
+            }, null, 2)
+          }
         },
       }),
 
@@ -166,8 +225,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         },
         async execute(args) {
           const result = await safeSpawn(
-            ["java", "--class-path", classesDir, mainClass, "rewrite", args.tier],
-            { input: args.prompt },
+            ["java", "--class-path", classpath, mainClass, "rewrite", args.tier],
+            { input: args.prompt, env: routerEnv },
           )
           return result.stdout.trim()
         },
