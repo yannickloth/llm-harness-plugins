@@ -25,16 +25,26 @@ Usage: `/naturalize <scope> [domain]`
 
 ## Flow
 
-0. **Resolve scope to the full document.** A `.typ` file is complete with its
-   transitive `#include`s: auditing `main.typ` means auditing the whole
-   document it denotes (title, all included chapters, bibliography). So when
-   the scope is an aggregator file, resolve its `#import`/`#include`/`\input`/
-   `\include` directives and audit the transitively-included prose files, not
-   just the aggregator's own few lines. If the scope resolves to zero
-   prose-bearing files, stop and confirm the intended scope.
+0. **Resolve scope to the FULL transitive document set.** A `.typ` file is
+   complete with its transitive `#include`s, and a real audit covers every
+   transitively-included file. Resolve the full include graph recursively
+   (every `#import`/`#include`/`\input`/`\include`, followed transitively),
+   NOT just the aggregator's direct chapters. Use
+   `TypstIncludeResolver.java` (sibling tool) when available:
+   ```bash
+   java <tools-path>/TypstIncludeResolver.java <root.typ>
+   ```
+   This lists every reachable `.typ` file. Classify the result into
+   (a) expository prose chapters — always audit; (b) `shared/**` formal
+   definitions/claims/proofs — audit the prose *inside* the environments
+   (they are terse by design, so expect few findings, but do not skip them);
+   (c) `lib/**` and infrastructure files — NOT prose (only `#show`/`#let`/
+   function definitions); do not run a prose analyzer on them. If the scope
+   resolves to zero prose-bearing files, stop and confirm the intended scope.
 1. **Deterministic scan (mandatory).** Extract the prose (strip Typst/LaTeX
    markup, `@labels`, `$math$`, `#...(...)` calls, bold markers) and run
-   `ProsePatternAnalyzer.java` on every prose-bearing file with the active
+   `ProsePatternAnalyzer.java` on EVERY prose-bearing file in the resolved
+   set — the expository chapters AND the `shared/` files — with the active
    domain:
    ```bash
    java <path-from-tool> <file> [--domain scientific]

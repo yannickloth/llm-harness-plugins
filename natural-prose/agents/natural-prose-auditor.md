@@ -36,11 +36,14 @@ just because it is not on the list. If the project is the IVP book series,
 
 ## Process
 
-1. **Resolve the scope.** If the target is an aggregator file (e.g. `main.typ`
-   containing `#include`/`#import` directives), resolve its transitive includes
-   and read the full resolved document — a `.typ` file is complete with its
-   includes. Audit the prose of every transitively-included prose file, not just
-   the aggregator's own lines.
+1. **Resolve the FULL transitive scope.** A `.typ` file is complete with its
+   transitive `#include`s. If the target is an aggregator file (e.g. `main.typ`),
+   resolve the whole include graph recursively — every transitively-included
+   `.typ` file, including `shared/**` definitions/claims/proofs (audit the prose
+   inside their environments) — NOT just the aggregator's direct chapters.
+   Exclude only infrastructure files (`lib/**` containing `#show`/`#let`/
+   functions, which contain no natural prose). Use `TypstIncludeResolver.java`
+   when available to get the full set.
 2. Read the target section(s).
 3. Load the reference for the active domain.
 4. **Load house-style first (scientific mode, HARD).** Read the project's
