@@ -31,10 +31,23 @@ export const defaultWatermarkStore: WatermarkStore = {
     return EMPTY_WATERMARK
   },
   write: async (p, wm) => {
-    await fsp.mkdir(path.dirname(p), { recursive: true })
+    const dir = path.dirname(p)
     const tmp = `${p}.${process.pid}.tmp`
-    await fsp.writeFile(tmp, JSON.stringify(wm), "utf8")
-    await fsp.rename(tmp, p)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await fsp.mkdir(dir, { recursive: true })
+        await fsp.writeFile(tmp, JSON.stringify(wm), "utf8")
+        await fsp.rename(tmp, p)
+        return
+      } catch (e: any) {
+        // A concurrent op (e.g. `git clean` removing the git-ignored .agentfeed
+        // dir during a coordination cycle) can remove the watermark directory
+        // between the temp write and the rename (ENOENT). Recreate the dir and
+        // retry; on the final attempt leave the error to the caller.
+        if (attempt < 2 && e?.code === "ENOENT") continue
+        throw e
+      }
+    }
   },
 }
 

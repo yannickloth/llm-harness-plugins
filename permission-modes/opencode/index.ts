@@ -36,19 +36,23 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       const toolName = input.tool
       const filePath = extractFilePath(output.args, toolName)
 
+      let parsed: any
       try {
         const result = await java(["check", root, toolName, filePath])
-        const parsed = JSON.parse(result.stdout.trim())
-
-        if (parsed.allowed !== true) {
-          throw new Error(parsed.reason ?? "permission denied")
-        }
+        parsed = JSON.parse(result.stdout.trim())
       } catch (e) {
-        if ((e as Error).message !== "permission check error") {
-          throw e
-        }
         logger.error(`check failed: ${(e as Error).message}`)
-        throw new Error("permission check error")
+        // Check infrastructure failure must not silently allow dangerous tools:
+        // fail closed on tools whose check could not be evaluated.
+        throw new Error(parsed ? `permission check error: ${parsed.reason ?? "unknown"}` : "permission check error")
+      }
+      // Tri-state from the Java CLI: allow (allowed=true), prompt (allowed=false
+      // + promptUser=true), deny (allowed=false + promptUser=false). Under the
+      // current plugin API (tool.execute.before → Promise<void>, throw to block),
+      // we throw only on a genuine hard deny; allow and prompt both return
+      // normally so opencode's own permission gate handles the prompt.
+      if (parsed.allowed === false && parsed.promptUser !== true) {
+        throw new Error(parsed.reason ?? "permission denied")
       }
     },
 

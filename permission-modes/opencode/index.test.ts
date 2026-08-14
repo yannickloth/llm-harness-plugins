@@ -78,83 +78,54 @@ describe("permission-modes", () => {
     expect(typeof handler).toBe("function")
   })
 
-  test("tool.execute.before handles allowed = true correctly", async () => {
+  test("tool.execute.before allows prompt + allow tri-states (no throw) and denies", async () => {
     const tmpDir = `${require("os").tmpdir()}/perm-test-${Date.now()}`
     const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
 
     const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
 
-    const ret = await result["tool.execute.before"]({ tool: "read", args: { filePath: "src/main.ts" } })
-    expect(ret).toBeDefined()
-    expect(ret.mode).toBeDefined()
-    expect(typeof ret.reason).toBe("string")
+    // Prompt tri-state (default mode returns promptUser=true): must NOT throw,
+    // so the tool proceeds and opencode's own permission gate handles prompting.
+    await expect(
+      result["tool.execute.before"]({ tool: "read" }, { args: { filePath: "src/main.ts" } }),
+    ).resolves.toBeUndefined()
+    await expect(
+      result["tool.execute.before"]({ tool: "bash" }, { args: { command: "echo hi" } }),
+    ).resolves.toBeUndefined()
+    await expect(
+      result["tool.execute.before"]({ tool: "edit" }, { args: { filePath: "src/main.ts", oldString: "x", newString: "y" } }),
+    ).resolves.toBeUndefined()
+    await expect(
+      result["tool.execute.before"]({ tool: "write" }, { args: { path: "out.txt", content: "hi" } }),
+    ).resolves.toBeUndefined()
+    await expect(
+      result["tool.execute.before"]({ tool: "read" }, { args: { file_path: "README.md" } }),
+    ).resolves.toBeUndefined()
+    await expect(
+      result["tool.execute.before"]({ tool: "task" }, { args: { filePath: "tmp/plan.md" } }),
+    ).resolves.toBeUndefined()
   })
 
-  test("tool.execute.before returns error gracefully on broken JVM", async () => {
-    const tmpDir = `${require("os").tmpdir()}/perm-test-broken-${Date.now()}`
-    const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
+  test("tool.execute.before throws on hard deny, allows on prompt", async () => {
+    const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-deny-${Date.now()}`)
+    try {
+      const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
+      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
 
-    const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      // dontAsk mode -> bash is a silent hard deny (promptUser=false) -> throws.
+      await result.tool["permission-mode"].execute({ mode: "dontAsk" })
+      await expect(
+        result["tool.execute.before"]({ tool: "bash" }, { args: { command: "rm -rf /" } }),
+      ).rejects.toThrow()
 
-    const ret = await result["tool.execute.before"]({ tool: "read", args: {} })
-    expect(ret).toBeDefined()
-    expect(ret.mode).toBeDefined()
-  })
-
-  test("tool.execute.before extracts bash command as filePath", async () => {
-    const tmpDir = `${require("os").tmpdir()}/perm-test-bash-${Date.now()}`
-    const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-
-    const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
-
-    const ret = await result["tool.execute.before"]({ tool: "bash", args: { command: "rm -rf .git" } })
-    expect(ret).toBeDefined()
-    expect(ret.mode).toBeDefined()
-    expect(typeof ret.reason).toBe("string")
-  })
-
-  test("tool.execute.before handles edit with filePath", async () => {
-    const tmpDir = `${require("os").tmpdir()}/perm-test-edit-${Date.now()}`
-    const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-
-    const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
-
-    const ret = await result["tool.execute.before"]({ tool: "edit", args: { filePath: "src/main.ts", oldString: "x", newString: "y" } })
-    expect(ret).toBeDefined()
-    expect(ret.mode).toBeDefined()
-  })
-
-  test("tool.execute.before handles write with path alias", async () => {
-    const tmpDir = `${require("os").tmpdir()}/perm-test-write-${Date.now()}`
-    const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-
-    const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
-
-    const ret = await result["tool.execute.before"]({ tool: "write", args: { path: "out.txt", content: "hi" } })
-    expect(ret).toBeDefined()
-    expect(ret.mode).toBeDefined()
-  })
-
-  test("tool.execute.before handles read with file_path alias", async () => {
-    const tmpDir = `${require("os").tmpdir()}/perm-test-read-${Date.now()}`
-    const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-
-    const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
-
-    const ret = await result["tool.execute.before"]({ tool: "read", args: { file_path: "README.md" } })
-    expect(ret).toBeDefined()
-    expect(ret.mode).toBeDefined()
-  })
-
-  test("tool.execute.before handles task with filePath", async () => {
-    const tmpDir = `${require("os").tmpdir()}/perm-test-task-${Date.now()}`
-    const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-
-    const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
-
-    const ret = await result["tool.execute.before"]({ tool: "task", args: { filePath: "tmp/plan.md" } })
-    expect(ret).toBeDefined()
-    expect(ret.mode).toBeDefined()
+      // default mode -> read is a prompt (promptUser=true) -> must NOT throw.
+      await result.tool["permission-mode"].execute({ mode: "default" })
+      await expect(
+        result["tool.execute.before"]({ tool: "read" }, { args: { filePath: "README.md" } }),
+      ).resolves.toBeUndefined()
+    } finally {
+      require("fs").rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 
   test("permission-mode tool transitions", async () => {
@@ -283,13 +254,18 @@ describe("permission-modes", () => {
     }
   })
 
-  test("tool.execute.before returns error mode string on parse failure", async () => {
+  test("tool.execute.before reads filePath from output.args aliases", async () => {
     const tmpDir = `${require("os").tmpdir()}/perm-test-parserr-${Date.now()}`
     const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
     const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
 
-    const ret = await result["tool.execute.before"]({ tool: "read", args: { filePath: "src/" + "x".repeat(10000) } })
-    expect(ret).toBeDefined()
-    expect(typeof ret.reason).toBe("string")
+    // read uses file_path alias; prompt tri-state must not throw.
+    await expect(
+      result["tool.execute.before"]({ tool: "read" }, { args: { file_path: "README.md" } }),
+    ).resolves.toBeUndefined()
+    // bash uses command as the path; prompt tri-state must not throw.
+    await expect(
+      result["tool.execute.before"]({ tool: "bash" }, { args: { command: "ls" } }),
+    ).resolves.toBeUndefined()
   })
 })
