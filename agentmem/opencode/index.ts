@@ -206,7 +206,7 @@ Answer (YES/NO):`
   try {
     proc = spawnDetached(
       ["opencode", "run", "--model", "deepseek/deepseek-v4-flash",
-       "--agent", "memory-keeper", "--print", "--",
+       "--agent", "memory-keeper", "--print", "--title", "Memory maintenance (classifier)", "--",
        "Answer YES or NO only, based on the prompt in stdin."],
       { stdout: "pipe", stderr: "pipe" }
     )
@@ -233,6 +233,7 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
     keeper = spawnDetached(
       ["opencode", "run", "--agent", "memory-keeper",
        "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+       "--title", "Memory maintenance (keeper)",
        "Extract non-derivable learnings from the most recent conversation and persist them to .agentmem/."],
       { stdout: "pipe", stderr: "pipe" }
     )
@@ -277,6 +278,7 @@ function trySpawnDreamer(mdir: string) {
   const dreamer = spawnDetached(
     ["opencode", "run", "--agent", "memory-dreamer",
      "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+     "--title", "Memory maintenance (dreamer)",
      "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
     { stdout: "pipe", stderr: "pipe" }
   )
@@ -451,6 +453,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
             const dreamer = spawnDetached(
               ["opencode", "run", "--agent", "memory-dreamer",
                "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+               "--title", "Memory maintenance (dreamer)",
                "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
               { stdout: "pipe", stderr: "pipe" }
             )
