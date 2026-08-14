@@ -418,10 +418,16 @@ public final class IndexCli {
             try {
                 ownerPid = Long.parseLong(content[0]);
             } catch (Exception ignored) {}
-            boolean ownerDead = ownerPid > 0 && ProcessHandle.of(ownerPid).isEmpty();
-            if (ownerDead) {
-                Files.deleteIfExists(lock);
-            } else {
+            if (ownerPid > 0 && !ProcessHandle.of(ownerPid).isEmpty()) {
+                // Owner process is alive — the lock is genuinely held. Never steal
+                // from a live owner, regardless of age, or a slow-but-healthy job
+                // would be clobbered by a concurrent one.
+                return false;
+            }
+            // Owner is dead (or unknown PID). Steal the lock unless it is fresh
+            // *and* its owner simply could not be checked — i.e. only treat a
+            // fresh lock with an unparseable PID as held.
+            if (ownerPid <= 0) {
                 try {
                     var ts = content.length >= 2 ? Instant.parse(content[1]) : null;
                     boolean fresh = ts != null
@@ -431,6 +437,7 @@ public final class IndexCli {
                     }
                 } catch (Exception ignored) {}
             }
+            Files.deleteIfExists(lock);
         }
         try {
             var out = Files.newOutputStream(lock,

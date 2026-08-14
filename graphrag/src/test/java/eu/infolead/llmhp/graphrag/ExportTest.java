@@ -471,6 +471,20 @@ public class ExportTest {
         Files.delete(dir.resolve(".lock"));
     }
 
+    static void testLockHeldWhenOwnerAliveButStale() throws Exception {
+        var dir = tmpDir().resolve("lock-alive-stale");
+        Files.createDirectories(dir);
+        var pid = ProcessHandle.current().pid();
+        // Stale timestamp (older than STALE_LOCK_SECONDS = 6h) but owner PID alive.
+        Files.writeString(dir.resolve(".lock"),
+            pid + "\n" + Instant.now().minusSeconds(7 * 3600) + "\n");
+
+        assert_true("lock: not stolen from a live owner even when stale",
+            !IndexCli.acquireLock(dir));
+        assert_true("lock: still present while live owner holds it", Files.exists(dir.resolve(".lock")));
+        Files.delete(dir.resolve(".lock"));
+    }
+
     static void testLockFreshMalformedStillHeld() throws Exception {
         var dir = tmpDir().resolve("lock-malformed");
         Files.createDirectories(dir);
@@ -543,6 +557,7 @@ public class ExportTest {
         testProofMarkerVerb();
         testLockStolenWhenOwnerDead();
         testLockHeldWhenOwnerAlive();
+        testLockHeldWhenOwnerAliveButStale();
         testLockFreshMalformedStillHeld();
         testFindFilesPrunesExcludedDirs();
         testFindFilesPrunesNestedExcluded();
