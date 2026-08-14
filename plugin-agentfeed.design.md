@@ -80,10 +80,12 @@ agentfeed/
 | `type` | `msg`, `claim`, `release`, `status`, `handoff`, `heartbeat`, `resource`, `ask`, `answer` |
 | `task`/`text` | Task id or free text |
 | `status` | `open` / `in-progress` / `done` / `failed` |
-| `lease` | Claim TTL — stale claims reclaimable |
+| `lease` | Claim/hold TTL — stale claims reclaimable |
 | `resource`/`file` | For `resource`: kind (`git`/`file`) + resource name (path/ref) |
+| `ref` | For `resource` git: branch/ref the op targets (best-effort) |
+| `action` | For `resource`: `acquire` (start using) / `release` (free) |
 
-**Types:** `msg` broadcast · `claim` ownership with lease · `release` explicit · `status` progress · `handoff` (carries target agent + task_id hint) · `heartbeat` liveness (off by default) · `resource` shared-resource activity (auto) · `ask`/`answer` question and reply.
+**Types:** `msg` broadcast · `claim` ownership with lease · `release` explicit · `status` progress · `handoff` (carries target agent + task_id hint) · `heartbeat` liveness (off by default) · `resource` shared-resource lifecycle (`acquire`/`release`, auto-acquire + explicit release) · `ask`/`answer` question and reply.
 
 ## Watermark / injection
 
@@ -92,8 +94,12 @@ agentfeed/
 
 ```
 ## Coordination digest (new since seq 3 on mbp)
-- [mbp:4] auditor: "handing ch.3 to writer"
+- [mbp:4] auditor: handed "ch.3" to writer
 - [desk:2] writer: claim "draft ch.4" (lease until 22:53)
+- [desk:3] writer: git push on main
+- [desk:4] writer: released on main
+
+⚠ possible conflict: agents auditor, writer hold branch/ref `main` concurrently — coordinate before proceeding.
 ```
 
 - **No-op → no injection** (skip when nothing new; save tokens). First user message skipped (session-title hygiene, mirrors datetime-inject).
@@ -107,7 +113,11 @@ agentfeed/
 | `coord_log(type, text)` | Append `msg`/`status`; triggers feed regen |
 | `coord_claim(task, lease?)` | Claim with TTL (default 30 min); returns `id` |
 | `coord_release(task\|id)` | Release a claim |
-| `coord_who_does_what()` | Current open claims (expired leases + released tasks excluded) |
+| `coord_resource(resource, name, action)` | Acquire/release a shared resource so others know when it is free |
+| `coord_handoff(task, to)` | Close your claim, open one for the target agent |
+| `coord_status(task, state)` | Report a task's `done`/`failed`/`in-progress` (board) |
+| `coord_heartbeat(task\|resource, kind?)` | Renew a claim/hold lease on long-running work |
+| `coord_who_does_what()` | Current open claims + held resources (expired/released excluded) |
 | `coord_await(position, timeout?)` | Wait until ledger passes position (`host:seq` or `ts\|host\|seq`) |
 | `coord_ask(question, to?)` | Broadcast a question; others see it in their digest |
 | `coord_answer(answer, questionId\|question)` | Answer a question from `coord_ask` |
@@ -118,13 +128,18 @@ Shared-resource activity is recorded **automatically** (no explicit tool call) s
 
 | Detection | Tool call → resource entry |
 |-----------|---------------------------|
-| git ops (commit, merge, checkout, push, pull, rebase, branch, stash, reset, revert, switch, restore) | `bash` whose command matches → `resource` kind `git`, `task` = `git <op>` |
+| git ops (commit, merge, checkout, push, pull, rebase, branch, stash, reset, revert, switch, restore) | `bash` whose command matches → `resource` kind `git`, `task` = `git <op>`, `ref` = target branch (best-effort) |
 | file edit/write | `edit`/`write` → `resource` kind `file`, `file` = path |
 
-- **Coalescing:** same agent editing the same file (or running the same git op) is written at most once per `resourceCoalesceMs` (default 30s) to avoid flooding; distinct ops (commit vs push) are not coalesced.
+- **Lifecycle:** auto-detected ops are **informational "touched X" events** — they are `action: "acquire"` but carry **no lease**, so they do not appear as holds in `coord_who_does_what()`. To signal that a resource is held and later freed, agents call `coord_resource(action: "acquire"/"release")`; explicit acquires carry a lease (`resourceLeaseMs`, 30 min) and are reclaimable after expiry. `coord_who_does_what()` lists only lease-held resources so others know when they free.
+- **Coalescing:** same agent editing the same file (or running the same git op+ref) is written at most once per `resourceCoalesceMs` (default 30s) to avoid flooding; distinct ops (commit vs push) or branches are not coalesced.
 - **Agent attribution:** resolved via a `sessionID → agent` map populated from `chat.message` (which carries `agent`).
-- **Config:** `autoGit` (default true), `autoFile` (default true) disable per-kind capture; `resourceCoalesceMs` tunes the window.
+- **Config:** `autoGit` (default true), `autoFile` (default true) disable per-kind capture; `resourceCoalesceMs` tunes the window; `resourceLeaseMs` sets the default hold TTL for explicit acquires.
 - **Not auto-captured:** general "what I'm working on" and Q&A — those need the model to call `coord_*` (no reliable trigger to infer intent).
+
+## Conflict detection
+
+`buildDigest` scans entries in position order and tracks **lease-held** resources. It flags an `⚠ possible conflict: agents a, b hold <kind> `<name>` concurrently — coordinate before proceeding.` alert when one agent acquires a resource another still holds (release between them clears it). Auto "touched X" events (no lease) do not raise conflicts. Pure digest-side analysis — no new tools — catching the exact collision class the ledger exists to prevent.
 
 ## Feed generation
 

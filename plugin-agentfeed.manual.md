@@ -29,8 +29,12 @@ Three mechanisms, one shared append-only JSONL ledger (`agentfeed/ledger.jsonl`,
 | `coord_log(type, text)` | Publish a `msg` or `status` update |
 | `coord_claim(task, leaseMinutes?)` | Claim a task (default lease 30 min); returns claim id |
 | `coord_release(task\|id)` | Release a claim |
-| `coord_who_does_what()` | List current open claims (expired leases + released tasks excluded) — call before starting work to avoid duplicating |
-| `coord_await(position, timeoutSeconds?)` | Wait until the ledger advances past a position. `position` = an entry id (`host:seq`) or a watermark (`ts\|host\|seq`) |
+| `coord_resource(resource, name, action)` | Acquire/release a shared resource (git or file); release signals it is free |
+| `coord_handoff(task, to)` | Close your claim and open one for a target agent |
+| `coord_status(task, state)` | Mark a task `done`/`failed`/`in-progress` (task board) |
+| `coord_heartbeat(task\|resource, kind?)` | Renew a claim/hold lease on long-running work |
+| `coord_who_does_what()` | List open claims + held resources (expired/released excluded) — call before starting work to avoid duplicating |
+| `coord_await(position, timeoutSeconds?)` | Wait until the ledger advances past a position. `position` = an entry id (`host:seq`) or a watermark (`ts\|host\|seq`); wait on a resource release to know when it frees |
 | `coord_ask(question, to?)` | Broadcast a question; others see it in their digest |
 | `coord_answer(answer, questionId\|question)` | Answer a question from `coord_ask` |
 
@@ -52,10 +56,21 @@ Git/file activity is recorded automatically; the guide focuses on the *intent* s
 
 Shared-resource activity is recorded **automatically** — you don't need to call a tool for it:
 
-- **git operations** (commit, merge, checkout, push, pull, rebase, branch, stash, reset, revert, switch, restore) → a `resource` (git) entry
+- **git operations** (commit, merge, checkout, push, pull, rebase, branch, stash, reset, revert, switch, restore) → a `resource` (git) entry, with the branch it targets
 - **file edits/writes** (`edit`/`write`) → a `resource` (file) entry with the path
 
-These let other agents see where you're working and avoid conflicts. To prevent flooding, the same agent editing the same file (or running the same git operation) is recorded at most once per 30s — distinct operations (e.g. a commit then a push) are each recorded. Disable per-kind via `autoGit`/`autoFile`.
+These are **informational "touched X" events** — they show where you work but do not
+mark the resource as held. To signal that a resource is **held** and then **free**, use
+`coord_resource`:
+
+- `coord_resource(resource, name, action: "acquire")` — marks it held with a 30-min
+  lease, visible in `coord_who_does_what()`.
+- `coord_resource(resource, name, action: "release")` — frees it so others can take over.
+- On long-running holds, `coord_heartbeat(...)` renews the lease so it isn't reclaimed mid-work.
+
+To prevent flooding, the same agent editing the same file (or running the same git op on the same branch) is recorded at most once per 30s — distinct operations (e.g. a commit then a push) are each recorded. Disable per-kind via `autoGit`/`autoFile`.
+
+The digest also flags **concurrent holds** — if two agents hold the same resource at once, an `⚠ possible conflict` line is appended so they resolve it before proceeding.
 
 What is **not** auto-captured: general "what I'm working on" updates and Q&A — call `coord_log`/`coord_ask`/`coord_answer` for those.
 
@@ -74,7 +89,7 @@ What is **not** auto-captured: general "what I'm working on" updates and Q&A —
 | `ts` | UTC ISO-8601 |
 | `agent` | Publishing agent |
 | `type` | `msg`, `claim`, `release`, `status`, `handoff`, `heartbeat`, `resource`, `ask`, `answer` |
-| `task` / `text` / `status` / `lease` / `target` / `resource` / `file` | Per-type payload |
+| `task` / `text` / `status` / `lease` / `target` / `resource` / `file` / `ref` / `action` | Per-type payload. For `resource`: `ref` = git branch; `action` = `acquire`/`release` |
 
 **Commit the ledger** (it's the coordination record). **Feed output and watermarks are git-ignored** (generated / per-session state).
 
@@ -94,7 +109,7 @@ java --class-path agentfeed/build/classes eu.infolead.llmhp.agentfeed.AtomCli --
 ## Configuration
 
 ```ts
-{ ledgerDir?, maxDigestEntries?, liveFeeds?, javaBinary?, feedOutDir?, autoGit?, autoFile?, resourceCoalesceMs? }
+{ ledgerDir?, maxDigestEntries?, liveFeeds?, javaBinary?, feedOutDir?, autoGit?, autoFile?, resourceCoalesceMs?, resourceLeaseMs? }
 ```
 
 | Option | Default |
@@ -107,6 +122,7 @@ java --class-path agentfeed/build/classes eu.infolead.llmhp.agentfeed.AtomCli --
 | `autoGit` | `true` |
 | `autoFile` | `true` |
 | `resourceCoalesceMs` | 30000 |
+| `resourceLeaseMs` | 1800000 (30 min) |
 
 ## Testing
 
