@@ -31,14 +31,35 @@ Read the `$ARGUMENTS` for a `domain` value. Two modes:
 
 ## Process
 
-1. Read the target section(s).
-2. Load the reference for the active domain.
-3. Run the optional deterministic helper (below) as a cross-reference.
-4. Audit against the registry: tell-words, formulaic construction, hedging,
+1. **Resolve the scope.** If the target is an aggregator file (e.g. `main.typ`
+   containing `#include`/`#import` directives), resolve its transitive includes
+   and read the full resolved document — a `.typ` file is complete with its
+   includes. Audit the prose of every transitively-included prose file, not just
+   the aggregator's own lines.
+2. Read the target section(s).
+3. Load the reference for the active domain.
+4. **Load house-style first (scientific mode, HARD).** Read the project's
+   `.agents/context/writing-style.md` "Preferred Alternatives" and "Lists ARE
+   Appropriate When" sections, and `.agents/context/terminology.md`. These
+   establish what the project *endorses*. Do NOT flag patterns the project
+   explicitly prefers (inline "First... Second... Third..." enumeration,
+   finding blocks, structured lists for genuine parallel items).
+5. **Confirm the deterministic scan (mandatory).** The orchestrating skill runs
+   `ProsePatternAnalyzer.java` first and passes you its output. If it did not
+   run (no scan output was provided), run it yourself now on stripped prose —
+   do not proceed to the contextual audit without it. If the analyzer is
+   unavailable, report that explicitly rather than silently skipping it.
+   Reconcile your contextual read against the scan: where they agree you have
+   high confidence; where they disagree, note the disagreement.
+6. Audit against the registry: tell-words, formulaic construction, hedging,
    nominalisation, passive voice, rhythmic uniformity, description-vs-argument.
-5. Check for the positive human targets (voice, depth, specificity, original
+7. **Classify structural repetition.** Distinguish mechanical uniformity
+   (flag, worth fixing) from deliberate rhetorical device or house-style
+   convention (do NOT flag). When unsure whether a repetition is deliberate or
+   mechanical, default to NOT flagging.
+8. Check for the positive human targets (voice, depth, specificity, original
    examples) and flag their absence.
-6. Report findings grouped by category (Structural / Lexical / Syntactic /
+9. Report findings grouped by category (Structural / Lexical / Syntactic /
    Rhetorical), each with a severity and a quote of the matched text.
 
 ## Severity
@@ -65,13 +86,21 @@ Never flag expository patterns inside formal environments, and never suggest
 naturalising them. Formal environments stay terse and exact. If a pattern
 appears inside a `#definition`, `#theorem`, `#proof`, etc., skip it.
 
-## Optional deterministic helper
+## Deterministic helper (mandatory cross-reference)
 
-If the analyzer is available, run it for a repeatable cross-reference:
+The orchestrating skill runs this first and passes you the output. If not, run
+it yourself. It is mandatory, not optional: it is the objective baseline your
+contextual audit checks against.
+
+Resolve the analyzer path deterministically with the `naturalize-analyzer-path`
+tool (registered by this plugin) — never hardcode or search for it. Then run:
 
 ```bash
-java /home/nicky/code/llm-harness-plugins/general-skills/tools/ProsePatternAnalyzer.java <file> [general|scientific]
+java <path-from-tool> <file> [--domain scientific]
 ```
+
+If the tool returns `NOT FOUND`, STOP and report that the analyzer is missing —
+do not proceed without the deterministic baseline.
 
 It produces two layers:
 1. **Pattern findings** — regex-level tell-word / construction matches.

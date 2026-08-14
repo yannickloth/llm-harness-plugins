@@ -38,6 +38,10 @@ Determine the register of the target before rating.
   consistent authorial house style as "AI-like."
 - **Technical / formal environments** (definitions, theorems, proofs, formal
   boxes) are excluded — they are deliberately terse and exact.
+- If the project has a writing-style guide (`.agents/context/writing-style.md`),
+  read its "Preferred Alternatives" and "Lists ARE Appropriate When" sections
+  so you recognise conventions the project explicitly endorses (inline
+  "First... Second..." enumeration, finding blocks) and do not penalise them.
 - You are looking ONLY for machine-specific phrasing: tell-words (delve,
   leverage, moreover-stacking, tapestry, etc.), formulaic paragraph openings,
   hedge-stacking, uniform sentence rhythm, nominalisation chains, or prose that

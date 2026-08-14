@@ -30,9 +30,40 @@ Read the `$ARGUMENTS` for a `domain` value. Two modes:
 
 ## Process
 
-1. Read the flagged passage.
-2. Read it aloud mentally.
-3. Rewrite to natural prose per the active reference.
+1. **Load house-style first (scientific mode, HARD).** Before deciding anything,
+   read the project's own style constraints in this order:
+   - `.agents/context/writing-style.md` — especially the "Preferred
+     Alternatives" and "Lists ARE Appropriate When" sections. These explicitly
+     endorse inline enumeration ("First, X. Second, Y. Third, Z."), structured
+     lists for genuine parallel items, formal-environment terse prose, and the
+     narrative-cohesion rules.
+   - `.agents/context/terminology.md` — controlled vocabulary and banned words.
+   - (for `.typ` sources) `.agents/context/typst-syntax-rules.md`.
+   Treat every pattern the project guide *endorses* as **leave-alone**, not a
+   naturalisation target. Do not "fix" what the project explicitly prefers.
+2. Read the flagged passage.
+3. Read it aloud mentally.
+4. Classify the passage (see "Intentional rhetoric vs uniformity").
+5. Rewrite to natural prose per the active reference, honouring the
+   house-style guard.
+6. **Self-verify meaning preservation** (see "Meaning-preservation self-verify").
+
+## Intentional rhetoric vs uniformity (HARD guard)
+
+Before rewriting any flagged passage, classify it. Not every repetition is a
+tell.
+
+| Signal | Verdict |
+|--------|---------|
+| Deliberate rhetorical device (anaphora that builds force, bookending that closes a chapter, a parallel construction that lands an argument) | **Leave** — it is effective prose |
+| Inline enumeration explicitly endorsed by the writing guide ("First... Second... Third...") | **Leave** |
+| A structural finding block (e.g. "Finding N:" summary, "Level N:" analysis) that conveys distinct content per item | **Leave** if each item is substantive |
+| Mechanical uniformity with no rhetorical purpose (repeated sentence opener with no force, a template that adds nothing) | **Fix** |
+
+When unsure whether a repetition is deliberate or mechanical, **default to
+leave** — over-naturalising effective prose is worse than leaving one
+mechanical passage. If you do fix a borderline case, report it explicitly so
+the author can veto.
 
 ## Core rewriting rules (both modes)
 
@@ -66,6 +97,21 @@ Read the `$ARGUMENTS` for a `domain` value. Two modes:
   flow only.
 - Keep similar length.
 
+## Meaning-preservation self-verify
+
+After rewriting, verify you preserved meaning:
+
+- **No new facts, claims, citations, or ideas** were introduced.
+- **No fact was removed or weakened.** Re-read the original and the rewrite;
+  every claim, number, named entity, and citation survives.
+- **No hedge strength changed** unless you intentionally removed stacked
+  hedging. Do not turn "may be" into "is", or "is" into "may be".
+- **The rewrite is roughly the same length** (within ~10-15%).
+- **No formal environment or notation was altered** (scientific mode).
+
+If any check fails, revert that passage and redo the rewrite. Report in the
+output which passages were verified clean.
+
 ## Test
 
 If the passage stands alone without connecting verbs, requires mental
@@ -75,4 +121,6 @@ rewrite as full sentences.
 ## Output
 
 Report which passages were changed and how. In scientific mode, confirm that
-no formal environment or notation was altered.
+no formal environment or notation was altered. List any passage you classified
+as intentional rhetoric / house-style and left untouched, so the author knows
+what was considered and deliberately preserved.

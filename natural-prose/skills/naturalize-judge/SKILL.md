@@ -25,14 +25,19 @@ verdict.
 
 ## Flow
 
-1. **Statistical layer (optional).** If the shared analyzer is available, run it
-   first for a deterministic cross-reference:
+1. **Statistical layer (mandatory).** Extract the prose (strip markup) and run
+   `ProsePatternAnalyzer.java` on every prose-bearing file with the active
+   domain:
    ```bash
-   java .../ProsePatternAnalyzer.java <file> [general|scientific]
+   java <path-from-tool> <file> [--domain scientific]
    ```
-2. **Judge.** Run `natural-prose-perplexity-judge` on the scope. It rates each
-   file 1-10, notes predictability, quotes findings with file:line, and ranks
-   "naturalise first" candidates.
+   Resolve the analyzer path with the `naturalize-analyzer-path` tool (never
+   hardcode or search). If it returns NOT FOUND, STOP and report it.
+   If the analyzer is unavailable, STOP and report that it could not run — do
+   not silently skip the deterministic baseline.
+2. **Judge.** Run `natural-prose-perplexity-judge` on the scope, passing it the
+   statistical-layer output. It rates each file 1-10, notes predictability,
+   quotes findings with file:line, and ranks "naturalise first" candidates.
 3. **Reconcile.** Compare the judge's ratings against the statistical layer.
    Agreement = high confidence; disagreement = note it, do not silently override.
 4. **Report.** Overall verdict + ranked naturalisation list. If the user asked

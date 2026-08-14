@@ -25,20 +25,44 @@ Usage: `/naturalize <scope> [domain]`
 
 ## Flow
 
-1. **Audit.** Run `natural-prose-auditor` with the active domain. It produces a
-   grouped findings report (Structural / Lexical / Syntactic / Rhetorical) with
-   severities and quoted text.
-2. **Naturalise.** Run `natural-prose-naturalizer` with the active domain on the
+0. **Resolve scope to the full document.** A `.typ` file is complete with its
+   transitive `#include`s: auditing `main.typ` means auditing the whole
+   document it denotes (title, all included chapters, bibliography). So when
+   the scope is an aggregator file, resolve its `#import`/`#include`/`\input`/
+   `\include` directives and audit the transitively-included prose files, not
+   just the aggregator's own few lines. If the scope resolves to zero
+   prose-bearing files, stop and confirm the intended scope.
+1. **Deterministic scan (mandatory).** Extract the prose (strip Typst/LaTeX
+   markup, `@labels`, `$math$`, `#...(...)` calls, bold markers) and run
+   `ProsePatternAnalyzer.java` on every prose-bearing file with the active
+   domain:
+   ```bash
+   java <path-from-tool> <file> [--domain scientific]
+   ```
+   Resolve the analyzer path with the `naturalize-analyzer-path` tool (never
+   hardcode or search). If it returns NOT FOUND, STOP and report it.
+   Record the pattern findings and the statistical layer (burstiness, entropy,
+   perplexity). This is objective and cheap; it runs first so the LLM audit has
+   a cross-reference to check against. If the analyzer is unavailable, STOP and
+   report that it could not run — do not silently skip it.
+2. **Audit.** Run `natural-prose-auditor` with the active domain, passing it the
+   deterministic scan output. It produces a grouped findings report (Structural
+   / Lexical / Syntactic / Rhetorical) with severities and quoted text, and
+   reconciles its contextual read against the deterministic scan.
+3. **Naturalise.** Run `natural-prose-naturalizer` with the active domain on the
    flagged passages. It rewrites to natural prose, preserving formal content
-   (scientific mode) and never introducing new facts.
-3. **Verify.** For `.typ`/`.tex` sources, build to confirm nothing broke:
+   (scientific mode) and never introducing new facts. The naturalizer loads the
+   project's house-style guide first and will NOT rewrite patterns the project
+   explicitly endorses (inline enumeration, finding blocks, deliberate rhetoric).
+4. **Verify.** For `.typ`/`.tex` sources, build to confirm nothing broke:
    `nix build .#typst-volume-N` or `typst compile --root . <file>`.
 
 ## Agents
 
 - `natural-prose-auditor` — read-only; flags AI markers and missing human
   targets; groups findings by category with severity; applies domain
-  tolerances; may use `ProsePatternAnalyzer.java` as a cross-reference.
+  tolerances; reconciles with the deterministic `ProsePatternAnalyzer.java`
+  scan (which the skill runs first).
 - `natural-prose-naturalizer` — edits flagged passages to natural prose,
   preserving domain-appropriate conventions and (scientific mode) all formal
   content.
