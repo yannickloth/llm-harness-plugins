@@ -1,4 +1,4 @@
-import type { Plugin, tool } from "@opencode-ai/plugin"
+import { type Plugin, tool } from "@opencode-ai/plugin"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { safeSpawn } from "../../shared/safe-spawn"

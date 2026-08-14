@@ -1,4 +1,4 @@
-import type { Plugin, tool } from "@opencode-ai/plugin"
+import { type Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
 import { existsSync } from "fs"

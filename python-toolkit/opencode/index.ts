@@ -1,4 +1,4 @@
-import type { Config, Plugin, tool } from "@opencode-ai/plugin"
+import { type Config, type Plugin, tool } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
 import { $ } from "bun"
 import fs from "fs"
