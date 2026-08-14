@@ -48,7 +48,7 @@ export const EMPTY_WATERMARK: Watermark = { ts: "", host: "", seq: 0 }
 
 export type LedgerReader = {
   readEntries(p: string): Promise<LedgerEntry[]>
-  atomicWrite(p: string, content: string): Promise<void>
+  append(p: string, line: string): Promise<void>
   exists(p: string): Promise<boolean>
 }
 
@@ -71,11 +71,13 @@ export const defaultReader: LedgerReader = {
       return []
     }
   },
-  atomicWrite: async (p, content) => {
+  // True append (O_APPEND), not read-all-then-atomic-rewrite: keeps the ledger
+  // cheap to grow regardless of its length. Callers must hold the same-host lock
+  // (the plugin's withLock) so a single host's appends never interleave; cross-host
+  // union is handled by git's append-only merge driver.
+  append: async (p, line) => {
     await fsp.mkdir(path.dirname(p), { recursive: true })
-    const tmp = `${p}.${process.pid}.${Date.now()}.tmp`
-    await fsp.writeFile(tmp, content, "utf8")
-    await fsp.rename(tmp, p)
+    await fsp.appendFile(p, line, "utf8")
   },
   exists: async (p) => {
     try {
@@ -111,15 +113,16 @@ export class Ledger {
   }
 
   /**
-   * Single critical section: read current entries, derive next seq, append and
-   * rewrite atomically. Callers must hold the same-host lock around this.
+   * Single critical section: derive the next seq and append one line. Callers must
+   * hold the same-host lock around this. The write is a true O_APPEND, so cost is
+   * O(1) in file length regardless of how large the ledger has grown.
    */
   async append(filePath: string, entry: Omit<LedgerEntry, "id" | "host" | "seq" | "ts">): Promise<LedgerEntry> {
-    const entries = await this.reader.readEntries(filePath)
     // seq is per-host monotonic: only count this host's own prior entries. After
     // a git merge the ledger holds foreign-host entries with higher seqs; taking
     // a global max would corrupt this host's counter and break the id uniqueness
     // guarantee.
+    const entries = await this.reader.readEntries(filePath)
     const seq =
       entries.filter((e) => e.host === this.host).reduce((max, e) => (e.seq > max ? e.seq : max), 0) + 1
     const full: LedgerEntry = {
@@ -129,8 +132,7 @@ export class Ledger {
       seq,
       ts: iso(this.clock()),
     }
-    const content = [...entries, full].map((e) => JSON.stringify(e)).join("\n") + "\n"
-    await this.reader.atomicWrite(filePath, content)
+    await this.reader.append(filePath, JSON.stringify(full) + "\n")
     return full
   }
 }

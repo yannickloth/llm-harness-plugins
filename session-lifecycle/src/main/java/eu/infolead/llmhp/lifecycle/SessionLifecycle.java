@@ -3,7 +3,7 @@ import module java.base;
 class SessionLifecycle {
     public static void main(String... args) {
         if (args.length < 2) {
-            System.err.println("usage: session-lifecycle <record-access|record-edit|check-errors|snapshot-commits|diff-commits|archive> <project-dir> [args...]");
+            System.err.println("usage: session-lifecycle <record-access|record-edit|check-errors|snapshot-commits|diff-commits|archive|sweep> <project-dir> [args...]");
             System.exit(1);
         }
         var subcommand = args[0];
@@ -54,6 +54,7 @@ class SessionLifecycle {
                 System.setIn(new java.io.ByteArrayInputStream(stdinJson.getBytes(StandardCharsets.UTF_8)));
                 new SessionEndArchive().main();
             }
+            case "sweep" -> new SessionSweep().main();
             case "breaker-fail" -> new SessionBreakers().main();
             case "breaker-success" -> new SessionBreakers().main();
             case "breaker-check" -> new SessionBreakers().main();
@@ -63,7 +64,7 @@ class SessionLifecycle {
             case "auto-gate-reset" -> new AutoModeGate().main();
             case "auto-gate-status" -> new AutoModeGate().main();
             default -> {
-            System.err.println("usage: session-lifecycle <record-access|record-edit|check-errors|snapshot-commits|diff-commits|archive|breaker-fail|breaker-success|breaker-check|breaker-reset|auto-gate-check|auto-gate-disable|auto-gate-reset|auto-gate-status> <project-dir> [args...]");
+            System.err.println("usage: session-lifecycle <record-access|record-edit|check-errors|snapshot-commits|diff-commits|archive|sweep|breaker-fail|breaker-success|breaker-check|breaker-reset|auto-gate-check|auto-gate-disable|auto-gate-reset|auto-gate-status> <project-dir> [args...]");
                 System.exit(1);
             }
         }

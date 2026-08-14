@@ -11,8 +11,8 @@ function memReader(start: string) {
         .filter(Boolean)
         .map((l) => JSON.parse(l))
     },
-    atomicWrite: async (_p: string, c: string) => {
-      content = c
+    append: async (_p: string, line: string) => {
+      content += line
     },
     exists: async () => content.length > 0,
   }
@@ -55,14 +55,12 @@ describe("Ledger", () => {
     expect(a.id).toBe("mbp:4")
   })
 
-  test("append is atomic (rewrites full content including prior entries)", async () => {
+  test("append is O_APPEND: accumulates lines without rewriting prior entries", async () => {
     let content = ""
-    let writes = 0
     const r = {
       readEntries: async () => (content ? content.split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []),
-      atomicWrite: async (_p: string, c: string) => {
-        content = c
-        writes++
+      append: async (_p: string, line: string) => {
+        content += line
       },
       exists: async () => content.length > 0,
     }
@@ -71,7 +69,7 @@ describe("Ledger", () => {
     await ledger.append("/l.jsonl", { agent: "a", type: "msg", text: "2" })
     const entries = await r.readEntries("/l.jsonl")
     expect(entries).toHaveLength(2)
-    expect(writes).toBe(2)
+    expect(entries.map((e) => e.text)).toEqual(["1", "2"])
   })
 })
 

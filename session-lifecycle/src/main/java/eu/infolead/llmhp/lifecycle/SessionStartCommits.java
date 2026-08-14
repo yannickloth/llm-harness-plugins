@@ -58,14 +58,7 @@ void report(String origin, Throwable t) {
     try {
         var dir = System.getenv("CLAUDE_PROJECT_DIR");
         if (dir == null || dir.isBlank()) dir = System.getProperty("user.dir");
-        var log = Path.of(dir, "tmp", "sessions", "hook-errors.log");
-        Files.createDirectories(log.getParent());
-        var sw = new StringWriter();
-        t.printStackTrace(new PrintWriter(sw));
-        Files.writeString(log,
-            "=== " + Instant.now() + " === " + origin + "\n" + sw + "\n",
-            StandardCharsets.UTF_8,
-            StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        HookErrorLog.report(dir, origin, t);
     } catch (Throwable ignored) {}
 }
 

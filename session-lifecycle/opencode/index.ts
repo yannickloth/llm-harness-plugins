@@ -35,6 +35,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         case "session.created": {
           const sessionId = event.properties?.sessionID
           if (!sessionId) return
+          await $`java ${jvmOpts} --class-path ${classesDir} ${mainClass} sweep ${root}`.nothrow().quiet()
           await $`java ${jvmOpts} --class-path ${classesDir} ${mainClass} snapshot-commits ${root} ${sessionId}`.nothrow().quiet()
           await $`java ${jvmOpts} --class-path ${classesDir} ${mainClass} check-errors ${root}`.nothrow().quiet()
           break

@@ -1,7 +1,9 @@
 import { type Plugin, tool, type Config } from "@opencode-ai/plugin"
 import path from "path"
 import fs from "fs"
+import zlib from "zlib"
 import { Ledger, entriesNewerThan, watermarkAfter, sortEntries, type LedgerEntry } from "./ledger"
+import { partitionForCompact } from "./ledger-compact"
 import { buildDigest } from "./digest"
 import { withLock } from "./lock"
 import { detectActivity, resourceEntry, coalesceKey, type Activity } from "./activity"
@@ -26,6 +28,8 @@ export type AgentfeedOptions = {
   resourceCoalesceMs?: number
   /** Default hold TTL (ms) for auto-detected resource acquires. */
   resourceLeaseMs?: number
+  /** Retain raw ledger events younger than this before archiving on compact. */
+  compactRetentionMs?: number
 }
 
 const SYSTEM_NOTE = `## Coordination ledger
@@ -75,6 +79,8 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   const autoFile = options.autoFile ?? true
   const resourceCoalesceMs = options.resourceCoalesceMs ?? 30_000
   const resourceLeaseMs = options.resourceLeaseMs ?? 30 * 60_000
+  let compactRetentionMs = options.compactRetentionMs ?? 7 * 24 * 60 * 60 * 1000
+  const archiveDir = path.join(ledgerDir, ".agentfeed", "ledger-archive")
 
   const ledger = new Ledger()
   const wmStore: WatermarkStore = defaultWatermarkStore
@@ -112,6 +118,64 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
     const saved = await withLock(lockFile, () => ledger.append(ledgerFile, entry))
     regenerateFeedsAsync()
     return saved
+  }
+
+  /**
+   * Compact the ledger: move settled entries (older than retention, not live
+   * state) to a git-ignored, gzip-compressed archive and rewrite the live window.
+   * Also archives stale watermark files (per-session read positions) to keep the
+   * fan-out of per-(session,agent) files bounded. Backup, not deletion — git is the
+   * full durable record, and the archives keep local copies. Must run while holding
+   * the lock; document as a single-host operation (concurrent hosts should compact
+   * too; git still unions).
+   */
+  async function compact(): Promise<{ live: number; archived: number; archivedBytes: number; watermarksPruned: number }> {
+    return withLock(lockFile, async () => {
+      const entries = await ledger.read(ledgerFile)
+      const { live, settled } = partitionForCompact(entries, Date.now(), compactRetentionMs)
+      let archivedBytes = 0
+      if (settled.length > 0) {
+        // Write settled entries to a git-ignored compressed archive (backup).
+        fs.mkdirSync(archiveDir, { recursive: true })
+        const month = new Date().toISOString().slice(0, 7) // YYYY-MM
+        const archivePath = path.join(archiveDir, `${month}.ledger.jsonl.gz`)
+        const settledText = settled.map((e) => JSON.stringify(e)).join("\n") + "\n"
+        const gz = zlib.gzipSync(settledText, { level: 9 })
+        fs.appendFileSync(archivePath, gz)
+        archivedBytes = gz.length
+
+        // Rewrite the tracked ledger to the live window only.
+        const liveText = live.map((e) => JSON.stringify(e)).join("\n")
+        const tmp = `${ledgerFile}.${process.pid}.compact.tmp`
+        fs.writeFileSync(tmp, liveText + (liveText ? "\n" : ""), "utf8")
+        fs.renameSync(tmp, ledgerFile)
+      }
+
+      const watermarksPruned = pruneStaleWatermarks()
+
+      regenerateFeedsAsync()
+      return { live: live.length, archived: settled.length, archivedBytes, watermarksPruned }
+    })
+  }
+
+  /** Move watermark files untouched for 30 days into a git-ignored archive. */
+  function pruneStaleWatermarks(): number {
+    const wmDir = path.join(ledgerDir, ".agentfeed", "watermarks")
+    if (!fs.existsSync(wmDir)) return 0
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+    const archive = path.join(wmDir, "archive")
+    let moved = 0
+    for (const name of fs.readdirSync(wmDir)) {
+      if (!name.endsWith(".json")) continue
+      const src = path.join(wmDir, name)
+      let st: fs.Stats
+      try { st = fs.statSync(src) } catch { continue }
+      if (st.mtimeMs > cutoff) continue
+      fs.mkdirSync(archive, { recursive: true })
+      fs.renameSync(src, path.join(archive, name))
+      moved++
+    }
+    return moved
   }
 
   /** Auto-publish a shared-resource event, coalesced per agent+resource. */
@@ -408,6 +472,31 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           }
           if (lines.length === 0) return "No open claims or held resources."
           return lines.join("\n")
+        },
+      }),
+
+      "coord_compact": tool({
+        description:
+          "Archive settled coordination events to a git-ignored compressed backup and shrink the live ledger. Keeps open claims, held resources, unanswered asks, and recent events; compresses the rest into .agentfeed/ledger-archive/. Run on each host; git remains the full durable record.",
+        args: {
+          retentionMs: tool.schema.number().optional().describe("Retention window (ms). Default 7 days."),
+        },
+        async execute(args) {
+          const prevRetention = compactRetentionMs
+          if (args.retentionMs && args.retentionMs > 0) {
+            compactRetentionMs = args.retentionMs
+          }
+          try {
+            const r = await compact()
+            const parts: string[] = []
+            if (r.archived > 0) parts.push(`archived ${r.archived} settled to ${path.join(".agentfeed", "ledger-archive")} (${r.archivedBytes} bytes gzip)`)
+            else parts.push("nothing to archive")
+            if (r.watermarksPruned > 0) parts.push(`archived ${r.watermarksPruned} stale watermark(s)`)
+            parts.push(`${r.live} live entries retained`)
+            return `Compacted: ${parts.join("; ")}.`
+          } finally {
+            compactRetentionMs = prevRetention
+          }
         },
       }),
 

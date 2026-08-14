@@ -31,8 +31,14 @@ void main() {
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
     } catch (Throwable t) {
-        ErrorReporter.report("LogFileChange", t);
+        HookErrorLog.report(projectDir(), "LogFileChange", t);
     }
+}
+
+String projectDir() {
+    var dir = System.getenv("CLAUDE_PROJECT_DIR");
+    if (dir == null || dir.isBlank()) dir = System.getProperty("user.dir");
+    return dir;
 }
 
 String normalizeAccess(String raw) {
@@ -43,9 +49,7 @@ String normalizeAccess(String raw) {
 }
 
 Path sessionsDir() {
-    var dir = System.getenv("CLAUDE_PROJECT_DIR");
-    if (dir == null || dir.isBlank()) dir = System.getProperty("user.dir");
-    return Path.of(dir, "tmp", "sessions");
+    return Path.of(projectDir(), "tmp", "sessions");
 }
 
 Optional<String> extractString(String json, String key) {
@@ -73,23 +77,6 @@ Optional<String> extractNestedString(String json, String outer, String inner) {
         i++;
     }
     return extractString(json.substring(start, Math.max(start, i - 1)), inner);
-}
-
-static class ErrorReporter {
-    static void report(String origin, Throwable t) {
-        try {
-            var dir = System.getenv("CLAUDE_PROJECT_DIR");
-            if (dir == null || dir.isBlank()) dir = System.getProperty("user.dir");
-            var log = Path.of(dir, "tmp", "sessions", "hook-errors.log");
-            Files.createDirectories(log.getParent());
-            var sw = new StringWriter();
-            t.printStackTrace(new PrintWriter(sw));
-            Files.writeString(log,
-                "=== " + Instant.now() + " === " + origin + "\n" + sw + "\n",
-                StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (Throwable ignored) {}
-    }
 }
 
 }
