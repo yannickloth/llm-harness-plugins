@@ -1,7 +1,7 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
-import { safeSpawn } from "../../shared/safe-spawn"
+import { safeSpawn, spawnDetached, killProcessTree } from "../../shared/safe-spawn"
 
 const pluginDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -22,28 +22,28 @@ const CLASSIFY_SYSTEM = [
   "ESCALATE: ambiguous, unclear scope, multiple competing goals, or genuinely uncertain.",
 ].join("\n")
 
-async function classifyViaOpencode(
-  client: ReturnType<Parameters<Plugin>[0]["client"]>,
-  sessionID: string,
-  prompt: string,
-  model: { providerID: string; modelID: string } | undefined,
-): Promise<{ decision: string; tier: string; reason: string; confidence: number } | null> {
+async function classifyViaOpencode(prompt: string): Promise<{ decision: string; tier: string; reason: string; confidence: number } | null> {
+  // Classify in a detached, throwaway session via `opencode run --print`.
+  // Never call session.prompt on the live session here: that would (a) append a
+  // duplicate copy of the user's prompt and the classifier's reply into the real
+  // conversation and (b) block the chat.message hook on a full LLM round-trip
+  // using the session's own (possibly expensive) model. A headless run keeps the
+  // live session clean and lets us pin a cheap model for this trivial task.
+  const classifierPrompt = `${CLASSIFY_SYSTEM}\n\nTask to classify:\n"""\n${prompt.slice(0, 2000)}\n"""`
+  let proc: ReturnType<typeof Bun.spawn> | null = null
   try {
-    const resp = await client.session.prompt({
-      path: { id: sessionID },
-      body: {
-        noReply: true,
-        model,
-        system: CLASSIFY_SYSTEM,
-        parts: [{ type: "text", text: prompt }],
-      },
-    })
-    const text = (resp.parts ?? [])
-      .filter(p => p.type === "text")
-      .map(p => (p as { text: string }).text)
-      .join(" ")
-      .trim()
-      .toUpperCase()
+    proc = spawnDetached(
+      ["opencode", "run", "--model", process.env.TIER_ROUTER_CLASSIFY_MODEL ?? "deepseek/deepseek-v4-flash",
+       "--print", "--title", "Tier classification", "--",
+       "Classify the task in stdin per the system prompt. Reply with ONE word only."],
+      { stdout: "pipe", stderr: "pipe" },
+    )
+    proc.stdin!.write(classifierPrompt)
+    proc.stdin!.end()
+    const kill = setTimeout(() => { try { killProcessTree(proc!) } catch {} }, 20_000)
+    const out = await new Response(proc.stdout).text()
+    clearTimeout(kill)
+    const text = out.trim().toUpperCase()
     if (!text) return null
     if (text.includes("ESCALATE")) return { decision: "escalate", tier: "", reason: "LLM: uncertain scope", confidence: 0.7 }
     if (text.startsWith("FABLE")) return { decision: "direct", tier: "fable", reason: "LLM: trivial mechanical task", confidence: 0.9 }
@@ -54,15 +54,12 @@ async function classifyViaOpencode(
   } catch (e) {
     console.warn(`[tier-router] opencode LLM classification failed: ${(e as Error).message}`)
     return null
+  } finally {
+    try { if (proc) killProcessTree(proc) } catch {}
   }
 }
 
-async function classifyPrompt(
-  client: ReturnType<Parameters<Plugin>[0]["client"]>,
-  sessionID: string,
-  prompt: string,
-  model: { providerID: string; modelID: string } | undefined,
-): Promise<{
+async function classifyPrompt(prompt: string): Promise<{
   decision: string
   tier: string
   fleet_models: string[]
@@ -70,7 +67,7 @@ async function classifyPrompt(
   confidence: number
   rewritten_prompt: string
 }> {
-  const llm = await classifyViaOpencode(client, sessionID, prompt, model)
+  const llm = await classifyViaOpencode(prompt)
   if (llm) {
     return {
       decision: llm.decision,
@@ -181,7 +178,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       if (!textPart) return
       if (!textPart.text.trim()) return
 
-      const result = await classifyPrompt(client, sessionID, textPart.text, input.model)
+      const result = await classifyPrompt(textPart.text)
       logger.info(`annotate ${JSON.stringify({ sessionID, tier: result.tier, confidence: result.confidence })}`)
 
       const annotation = buildPromptContext(result)
