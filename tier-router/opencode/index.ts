@@ -188,7 +188,7 @@ ${original}
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
   const logger = createLogger(client, "tier-router")
-  logger.info("plugin active — 3 tools + auto-rewrite hook (chat.message)")
+  logger.info("plugin active — 3 tools + prompt-annotation hook (chat.message)")
 
   const rewritten = new Set<string>()
   const REWRITTEN_MAX = 10_000
