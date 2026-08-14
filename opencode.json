@@ -6,6 +6,7 @@
     "./latex-toolkit/opencode/index.ts",
     "./typst-toolkit/opencode/index.ts",
     "./datetime-inject/opencode/index.ts",
+    "./agentfeed/opencode/index.ts",
     "./ivp/opencode/index.ts"
   ],
   "agent": {
