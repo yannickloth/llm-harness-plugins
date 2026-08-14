@@ -1,0 +1,7 @@
+# agentfeed coordination ledger is an append-only JSONL stream; two hosts appending
+# independently must merge as a union, not a conflict. This custom merge driver
+# concatenates/dedups all three sides (base, ours, theirs) so cross-host coordination
+# merges never collide. Requires `git config merge.agentfeed-ledger.driver` to be set
+# (see plugin-agentfeed.design.md / manual). Falls back to a normal textual merge if
+# the driver is unavailable.
+agentfeed/ledger.jsonl  merge=agentfeed-ledger

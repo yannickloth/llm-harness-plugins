@@ -100,6 +100,14 @@ What is **not** auto-captured: general "what I'm working on" updates and Q&A —
 - **Same host:** an advisory lockfile (`agentfeed/.ledger.lock`) serializes appends so two processes can't reuse a seq. Stale locks (crash) are stolen after 60s.
 - **Cross host:** no mutual exclusion by design — coordination is git merge of host-qualified ids. Two hosts can both claim a task; resolve via `coord_who_does_what()` + lease TTLs.
 
+Because the ledger is committed and two hosts append independently, a plain git merge would conflict on concurrent appends. A custom **append-only merge driver** (`agentfeed/tools/AppendOnlyMergeDriver.java`) unions entries from both sides (dedup by `id = host:seq`), so merges never collide. It is wired via `.gitattributes`; each host must register it **once** after cloning:
+
+```
+git config merge.agentfeed-ledger.driver 'java agentfeed/tools/AppendOnlyMergeDriver.java %O %A %B'
+```
+
+If unset, git falls back to a textual merge (may conflict on concurrent appends).
+
 ## Feed regeneration
 
 After every mutating `coord_*` write, the plugin spawns the compiled `AtomCli` (Java ≥25, from `build/classes` — run `build.sh` first, like permission-modes) to regenerate feeds. Spawn is **fire-and-forget** (never blocks the tool response). If you hit latency, set `liveFeeds: false` in plugin options and regenerate manually:

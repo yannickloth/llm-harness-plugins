@@ -27,9 +27,17 @@ Today sub-agents hand off only via prompt-injection + `task_id` resume inside on
 | Layer | Mechanism | Scope |
 |-------|-----------|-------|
 | Same host | `flock` on `agentfeed/.ledger.lock` around append + feed regen | exclusive |
-| Cross host | **none — git merge** | appends only, no conflicts (below) |
+| Cross host | **git merge + append-only merge driver** | union of appends, no conflicts |
 
 The ledger is committed to git; each host appends to its own copy. Entries carry `host` + per-host `seq`, giving globally-unique `id = host:seq` — merges concatenate cleanly, never collide, and global order is derived (`ts, host, seq`), not stored. **Explicitly out of scope:** cross-host mutual exclusion. Two hosts can claim the same task; mitigated by lease TTLs + `coord_who_does_what()` negotiation.
+
+A normal git 3-way merge would raise a conflict when two hosts append different lines to `agentfeed/ledger.jsonl`. To make "never collide" actually hold, the file is mapped (`.gitattributes`) to a custom **append-only merge driver** (`agentfeed/tools/AppendOnlyMergeDriver.java`, Java ≥25) that unions entries from base + ours + theirs and dedups by line (`id = host:seq`). Each host must register it once:
+
+```
+git config merge.agentfeed-ledger.driver 'java agentfeed/tools/AppendOnlyMergeDriver.java %O %A %B'
+```
+
+If the driver is not configured, git falls back to a textual merge (may conflict on concurrent appends).
 
 ## Architecture
 
@@ -51,10 +59,14 @@ agentfeed/
 │   └── AtomFeedTest.java   # Java test harness (void main, run via build.sh)
 ├── skills/coordinate/
 │   └── SKILL.md            # coordination protocol guide (self-registered skill)
+├── tools/
+│   └── AppendOnlyMergeDriver.java  # git merge driver for ledger.jsonl (Java ≥25)
 ├── feeds/                  # generated *.xml — git-ignored
 ├── plugin-agentfeed.design.md
 └── plugin-agentfeed.manual.md
 ```
+
+(`.gitattributes` at repo root maps `agentfeed/ledger.jsonl` → `merge=agentfeed-ledger`.)
 
 **Storage:**
 - `agentfeed/ledger.jsonl` — committed (coordination record, git-diffable, hostname-keyed).
@@ -191,7 +203,7 @@ Shared-resource activity is recorded **automatically** (no explicit tool call) s
 
 - Java ≥25 for the Atom serializer (`AtomFeed.java`/`AtomCli.java`, AGENTS.md scripting rule), compiled by `build.sh` to `build/classes`. Plugin shim is TS (datetime-inject pattern); feed regen invokes the compiled CLI (permission-modes pattern).
 - Hooks never crash the agent — try/catch + `createLogger(client, "agentfeed")`.
-- Same-host writes under `flock`; cross-host concurrency = git merge (append-only, no conflicts, no mutual exclusion).
+- Same-host writes under `flock`; cross-host concurrency = git merge via the append-only merge driver (union of appends, no conflicts, no mutual exclusion).
 - No network; local fs only.
 - Fallback: disable feed generation, JSONL + injection remain.
 
