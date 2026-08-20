@@ -2,6 +2,7 @@ import type { Config, Plugin } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
 import fs from "fs"
 import path from "path"
+import { STE100_MARKER, STE100_RULE } from "./ste100-rule"
 
 const skillsDir = path.join(import.meta.dir, "..", "skills")
 
@@ -41,6 +42,13 @@ export default async ({ client, directory }: Parameters<Plugin>[0]) => {
     config: async (input: Config) => {
       const existing = (input as any).skills ?? {}
       ;(input as any).skills = { ...existing, ...entries }
+    },
+    "experimental.chat.system.transform": async (
+      _input: unknown,
+      output: { system: string[] },
+    ) => {
+      if (output.system.some(s => s.includes(STE100_MARKER))) return
+      output.system = [STE100_RULE, ...output.system]
     },
     tool: {},
   }
