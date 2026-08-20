@@ -18,6 +18,48 @@ export type HeavyOptions = {
   longRunningKeywords?: string[]
 }
 
+/**
+ * Time-of-day pricing plan for a provider. Providers without a plan (or with
+ * `timeOfDay: false`) are treated as flat-priced: no nudges, no cost warnings.
+ */
+export type PricingPlan = {
+  providerID: string
+  /** DeepSeek-style time-of-day pricing (peak window vs cheaper off-peak). */
+  timeOfDay: boolean
+  /** Peak windows in UTC hours. */
+  peakWindowsUtc?: PeakWindow[]
+  /** Off-peak cost as a ratio of peak cost (0.5 => half price). */
+  offPeakRatio?: number
+}
+
+export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
+  {
+    providerID: "deepseek",
+    timeOfDay: true,
+    peakWindowsUtc: PEAK_WINDOWS_UTC,
+    offPeakRatio: 0.5,
+  },
+]
+
+export function planForProvider(
+  providerID: string | undefined,
+  plans: PricingPlan[] = DEFAULT_PRICING_PLANS,
+): PricingPlan | undefined {
+  if (!providerID) return undefined
+  const id = providerID.toLowerCase()
+  return plans.find(p => p.providerID.toLowerCase() === id && p.timeOfDay)
+}
+
+export function windowsForPlan(
+  plan: PricingPlan | undefined,
+): PeakWindow[] {
+  return plan?.peakWindowsUtc ?? PEAK_WINDOWS_UTC
+}
+
+export function ratioForPlan(plan: PricingPlan | undefined): number {
+  return plan?.offPeakRatio ?? 0.5
+}
+
 const DEFAULT_SKILL_NAMES = [
   "integrate-topic",
   "review-convergence",
@@ -179,7 +221,26 @@ export function resolveStatePath(): string | null {
   return path.join(cache, STATE_FILE_NAME)
 }
 
-export type NudgeState = Record<string, { windowIndex: number; ts: string }>
+export type TokenBucket = {
+  input: number
+  output: number
+  cacheRead: number
+}
+
+export type CostBucket = { peak: number; offpeak: number }
+
+export type SessionLedger = {
+  windowIndex: number
+  ts: string
+  /** User opted out of nudges/toasts for this session. */
+  quiet?: boolean
+  cost?: CostBucket
+  tokens?: { peak: TokenBucket; offpeak: TokenBucket }
+  /** A heavy task the user asked to postpone to a cheaper window. */
+  scheduled?: { task: string; scheduledAt: string; forWindow: "peak" | "offpeak" }
+}
+
+export type NudgeState = Record<string, SessionLedger>
 
 export function readState(statePath?: string): NudgeState {
   const p = statePath ?? resolveStatePath()
@@ -208,8 +269,9 @@ export function shouldRemind(
   sessionID: string,
   now: Date,
   statePath?: string,
+  windows: PeakWindow[] = PEAK_WINDOWS_UTC,
 ): boolean {
-  const idx = peakWindowIndex(now)
+  const idx = peakWindowIndex(now, windows)
   if (idx < 0) return false
   const state = readState(statePath)
   const last = state[sessionID]
@@ -219,14 +281,159 @@ export function shouldRemind(
   return true
 }
 
+export function isQuiet(sessionID: string, statePath?: string): boolean {
+  return readState(statePath)[sessionID]?.quiet === true
+}
+
+export function setQuiet(sessionID: string, quiet: boolean, statePath?: string): void {
+  const state = readState(statePath)
+  state[sessionID] = { ...(state[sessionID] ?? { windowIndex: -1, ts: "" }), quiet }
+  writeState(state, statePath)
+}
+
+export function setScheduled(
+  sessionID: string,
+  task: string,
+  statePath?: string,
+): void {
+  const state = readState(statePath)
+  state[sessionID] = {
+    ...(state[sessionID] ?? { windowIndex: -1, ts: "" }),
+    scheduled: { task, scheduledAt: new Date().toISOString(), forWindow: "offpeak" },
+  }
+  writeState(state, statePath)
+}
+
+/** Consume and return the pending scheduled task for a session, if any. */
+export function takeScheduled(sessionID: string, statePath?: string): string | null {
+  const state = readState(statePath)
+  const ledger = state[sessionID]
+  if (!ledger?.scheduled) return null
+  const task = ledger.scheduled.task
+  delete ledger.scheduled
+  state[sessionID] = ledger
+  writeState(state, statePath)
+  return task
+}
+
+export function hasScheduled(sessionID: string, statePath?: string): boolean {
+  return readState(statePath)[sessionID]?.scheduled != null
+}
+
+/** Return all scheduled task descriptions across sessions. */
+export function allScheduled(statePath?: string): string[] {
+  const state = readState(statePath)
+  const out: string[] = []
+  for (const ledger of Object.values(state)) {
+    if (ledger.scheduled) out.push(ledger.scheduled.task)
+  }
+  return out
+}
+
+/**
+ * Record real spend for an assistant message, attributed to peak/off-peak by
+ * the timestamp of the completion. Returns a summary line if this message
+ * updated the ledger, otherwise null.
+ */
+export function recordSpend(
+  sessionID: string,
+  now: Date,
+  spend: { cost: number; tokens: { input: number; output: number; cacheRead: number } },
+  statePath?: string,
+): string | null {
+  const state = readState(statePath)
+  const ledger = state[sessionID] ?? { windowIndex: peakWindowIndex(now), ts: now.toISOString() }
+  const bucket = isPeakUtc(utcHourOf(now)) ? "peak" : "offpeak"
+
+  const cost = ledger.cost ?? { peak: 0, offpeak: 0 }
+  const tokens = ledger.tokens ?? {
+    peak: { input: 0, output: 0, cacheRead: 0 },
+    offpeak: { input: 0, output: 0, cacheRead: 0 },
+  }
+
+  cost[bucket] += spend.cost
+  tokens[bucket].input += spend.tokens.input
+  tokens[bucket].output += spend.tokens.output
+  tokens[bucket].cacheRead += spend.tokens.cacheRead
+
+  ledger.cost = cost
+  ledger.tokens = tokens
+  state[sessionID] = ledger
+  writeState(state, statePath)
+
+  return summarizeSpend(sessionID, now, statePath)
+}
+
+export function summarizeSpend(
+  sessionID: string,
+  now: Date,
+  statePath?: string,
+): string | null {
+  const ledger = readState(statePath)[sessionID]
+  if (!ledger || !ledger.cost) return null
+  const { peak, offpeak } = ledger.cost
+  const total = peak + offpeak
+  if (total <= 0) return null
+  const fmt = (n: number) => `$${n.toFixed(4)}`
+  return `spend so far this session — during peak hours ${fmt(peak)} / during off-peak hours ${fmt(offpeak)} / total ${fmt(total)}`
+}
+
 function padToWidth(s: string, width: number): string {
   return s.padEnd(width)
 }
 
-export function buildBanner(now: Date, windows: PeakWindow[] = PEAK_WINDOWS_UTC): string {
+export type PricingStatus = "peak" | "offpeak"
+
+export function pricingStatus(now: Date, windows: PeakWindow[] = PEAK_WINDOWS_UTC): PricingStatus {
+  return isPeakUtc(utcHourOf(now), windows) ? "peak" : "offpeak"
+}
+
+export function buildStatusToast(
+  now: Date,
+  opts: {
+    windows?: PeakWindow[]
+    provider?: string
+    offPeakRatio?: number
+  } = {},
+): { title: string; message: string; variant: "info" | "warning" } {
+  const windows = opts.windows ?? PEAK_WINDOWS_UTC
+  const provider = opts.provider ?? "DeepSeek"
+  const ratio = opts.offPeakRatio ?? 0.5
+  const status = pricingStatus(now, windows)
+  const neutral = provider === ""
+  if (status === "peak") {
+    const off = formatWindows(localOffpeakWindows(now, windows))
+    return {
+      title: neutral ? "Peak pricing" : `${provider} peak`,
+      message: neutral
+        ? `Currently PEAK — off-peak is ${pctOff(ratio)} cheaper (off-peak: ${off}).`
+        : `Currently ${provider} PEAK — off-peak is ${pctOff(ratio)} cheaper (off-peak: ${off}).`,
+      variant: "warning",
+    }
+  }
+  const peak = formatWindows(localPeakWindows(now, windows))
+  return {
+    title: neutral ? "Off-peak pricing" : `${provider} off-peak`,
+    message: neutral
+      ? `Currently off-peak — ${pctOff(ratio)} cheaper than peak. Peak resumes at ${peak}.`
+      : `Currently ${provider} off-peak — ${pctOff(ratio)} cheaper than peak. Peak resumes at ${peak}.`,
+    variant: "info",
+  }
+}
+
+function pctOff(ratio: number): string {
+  return `${Math.round((1 - ratio) * 100)}%`
+}
+
+export function buildBanner(
+  now: Date,
+  windows: PeakWindow[] = PEAK_WINDOWS_UTC,
+  provider = "DeepSeek",
+  offPeakRatio = 0.5,
+): string {
   const off = formatWindows(localOffpeakWindows(now, windows))
   const lines = [
-    `⚠ PEAK PRICING — off-peak is 50% cheaper`,
+    `⚠ ${provider} PEAK PRICING — off-peak is ${pctOff(offPeakRatio)} cheaper`,
     `off-peak hours (local): ${off}`,
     `current time is PEAK; postpone heavy work if not urgent`,
   ]
