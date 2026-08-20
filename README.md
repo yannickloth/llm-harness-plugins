@@ -103,7 +103,7 @@ Plugins that ship agents:
 |--------|--------|-------|
 | `agentmem` | `memory-keeper`, `memory-dreamer` | Both work with `{file:...}` prompt |
 | `tier-router` | `fable-general`, `haiku-general`, `sonnet-general`, `opus-general` | Generic tier agents; typically overridden globally |
-| `general-skills` | `proof-soundness-auditor`, `xref-checker`, `style-naturalizer`, `style-auditor`, `citation-fidelity-auditor`, `bibliography-auditor`, `math-verifier`, `logic-auditor`, `redundancy-auditor`, `config-auditor` | Use `{file:...}` prompt |
+| `general-skills` | `proof-soundness-auditor`, `xref-checker`, `style-naturalizer`, `style-auditor`, `citation-fidelity-auditor`, `bibliography-auditor`, `math-verifier`, `logic-auditor`, `redundancy-auditor`, `config-auditor`, `ste-100-auditor` | Use `{file:...}` prompt |
 | `latex-toolkit` | `latex-xref-checker`, `latex-syntax-fixer`, `latex-figure-caption-auditor`, `latex-production-readiness-checker`, `latex-notation-consistency-checker`, `latex-index-auditor`, `latex-citation-checker`, `latex-formatting-fixer` | Use `{file:...}` prompt |
 | `typst-toolkit` | `typst-diagram-checker`, `typst-syntax-fixer`, `typst-citation-checker`, `typst-xref-checker`, `typst-production-readiness-checker`, `typst-formatting-fixer` | Use `{file:...}` prompt |
 

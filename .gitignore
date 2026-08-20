@@ -3,6 +3,7 @@
 .ai/
 .direnv/
 .idea/
+node_modules
 node_modules/
 .opencode/
 **/tmp/

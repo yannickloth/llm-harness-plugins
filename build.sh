@@ -83,6 +83,7 @@ compile_plugin "permission-modes"
 compile_plugin "agentfeed"
 
 compile_plugin "session-lifecycle" "$SHARED_CP"
+compile_plugin "graphics-toolkit"
 
 run_tests "agentmem" "$GUARDRAIL_CP"
 echo "--- Running agentmem TS tests ---"
@@ -101,8 +102,17 @@ run_tests "permission-modes"
 echo "--- Running permission-modes TS tests ---"
 bun test "$SCRIPT_DIR/permission-modes/opencode/index.test.ts" || echo "permission-modes TS tests: FAILED (bun not available?)"
 
+echo "--- Running general-skills TS tests ---"
+bun test "$SCRIPT_DIR/general-skills/opencode/index.test.ts" || echo "general-skills TS tests: FAILED (bun not available?)"
+
 echo "--- Running datetime-inject TS tests ---"
 bun test "$SCRIPT_DIR/datetime-inject/opencode/index.test.ts" || echo "datetime-inject TS tests: FAILED (bun not available?)"
+
+echo "--- Running offpeak-nudge TS tests ---"
+bun test "$SCRIPT_DIR/offpeak-nudge/opencode/index.test.ts" || echo "offpeak-nudge TS tests: FAILED (bun not available?)"
+
+echo "--- Running system-message-merge TS tests ---"
+bun test "$SCRIPT_DIR/system-message-merge/opencode/index.test.ts" || echo "system-message-merge TS tests: FAILED (bun not available?)"
 
 echo "--- Running agentfeed Java tests ---"
 run_tests "agentfeed"
@@ -112,6 +122,52 @@ bun test "$SCRIPT_DIR/agentfeed/opencode/ledger.test.ts" \
           "$SCRIPT_DIR/agentfeed/opencode/digest.test.ts" \
           "$SCRIPT_DIR/agentfeed/opencode/activity.test.ts" \
           "$SCRIPT_DIR/agentfeed/opencode/index.test.ts" || echo "agentfeed TS tests: FAILED (bun not available?)"
+
+echo "--- Running graphics-toolkit Java self-checks on vendored examples ---"
+GFX_CP="$SCRIPT_DIR/graphics-toolkit/build/classes"
+java --class-path "$GFX_CP" eu.infolead.llmhp.graphics.GraphicsSvgCheck \
+  "$SCRIPT_DIR/graphics-toolkit/skills/diagram-design/assets/example-architecture.html" \
+  >/dev/null 2>&1 \
+  && echo "graphics svg-selfcheck: PASSED" \
+  || echo "graphics svg-selfcheck: FAILED"
+
+echo "--- Running scientific-writing agent registration check ---"
+SW_AGENTS="$SCRIPT_DIR/scientific-writing/agents"
+if [ -d "$SW_AGENTS" ]; then
+  SW_PASS=1
+  for f in "$SW_AGENTS"/*.md; do
+    fname=$(basename "$f" .md)
+    fmeta=$(grep -m1 "^name:" "$f" | awk '{print $2}')
+    if [ "$fname" != "$fmeta" ]; then
+      echo "  scientific-writing agent name mismatch: $fname vs $fmeta"
+      SW_PASS=0
+    fi
+  done
+  # Verify every agent file in the plugin is registered in opencode.json.
+  python3 - "$SCRIPT_DIR/opencode.json" "$SW_AGENTS" <<'PY' || SW_PASS=0
+import json, os, sys
+cfg=json.load(open(sys.argv[1]))
+agents=cfg.get("agent",{})
+agents_dir=sys.argv[2]
+root=os.path.dirname(sys.argv[1])
+missing=[]
+for fn in sorted(os.listdir(agents_dir)):
+    if not fn.endswith(".md"):
+        continue
+    name=fn[:-3]
+    spec=agents.get(name)
+    if not spec or "file" not in spec:
+        missing.append(name)
+        continue
+    if not os.path.isfile(os.path.join(root, spec["file"])):
+        missing.append(name)
+if missing:
+    print("  unregistered or missing agent files:", missing); sys.exit(1)
+PY
+  if [ "$SW_PASS" -eq 1 ]; then echo "scientific-writing agent registration: PASSED"; else echo "scientific-writing agent registration: FAILED"; fi
+else
+  echo "scientific-writing agent registration: FAILED (agents dir missing)"
+fi
 
 echo "--- Running agentfeed CLI feed validity check ---"
 CLI_DIR="${XDG_RUNTIME_DIR:-/tmp/opencode}/agentfeed-cli"
