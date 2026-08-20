@@ -18,7 +18,8 @@
     "./latex-toolkit/opencode/index.ts",
     "./general-skills/opencode/index.ts",
     "./natural-prose/opencode/index.ts",
-    "./permission-modes/opencode/index.ts"
+    "./permission-modes/opencode/index.ts",
+    "./system-message-merge/opencode/index.ts"
   ],
   "agent": {
     "memory-keeper": {
