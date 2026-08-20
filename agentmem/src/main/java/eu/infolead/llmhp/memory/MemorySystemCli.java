@@ -54,6 +54,8 @@ public class MemorySystemCli {
 
             case "lock-check" -> ConsolidationLock.check(memDir);
             case "lock-acquire" -> ConsolidationLock.acquire(memDir);
+            case "lock-acquire-pid" -> ConsolidationLock.acquire(memDir,
+                Long.parseLong(args.length > 2 ? args[2] : "-1"));
             case "lock-release" -> ConsolidationLock.release(memDir);
             case "lock-status" -> ConsolidationLock.status(memDir);
 

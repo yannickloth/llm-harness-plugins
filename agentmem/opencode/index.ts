@@ -2,7 +2,7 @@ import { type Plugin, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
 import { existsSync, mkdirSync, openSync, writeFileSync, closeSync, readFileSync, rmSync } from "fs"
-import { loadMemIndex, collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
+import { collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
 
@@ -208,13 +208,20 @@ Answer (YES/NO):`
       ["opencode", "run", "--model", "deepseek/deepseek-v4-flash",
        "--agent", "memory-keeper", "--format", "json", "--title", "Memory maintenance (classifier)", "--",
        "Answer YES or NO only, based on the prompt in stdin."],
-      { stdout: "pipe", stderr: "ignore" }
+      { stdin: "pipe", stdout: "pipe", stderr: "ignore" }
     )
     proc.stdin!.write(prompt)
     proc.stdin!.end()
     const kill = setTimeout(() => { try { killProcessTree(proc!) } catch {} }, 15_000)
-    const out = await new Response(proc.stdout).text()
+    // Bound the wait so an unkillable survivor that never closes stdout cannot
+    // hang the blocking chat.message hook and strand `classifierBusy` forever.
+    const CAP_MS = 18_000
+    const out = await Promise.race([
+      new Response(proc.stdout).text(),
+      new Promise<string | null>(resolve => setTimeout(() => resolve(null), CAP_MS)),
+    ])
     clearTimeout(kill)
+    if (out == null) return false
     return extractOpencodeText(out).toUpperCase() === "YES"
   } catch {
     try { if (proc) killProcessTree(proc) } catch {}
@@ -241,12 +248,22 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
     keeperBusy = false
     return
   }
-  const kill = setTimeout(() => { try { killProcessTree(keeper) } catch {} finally { keeperBusy = false } }, 120_000)
-  new Response(keeper.stdout).text().then(() => {
+  const kill = setTimeout(() => { try { killProcessTree(keeper) } catch {} }, 120_000)
+  const finish = () => {
     clearTimeout(kill)
     keeperBusy = false
-    if (reinject && capturedSessionId) reinjectMemory(client, capturedSessionId, root).catch(e => logger.error(`keeper reinject failed: ${(e as Error).message}`))
-  }).catch(() => { clearTimeout(kill); keeperBusy = false })
+  }
+  // Bound the wait so an unkillable survivor that never closes stdout cannot
+  // strand `keeperBusy` and disable future keepers. Reinject only once the
+  // keeper's stdout actually closes (it finished), never on the timeout cap.
+  const CAP_MS = 125_000
+  const textP = new Response(keeper.stdout).text().catch(() => "")
+  Promise.race([
+    textP.then(() => {
+      if (reinject && capturedSessionId) reinjectMemory(client, capturedSessionId, root).catch(e => logger.error(`keeper reinject failed: ${(e as Error).message}`))
+    }),
+    new Promise(resolve => setTimeout(resolve, CAP_MS)),
+  ]).finally(finish)
 }
 
 function flushFlaggedTurns(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, reinject: boolean = true) {
@@ -269,26 +286,45 @@ function trySpawnDreamer(mdir: string) {
   if (now - lastDreamRun <= DREAM_INTERVAL_MS) return
   if (!existsSync(mdir)) return
   // Atomically claim the consolidation slot so only one dreamer runs host-wide.
-  // `lock-check` is read-only and racy; `lock-acquire` writes + verifies the
-  // PID, returning ACQUIRED only to the sole winner. This is what the design
-  // doc's `ConsolidationLock check == ACQUIRED` gate intended.
-  const lockResult = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire", mdir])
+  // We record THIS plugin process as the lock owner (lock-acquire-pid) because
+  // the default lock-acquire would write the short-lived Java subprocess's own
+  // PID, which is dead by the time a second session checks — letting two
+  // dreamers run concurrently. Owning with the live plugin PID makes the
+  // `kill -0`/isAlive liveness check in ConsolidationLock report a live holder
+  // for the whole dream, restoring true cross-process mutual exclusion.
+  const lockResult = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire-pid", mdir, String(process.pid)])
   if (lockResult.exitCode !== 0 || lockResult.stdout.trim() !== "ACQUIRED") return
+  let dreamer: ReturnType<typeof Bun.spawn> | null = null
+  try {
+    dreamer = spawnDetached(
+      ["opencode", "run", "--agent", "memory-dreamer",
+       "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+       "--title", "Memory maintenance (dreamer)",
+       "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
+      { stdout: "pipe", stderr: "pipe" }
+    )
+  } catch {
+    // Spawn failed before the dreamer started — release the lock immediately so
+    // we don't wedge future consolidation attempts. lastDreamRun is left
+    // untouched so a later idle is free to retry.
+    safeSpawn(["java", "--class-path", classesDir, mainClass, "lock-release", mdir]).catch(() => {})
+    return
+  }
+  // Only mark the slot consumed once the dreamer actually launched.
   lastDreamRun = now
-  const dreamer = spawnDetached(
-    ["opencode", "run", "--agent", "memory-dreamer",
-     "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
-     "--title", "Memory maintenance (dreamer)",
-     "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
-    { stdout: "pipe", stderr: "pipe" }
-  )
-  const kill = setTimeout(() => { try { killProcessTree(dreamer) } catch {} }, 300_000)
-  new Response(dreamer.stdout).text()
-    .then(() => clearTimeout(kill))
-    .catch(() => clearTimeout(kill))
-    .finally(() => {
-      safeSpawn(["java", "--class-path", classesDir, mainClass, "lock-release", mdir]).catch(() => {})
-    })
+  const kill = setTimeout(() => { try { killProcessTree(dreamer!) } catch {} }, 300_000)
+  // Hold the lock until the dreamer finishes (stdout closes), then release.
+  // Bounded by a cap so a pathological unkillable survivor cannot leak the lock
+  // indefinitely; the 300s kill normally closes stdout and settles this first.
+  const release = () => {
+    clearTimeout(kill)
+    safeSpawn(["java", "--class-path", classesDir, mainClass, "lock-release", mdir]).catch(() => {})
+  }
+  const RELEASE_CAP_MS = 320_000
+  Promise.race([
+    new Response(dreamer.stdout).text().catch(() => {}),
+    new Promise(resolve => setTimeout(resolve, RELEASE_CAP_MS)),
+  ]).finally(release)
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
@@ -446,8 +482,11 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         description: "Run memory consolidation. Merges, deduplicates, prunes, and links memories.",
         args: {},
         async execute(_args, context) {
+          // A plugin-loaded child opencode process must not re-launch a dreamer
+          // subprocess — that would re-enter the recursive spawn storm.
+          if (process.env[NO_SUBSPAWN_ENV] === "1") return "Dream disabled in subprocess."
           const mdir = memDir(context.directory, context.worktree)
-          const lockResult = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire", mdir])
+          const lockResult = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire-pid", mdir, String(process.pid)])
           if (lockResult.exitCode !== 0) return "Dream already in progress (lock busy)."
           try {
             const dreamer = spawnDetached(
@@ -459,8 +498,14 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
             )
             const kill = setTimeout(() => { try { killProcessTree(dreamer) } catch {} }, 300_000)
             try {
-              const out = await new Response(dreamer.stdout).text()
-              return out.trim() || "Dream complete."
+              // Bound the wait so an unkillable survivor that never closes stdout
+              // cannot hold this tool (and the consolidation lock) forever.
+              const CAP_MS = 320_000
+              const out = await Promise.race([
+                new Response(dreamer.stdout).text(),
+                new Promise<string | null>(resolve => setTimeout(() => resolve(null), CAP_MS)),
+              ])
+              return out == null ? "Dream timed out after 320s." : (out.trim() || "Dream complete.")
             } finally { clearTimeout(kill) }
           } finally {
             await safeSpawn(["java", "--class-path", classesDir, mainClass, "lock-release", mdir]).catch(() => {})
