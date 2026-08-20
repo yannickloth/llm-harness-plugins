@@ -1,6 +1,9 @@
 export interface SpawnResult {
   stdout: string
   stderr: string
+  /** Process exit code, or the terminating signal number if the child was
+   * killed by a signal (Bun reports signal termination as the signal number).
+   * Callers should treat only `=== 0` as success. */
   exitCode: number
 }
 
@@ -19,26 +22,38 @@ export const NO_SUBSPAWN_ENV = "LLMHP_NO_SUBSPAWN"
  * or a nested `opencode run`) orphaned. When the child was spawned with
  * `detached: true` it leads its own process group, so signalling the negative
  * PID terminates the whole group. Falls back to signalling the single PID when
- * the group kill is unavailable.
+ * the group kill is unavailable. Returns false only when neither signal could
+ * be delivered (caller may then choose to treat the child as possibly alive).
  */
-export function killProcessTree(proc: { pid: number }, signal: NodeJS.Signals | number = "SIGKILL"): void {
+export function killProcessTree(proc: { pid: number }, signal: NodeJS.Signals | number = "SIGKILL"): boolean {
   try {
     process.kill(-proc.pid, signal)
+    return true
   } catch {
-    try { process.kill(proc.pid, signal) } catch { /* already gone */ }
+    try {
+      process.kill(proc.pid, signal)
+      return true
+    } catch {
+      return false // already gone, or we lack permission to signal it
+    }
   }
 }
 
 /**
  * Spawn a child in its own process group so the whole tree can be reaped on
  * timeout, and propagate the no-subspawn guard. Returns the child.
+ *
+ * `stdin` defaults to `"ignore"`: detached subprocesses that take their prompt
+ * as an argv argument (keeper/dreamer) never read stdin, and leaving the pipe
+ * open on a child that *does* wait for EOF would hang it. Callers that write
+ * a prompt to stdin must pass `stdin: "pipe"` explicitly.
  */
 export function spawnDetached(
   argv: string[],
   opts: { cwd?: string; env?: Record<string, string>; stdin?: "pipe" | "ignore"; stdout?: "pipe" | "ignore"; stderr?: "pipe" | "ignore" } = {},
 ): ReturnType<typeof Bun.spawn> {
   return Bun.spawn(argv, {
-    stdin: opts.stdin ?? "pipe",
+    stdin: opts.stdin ?? "ignore",
     stdout: opts.stdout ?? "pipe",
     stderr: opts.stderr ?? "pipe",
     cwd: opts.cwd,
@@ -64,7 +79,11 @@ export function safeSpawn(
     stdout: "pipe",
     stderr: "pipe",
     cwd: opts.cwd,
-    env: opts.env,
+    // Merge over process.env so a caller-supplied env adds to (not replaces)
+    // PATH, HOME, etc. Passing a bare env object to Bun.spawn replaces the
+    // whole environment, which silently breaks children that need the parent's
+    // PATH/HOME (e.g. tier-router's Java RouterCli).
+    env: { ...process.env, ...opts.env },
   })
 
   const drain = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
@@ -121,7 +140,8 @@ export function safeSpawnSync(
     stdout: "pipe",
     stderr: "pipe",
     cwd: opts.cwd,
-    env: opts.env,
+    // Same merge-as-override semantics as safeSpawn; never replace process.env.
+    env: { ...process.env, ...opts.env },
   })
   return {
     stdout: proc.stdout.toString(),
