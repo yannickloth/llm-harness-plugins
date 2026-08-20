@@ -1,40 +1,27 @@
 package eu.infolead.llmhp.cache.types;
 
+/**
+ * Snapshot of cache store size/contents for the CLI's `stats` command.
+ *
+ * Rich usage analytics (hits, misses, hit rate, savings, similarity buckets)
+ * live in {@code StatsStore}; this record only carries the current on-disk
+ * entry count and total bytes.
+ */
 public record CacheStats(
-    long hits,
-    long misses,
-    long evictions,
     int entryCount,
     long totalSizeBytes
 ) {
     public static CacheStats empty() {
-        return new CacheStats(0, 0, 0, 0, 0);
-    }
-
-    public CacheStats withHit() {
-        return new CacheStats(hits + 1, misses, evictions, entryCount, totalSizeBytes);
-    }
-
-    public CacheStats withMiss() {
-        return new CacheStats(hits, misses + 1, evictions, entryCount, totalSizeBytes);
-    }
-
-    public CacheStats withEviction(int newCount, long newSizeBytes) {
-        return new CacheStats(hits, misses, evictions + 1, newCount, newSizeBytes);
+        return new CacheStats(0, 0);
     }
 
     public CacheStats withEntry(int newCount, long newSizeBytes) {
-        return new CacheStats(hits, misses, evictions, newCount, newSizeBytes);
-    }
-
-    public double hitRate() {
-        var total = hits + misses;
-        return total == 0 ? 0.0 : (double) hits / total;
+        return new CacheStats(newCount, newSizeBytes);
     }
 
     public String toJson() {
         return """
-            {"hits":%d,"misses":%d,"evictions":%d,"entryCount":%d,"totalSizeBytes":%d,"hitRate":%.4f}
-            """.formatted(hits, misses, evictions, entryCount, totalSizeBytes, hitRate());
+            {"entryCount":%d,"totalSizeBytes":%d}
+            """.formatted(entryCount, totalSizeBytes).strip();
     }
 }

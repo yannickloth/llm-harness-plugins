@@ -24,6 +24,7 @@ final class CacheStore {
     private final float threshold;
     private final long ttlSeconds;
     private final int maxEntries;
+    private final StatsStore stats;
 
     CacheStore(Path cacheDir, Embedder embedder, float threshold, long ttlSeconds, int maxEntries) {
         this.cacheDir = cacheDir;
@@ -31,40 +32,53 @@ final class CacheStore {
         this.threshold = threshold;
         this.ttlSeconds = ttlSeconds;
         this.maxEntries = maxEntries;
+        this.stats = new StatsStore(cacheDir);
     }
 
     CacheStore(Path cacheDir) {
         this(cacheDir, new Embedder(), DEFAULT_THRESHOLD, DEFAULT_TTL_SECONDS, MAX_ENTRIES);
     }
 
-    record LookupResult(CacheEntry entry, String response, boolean hit) {}
-
-    LookupResult lookup(String prompt) throws IOException {
-        if (prompt == null || prompt.isBlank()) return new LookupResult(null, null, false);
-
-        var embedding = embedder.embed(prompt);
-        var entries = loadAll();
-
-        CacheEntry best = null;
-        float bestSim = -1f;
-        var now = Instant.now();
-
-        for (var e : entries) {
-            if (e.isExpiredAt(now)) continue;
-            var sim = embedding.cosineSimilarity(e.embedding());
-            if (sim > bestSim) {
-                bestSim = sim;
-                best = e;
-            }
-        }
-
-        if (best != null && bestSim >= threshold) {
-            return new LookupResult(best, best.response(), true);
-        }
-        return new LookupResult(null, null, false);
+    record LookupResult(CacheEntry entry, String response, boolean hit, float similarity) {
+        static LookupResult miss() { return new LookupResult(null, null, false, -1f); }
     }
 
-    void store(String prompt, String response) throws IOException {
+    LookupResult lookup(String prompt) throws IOException {
+        var start = System.nanoTime();
+        try {
+            if (prompt == null || prompt.isBlank()) {
+                stats.recordLookup(false, -1f, micros(start), 0);
+                return LookupResult.miss();
+            }
+
+            var embedding = embedder.embed(prompt);
+            var entries = loadAll();
+
+            CacheEntry best = null;
+            float bestSim = -1f;
+            var now = Instant.now();
+
+            for (var e : entries) {
+                if (e.isExpiredAt(now)) continue;
+                var sim = embedding.cosineSimilarity(e.embedding());
+                if (sim > bestSim) {
+                    bestSim = sim;
+                    best = e;
+                }
+            }
+
+            var hit = best != null && bestSim >= threshold;
+            stats.recordLookup(hit, bestSim, micros(start), hit ? best.response().getBytes(StandardCharsets.UTF_8).length : 0);
+            if (hit) {
+                return new LookupResult(best, best.response(), true, bestSim);
+            }
+            return LookupResult.miss();
+        } finally {
+            // never let a stats persistence failure surface as a lookup error
+        }
+    }
+
+    void store(String prompt, String response, String source) throws IOException {
         if (prompt == null || prompt.isBlank()) return;
         if (response == null) response = "";
 
@@ -82,7 +96,16 @@ final class CacheStore {
         Files.move(tmpFile, cacheDir.resolve(key + ".json"),
             StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
 
+        stats.recordStore(source);
         evictIfNeeded();
+    }
+
+    void store(String prompt, String response) throws IOException {
+        store(prompt, response, StatsStore.SOURCE_MANUAL);
+    }
+
+    private static long micros(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000L;
     }
 
     void invalidate(String prompt) throws IOException {
@@ -117,14 +140,16 @@ final class CacheStore {
     private void evictIfNeeded() throws IOException {
         if (maxEntries <= 0) return;
         List<CacheEntry> entries;
+        var evicted = 0;
         while ((entries = loadAll()).size() > maxEntries) {
             entries.sort(Comparator.comparing(CacheEntry::timestamp));
             var excess = entries.size() - maxEntries;
             for (int i = 0; i < excess; i++) {
                 var file = cacheDir.resolve(entries.get(i).key() + ".json");
-                try { Files.deleteIfExists(file); } catch (IOException ignored) {}
+                try { Files.deleteIfExists(file); evicted++; } catch (IOException ignored) {}
             }
         }
+        if (evicted > 0) stats.recordEviction(evicted);
     }
 
     private List<CacheEntry> loadAll() throws IOException {
@@ -220,6 +245,49 @@ final class CacheStore {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
+    }
+
+    /** Snapshot of the persisted analytics counters (the enriched `stats` payload). */
+    String statsJson() {
+        return stats.toJson().strip();
+    }
+
+    /** Best-effort parse of a persisted stats file into a snapshot; null on failure. */
+    static StatsStore.StatsSnapshot deserializeStats(String json) {
+        var trimmed = json.strip();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+        var inner = trimmed.substring(1, trimmed.length() - 1);
+        long hits = 0, misses = 0, nearMisses = 0, evictions = 0, lookups = 0;
+        long storesAuto = 0, storesManual = 0, storesFileop = 0;
+        long savedResponseBytes = 0, sumLookupMicros = 0;
+        long hitHigh = 0, hitMid = 0, hitLow = 0;
+        for (var field : inner.split(",")) {
+            var f = field.strip();
+            if (f.startsWith("\"lookups\"")) lookups = longVal(f);
+            else if (f.startsWith("\"hits\"")) hits = longVal(f);
+            else if (f.startsWith("\"misses\"")) misses = longVal(f);
+            else if (f.startsWith("\"nearMisses\"")) nearMisses = longVal(f);
+            else if (f.startsWith("\"evictions\"")) evictions = longVal(f);
+            else if (f.startsWith("\"storesAuto\"")) storesAuto = longVal(f);
+            else if (f.startsWith("\"storesManual\"")) storesManual = longVal(f);
+            else if (f.startsWith("\"storesFileop\"")) storesFileop = longVal(f);
+            else if (f.startsWith("\"savedResponseBytes\"")) savedResponseBytes = longVal(f);
+            else if (f.startsWith("\"sumLookupMicros\"")) sumLookupMicros = longVal(f);
+            else if (f.startsWith("\"hitSimHigh\"")) hitHigh = longVal(f);
+            else if (f.startsWith("\"hitSimMid\"")) hitMid = longVal(f);
+            else if (f.startsWith("\"hitSimLow\"")) hitLow = longVal(f);
+        }
+        return new StatsStore.StatsSnapshot(hits, misses, nearMisses, evictions, lookups,
+            storesAuto, storesManual, storesFileop, savedResponseBytes, sumLookupMicros,
+            hitHigh, hitMid, hitLow);
+    }
+
+    private static long longVal(String field) {
+        var colon = field.indexOf(':');
+        if (colon < 0) return 0;
+        var val = field.substring(colon + 1).strip();
+        if (val.endsWith(",")) val = val.substring(0, val.length() - 1).strip();
+        try { return Long.parseLong(val); } catch (NumberFormatException e) { return 0; }
     }
 
     static String unescapeJson(String s) {

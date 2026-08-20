@@ -17,7 +17,7 @@ import java.util.List;
  *
  * Frame (Base64 keeps arbitrary prompt/response/path bytes out of the protocol):
  *   lookup<TAB><b64 prompt>
- *   store<TAB><b64 prompt><TAB><b64 response>
+ *   store<TAB><b64 prompt><TAB><b64 response>[<TAB>auto|manual|fileop]
  *   invalidate-files<TAB><b64 path>
  *   invalidate-stale
  *   stats
@@ -109,7 +109,8 @@ final class SemanticCacheDaemon {
             case "store" -> {
                 var prompt = b64(parts, 1);
                 var response = b64(parts, 2);
-                store.store(prompt, response);
+                var source = parts.length > 3 ? parts[3] : StatsStore.SOURCE_MANUAL;
+                store.store(prompt, response, source);
                 return "OK\t{\"stored\":true}";
             }
             case "invalidate-files" -> {
@@ -122,8 +123,7 @@ final class SemanticCacheDaemon {
                 return "OK\t{\"purged\":true}";
             }
             case "stats" -> {
-                var s = store.stats();
-                return "OK\t" + s.toJson().strip();
+                return "OK\t" + store.statsJson();
             }
             case "quit" -> {
                 return "OK\t{\"bye\":true}";

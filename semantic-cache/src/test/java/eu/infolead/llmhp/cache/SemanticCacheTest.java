@@ -30,6 +30,7 @@ final class SemanticCacheTest {
         testMultiLinePromptSerialization();
         testDaemonProtocol();
         testDaemonIdleExit();
+        testStatsInstrumentation();
 
         System.out.println("\n---");
         System.out.println("Passed: " + passed + "  Failed: " + failed);
@@ -226,11 +227,12 @@ final class SemanticCacheTest {
         try {
             var b64 = java.util.Base64.getEncoder();
             var write = new java.io.PrintWriter(tmpDir.resolve("cmds").toFile());
-            write.println("store\t" + b64.encodeToString("what is the capital of france".getBytes()) + "\t" + b64.encodeToString("Paris".getBytes()));
+            write.println("store\t" + b64.encodeToString("what is the capital of france".getBytes()) + "\t" + b64.encodeToString("Paris".getBytes()) + "\tauto");
             write.println("lookup\t" + b64.encodeToString("What is the capital of France?".getBytes()));
             write.println("lookup\t" + b64.encodeToString("make a martini".getBytes()));
             write.println("stats");
             write.println("invalidate-files\t" + b64.encodeToString("what is the capital of france".getBytes()));
+            write.println("lookup\t" + b64.encodeToString("What is the capital of France?".getBytes()));
             write.println("stats");
             write.println("quit");
             write.flush();
@@ -239,8 +241,14 @@ final class SemanticCacheTest {
                 "daemon lookup should hit and return Paris, got: " + result);
             assertThat(result.contains("\"hit\":false"),
                 "daemon lookup should miss for dissimilar prompt, got: " + result);
-            assertThat(result.indexOf("\"entryCount\":1") < result.lastIndexOf("\"entryCount\":0"),
-                "invalidate-files (b64 path) should purge the entry, got: " + result);
+            assertThat(result.contains("\"lookups\":3"),
+                "stats should report 3 lookups (2 initial + 1 after invalidate), got: " + result);
+            assertThat(result.contains("\"storesAuto\":1"),
+                "stats should attribute the store to the auto source, got: " + result);
+            assertThat(result.contains("\"hits\":1"),
+                "stats should report 1 hit (second lookup after invalidate misses), got: " + result);
+            assertThat(result.contains("\"savedResponseBytes\":"),
+                "stats should report saved response bytes, got: " + result);
         } finally {
             deleteDir(tmpDir);
         }
@@ -291,6 +299,35 @@ final class SemanticCacheTest {
                 proc.waitFor();
             }
             assertThat(exited, "daemon with open stdin should self-exit on idle timeout");
+        } finally {
+            deleteDir(tmpDir);
+        }
+    }
+
+    void testStatsInstrumentation() throws Exception {
+        var tmpDir = Files.createTempDirectory("semantic-cache-stats-test");
+        try {
+            var store = new CacheStore(tmpDir);
+            store.store("What is the capital of France?", "Paris", eu.infolead.llmhp.cache.StatsStore.SOURCE_AUTO);
+            // hit
+            var hit = store.lookup("what is the capital of france");
+            // clean miss
+            store.lookup("how to knit a sweater");
+            // near-miss (similar to stored, below threshold)
+            store.lookup("what is the capital of France and its population density");
+
+            var json = store.statsJson();
+            assertThat(json.contains("\"hits\":1"), "stats should count 1 hit, got: " + json);
+            assertThat(json.contains("\"misses\":2"), "stats should count 2 misses, got: " + json);
+            assertThat(json.contains("\"storesAuto\":1"), "stats should attribute store to auto, got: " + json);
+            assertThat(json.contains("\"hitRate\":0.3333"), "stats should compute hit rate, got: " + json);
+            assertThat(hit.hit() && hit.response().equals("Paris"), "instrumented store/lookup should still work");
+
+            // Persistence: a fresh store over the same dir reloads the counters.
+            var reloaded = new CacheStore(tmpDir);
+            var reloadedJson = reloaded.statsJson();
+            assertThat(reloadedJson.contains("\"hits\":1") && reloadedJson.contains("\"storesAuto\":1"),
+                "stats should persist across a fresh store instance, got: " + reloadedJson);
         } finally {
             deleteDir(tmpDir);
         }

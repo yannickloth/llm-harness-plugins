@@ -1,7 +1,7 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
-import { cacheDir, invalidateFiles, invalidateStale, lookup, stats, store } from "./daemon-client"
+import { cacheDir, invalidateFiles, invalidateStale, lookup, SOURCE_AUTO, SOURCE_FILEOP, stats, store } from "./daemon-client"
 
 const WRITE_TOOLS: ReadonlySet<string> = new Set(["edit", "write"])
 
@@ -79,7 +79,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       const prior = pendingBySession.get(sessionId)
       const priorText = assistantTextBySession.get(sessionId)
       if (prior && !prior.served && priorText && priorText.length) {
-        store(cdir, prior.prompt, priorText.join("\n")).catch(() => {})
+        store(cdir, prior.prompt, priorText.join("\n"), SOURCE_AUTO).catch(() => {})
       }
 
       // Determine whether the current turn is served from cache.
@@ -116,7 +116,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       // file-op outcome so a future identical edit is served from cache.
       invalidateFiles(cdir, filePath).catch(() => {})
       if (output?.output) {
-        store(cdir, `the file ${path.basename(filePath)} was modified (${toolName})`, output.output).catch(() => {})
+        store(cdir, `the file ${path.basename(filePath)} was modified (${toolName})`, output.output, SOURCE_FILEOP).catch(() => {})
       }
     },
 

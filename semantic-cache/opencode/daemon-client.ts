@@ -171,9 +171,14 @@ export async function lookup(cdir: string, prompt: string): Promise<string | nul
   }
 }
 
-export async function store(cdir: string, prompt: string, response: string): Promise<void> {
+export type StoreSource = "auto" | "manual" | "fileop"
+export const SOURCE_AUTO: StoreSource = "auto"
+export const SOURCE_MANUAL: StoreSource = "manual"
+export const SOURCE_FILEOP: StoreSource = "fileop"
+
+export async function store(cdir: string, prompt: string, response: string, source: StoreSource = SOURCE_MANUAL): Promise<void> {
   if (!prompt || !response) return
-  await daemonRequest(cdir, `store\t${b64(prompt)}\t${b64(response)}`)
+  await daemonRequest(cdir, `store\t${b64(prompt)}\t${b64(response)}\t${source}`)
 }
 
 export async function invalidateFiles(cdir: string, filePath: string): Promise<void> {
