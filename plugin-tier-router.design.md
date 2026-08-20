@@ -233,6 +233,25 @@ UNCERTAINTY: "If uncertain or missing info, say so explicitly.
   Never invent facts or fabricate output."
 ```
 
+## Prompt Annotation Hook
+
+The `chat.message` hook annotates each user prompt with its routing classification, tier directives, and (optionally) fleet model. **Opt-in via env var** — off by default, so prompts pass through essentially untouched (only a trim + env check per message).
+
+| Env var | Effect |
+|---------|--------|
+| (unset) | Hook is a no-op; prompt sent verbatim |
+| `TIER_ROUTER_ANNOTATE=1` | Replace prompt with the annotation block (rewritten prompt + directives + classification). Single prompt — no doubling. |
+| `TIER_ROUTER_ANNOTATE=1` + `TIER_ROUTER_LEAN=1` | Replace prompt with just the rewritten prompt + tier directives + fleet, no self-quote annotation block |
+
+Annotation always **replaces** the message text (never appends), so the model sees one prompt, not a doubled one.
+
+### Classification Cost Control
+
+- **Prompt cache**: repeated/similar prompts are classified once (bounded LRU, 512 entries), keyed by content hash.
+- **LLM skip**: prompts shorter than 40 chars or starting with an explicit mechanical verb (`fix`, `rename`, `add`, `sort`, …) bypass the spawned LLM classifier and go straight to the cheap Java keyword router.
+- **Timeouts**: the LLM classifier is capped (~25s) and the Java router is capped (10s), so a hung child never blocks the chat hook.
+
+
 ## Backend
 
 ### OpenCode (tool-based)

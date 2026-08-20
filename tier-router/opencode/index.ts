@@ -29,7 +29,26 @@ const LEAN_ENV = "TIER_ROUTER_LEAN"
  * Prevents re-running the (expensive) classifier on repeated/similar prompts.
  * LRU-style eviction via a simple insertion-order Map capped at CACHE_MAX. */
 const CACHE_MAX = 512
-const classifyCache = new Map<string, ReturnType<typeof classifyPrompt> extends Promise<infer T> ? T : never>()
+
+/** Result of prompt classification, used by the annotation builders and cache. */
+type ClassificationResult = {
+  decision: string
+  tier: string
+  fleet_models: string[]
+  reason: string
+  confidence: number
+  rewritten_prompt: string
+  failed?: boolean
+}
+
+/** Classification subprocess timeouts. The LLM classifier and the Java keyword
+ * router both race against a hard cap; the earlier kill timer reaps the child
+ * so a hung process is not orphaned (mirrors the cap in classifyViaOpencode). */
+const LLM_CLASSIFY_CAP_MS = 25_000
+const LLM_CLASSIFY_KILL_MS = 20_000
+const JAVA_ROUTE_CAP_MS = 10_000
+
+const classifyCache = new Map<string, ClassificationResult>()
 
 function cacheKey(prompt: string): string {
   let h = 0
@@ -50,7 +69,7 @@ function cacheGet(prompt: string) {
   return hit
 }
 
-function cacheSet(prompt: string, value: ReturnType<typeof classifyPrompt> extends Promise<infer T> ? T : never): void {
+function cacheSet(prompt: string, value: ClassificationResult): void {
   const k = cacheKey(prompt)
   classifyCache.set(k, value)
   if (classifyCache.size > CACHE_MAX) {
@@ -139,7 +158,7 @@ async function classifyViaOpencode(dataDir: string | null, prompt: string): Prom
   if (dataDir == null) return null
 
   const classifierPrompt = `${CLASSIFY_SYSTEM}\n\nTask to classify:\n"""\n${prompt.slice(0, 2000)}\n"""`
-  let proc: ReturnType<typeof Bun.spawn> | null = null
+  let proc: Bun.Subprocess<"pipe", "pipe", "ignore"> | null = null
   try {
     proc = spawnDetached(
       ["opencode", "run", "--model", process.env.TIER_ROUTER_CLASSIFY_MODEL ?? "deepseek/deepseek-v4-flash",
@@ -153,11 +172,10 @@ async function classifyViaOpencode(dataDir: string | null, prompt: string): Prom
     // close (orphaned survivor), `.text()` would hang the chat.message hook
     // forever. Racing a hard cap guarantees resolution; a null result simply
     // falls through to the keyword router.
-    const CAP_MS = 25_000
-    const kill = setTimeout(() => { try { killProcessTree(proc!) } catch {} }, 20_000)
+    const kill = setTimeout(() => { try { killProcessTree(proc!) } catch {} }, LLM_CLASSIFY_KILL_MS)
     const out = await Promise.race([
       new Response(proc.stdout).text(),
-      new Promise<string | null>(resolve => setTimeout(() => resolve(null), CAP_MS)),
+      new Promise<string | null>(resolve => setTimeout(() => resolve(null), LLM_CLASSIFY_CAP_MS)),
     ])
     clearTimeout(kill)
     if (out == null) return null
@@ -182,15 +200,7 @@ async function classifyViaOpencode(dataDir: string | null, prompt: string): Prom
   }
 }
 
-async function classifyPrompt(dataDir: string | null, prompt: string): Promise<{
-  decision: string
-  tier: string
-  fleet_models: string[]
-  reason: string
-  confidence: number
-  rewritten_prompt: string
-  failed?: boolean
-}> {
+async function classifyPrompt(dataDir: string | null, prompt: string): Promise<ClassificationResult> {
   const cached = cacheGet(prompt)
   if (cached) return cached
 
@@ -213,17 +223,28 @@ async function classifyPrompt(dataDir: string | null, prompt: string): Promise<{
     return result
   }
 
-  // Cap the Java keyword router so a hung CLI never blocks the chat hook forever.
-  const JAVA_CAP_MS = 10_000
+  // Cap the Java keyword router so a hung CLI never blocks the chat hook
+  // forever. Unlike a bare Promise.race, the spawned process is killed on
+  // timeout so a hung JVM is not leaked as an orphan holding its stdio pipes.
   let javaOut: string
+  let javaProc: Bun.Subprocess<"pipe", "pipe", "ignore"> | null = null
   try {
+    javaProc = spawnDetached(
+      ["java", "--class-path", classpath, mainClass, "route"],
+      { stdin: "pipe", stdout: "pipe", stderr: "ignore", env: routerEnv },
+    )
+    javaProc.stdin!.write(prompt)
+    javaProc.stdin!.end()
+    const kill = setTimeout(() => { try { killProcessTree(javaProc!) } catch {} }, JAVA_ROUTE_CAP_MS)
     javaOut = await Promise.race([
-      safeSpawn(["java", "--class-path", classpath, mainClass, "route"], { input: prompt, env: routerEnv })
-        .then(r => r.stdout.trim()),
-      new Promise<string>(resolve => setTimeout(() => resolve(""), JAVA_CAP_MS)),
+      new Response(javaProc.stdout).text().then(t => t.trim()),
+      new Promise<string>(resolve => setTimeout(() => resolve(""), JAVA_ROUTE_CAP_MS)),
     ])
+    clearTimeout(kill)
   } catch {
     javaOut = ""
+  } finally {
+    try { if (javaProc) killProcessTree(javaProc) } catch {}
   }
   if (!javaOut) {
     const fallback = {
@@ -342,7 +363,7 @@ function buildPromptContext(result: {
   const directiveBlock = `Prompt standards to apply:\n${tierDirectives.map(d => `- ${d}`).join("\n")}`
 
   const classification = `Classification: ${result.decision} (confidence ${result.confidence.toFixed(2)}). ${result.reason}.`
-  const fleet = result.fleet_models?.length
+  const fleet = result.fleet_models.length
     ? `\nFleet model(s): ${result.fleet_models.join(", ")}`
     : ""
 
@@ -377,7 +398,7 @@ function buildLeanRewrite(result: {
     `<tier-router:${result.tier} conf=${result.confidence.toFixed(2)}>`,
     ...tierDirectives.map(d => `- ${d}`),
   ]
-  if (result.fleet_models?.length) lines.push(`- fleet: ${result.fleet_models.join(", ")}`)
+  if (result.fleet_models.length) lines.push(`- fleet: ${result.fleet_models.join(", ")}`)
   lines.push("", result.rewritten_prompt)
   return lines.join("\n")
 }
@@ -390,18 +411,18 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
   // must never fall back to the real session log.
   const classifyDataDir = prepareClassifyDataDir(logger)
 
-  const rewritten = new Set<string>()
-  const rewrittenOrder: string[] = []
+  // Dedup set of already-annotated message IDs. A Map (insertion-ordered) lets
+  // us evict oldest in O(1) via keys().next(), avoiding a parallel array.
+  const rewritten = new Map<string, true>()
   const REWRITTEN_MAX = 10_000
 
   /** Record a message as handled, evicting the oldest entry once bounded. */
   function markRewritten(messageID: string): void {
     if (rewritten.has(messageID)) return
-    rewritten.add(messageID)
-    rewrittenOrder.push(messageID)
-    if (rewrittenOrder.length > REWRITTEN_MAX) {
-      const oldest = rewrittenOrder.shift()
-      if (oldest) rewritten.delete(oldest)
+    rewritten.set(messageID, true)
+    if (rewritten.size > REWRITTEN_MAX) {
+      const oldest = rewritten.keys().next().value
+      if (oldest !== undefined) rewritten.delete(oldest)
     }
   }
 
@@ -427,8 +448,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       const messageID = textPart.messageID || textPart.id
       if (rewritten.has(messageID)) return
 
-      const original = textPart.text
-      const result = await classifyPrompt(classifyDataDir, original)
+      const result = await classifyPrompt(classifyDataDir, textPart.text)
       // Never inject a fabricated classification into the user's real message
       // when classification failed entirely — leave the message untouched.
       if (result.failed) return
