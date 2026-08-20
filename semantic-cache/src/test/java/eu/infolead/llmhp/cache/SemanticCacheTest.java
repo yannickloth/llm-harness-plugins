@@ -28,6 +28,8 @@ final class SemanticCacheTest {
         testCacheEviction();
         testHashKey();
         testMultiLinePromptSerialization();
+        testDaemonProtocol();
+        testDaemonIdleExit();
 
         System.out.println("\n---");
         System.out.println("Passed: " + passed + "  Failed: " + failed);
@@ -217,6 +219,81 @@ final class SemanticCacheTest {
             "multi-line prompt should roundtrip, got: " + restored.prompt());
         assertThat(restored.response().equals(multiLineResponse),
             "multi-line response should roundtrip, got: " + restored.response());
+    }
+
+    void testDaemonProtocol() throws Exception {
+        var tmpDir = Files.createTempDirectory("semantic-cache-daemon-test");
+        try {
+            var b64 = java.util.Base64.getEncoder();
+            var write = new java.io.PrintWriter(tmpDir.resolve("cmds").toFile());
+            write.println("store\t" + b64.encodeToString("what is the capital of france".getBytes()) + "\t" + b64.encodeToString("Paris".getBytes()));
+            write.println("lookup\t" + b64.encodeToString("What is the capital of France?".getBytes()));
+            write.println("lookup\t" + b64.encodeToString("make a martini".getBytes()));
+            write.println("stats");
+            write.println("invalidate-files\t" + b64.encodeToString("what is the capital of france".getBytes()));
+            write.println("stats");
+            write.println("quit");
+            write.flush();
+            var result = runDaemon(tmpDir, java.nio.file.Files.readString(tmpDir.resolve("cmds")));
+            assertThat(result.contains("\"hit\":true,\"cached_response\":\"Paris\""),
+                "daemon lookup should hit and return Paris, got: " + result);
+            assertThat(result.contains("\"hit\":false"),
+                "daemon lookup should miss for dissimilar prompt, got: " + result);
+            assertThat(result.indexOf("\"entryCount\":1") < result.lastIndexOf("\"entryCount\":0"),
+                "invalidate-files (b64 path) should purge the entry, got: " + result);
+        } finally {
+            deleteDir(tmpDir);
+        }
+    }
+
+    private String runDaemon(Path cacheDir, String input) throws Exception {
+        var classPath = System.getProperty("java.class.path");
+        var pb = new ProcessBuilder("java", "--class-path", classPath,
+            "eu.infolead.llmhp.cache.SemanticCacheDaemon", cacheDir.toString());
+        pb.redirectErrorStream(false);
+        var proc = pb.start();
+        try (var w = new java.io.OutputStreamWriter(proc.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8)) {
+            w.write(input);
+        }
+        var sb = new StringBuilder();
+        try (var r = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line).append('\n');
+        }
+        proc.waitFor();
+        return sb.toString();
+    }
+
+    void testDaemonIdleExit() throws Exception {
+        var tmpDir = Files.createTempDirectory("semantic-cache-idle-test");
+        try {
+            var classPath = System.getProperty("java.class.path");
+            var pb = new ProcessBuilder("java", "--class-path", classPath,
+                "eu.infolead.llmhp.cache.SemanticCacheDaemon", tmpDir.toString(), "300");
+            pb.redirectErrorStream(true);
+            var proc = pb.start();
+
+            // Hold stdin OPEN (never close it) to simulate an orphaned parent that
+            // died without EOF. Only the idle timeout should terminate the daemon.
+            var stdin = proc.getOutputStream();
+            try {
+                var b64 = java.util.Base64.getEncoder();
+                stdin.write(("stats\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                stdin.flush();
+            } finally {
+                // deliberately do NOT close stdin
+            }
+
+            var exited = proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
+            stdin.close();
+            if (!exited) {
+                proc.destroyForcibly();
+                proc.waitFor();
+            }
+            assertThat(exited, "daemon with open stdin should self-exit on idle timeout");
+        } finally {
+            deleteDir(tmpDir);
+        }
     }
 
     void assertThat(boolean condition, String message) {
