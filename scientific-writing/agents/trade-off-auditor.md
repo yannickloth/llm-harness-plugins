@@ -15,6 +15,10 @@ model: deepseek/deepseek-v4-pro
 
 **Scope**: the user-specified section(s)/chapter file(s) to review
 
+## IVP Content Detection
+
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+
 **What to check**:
 
 ### 1. Pattern/Principle Recommendations
@@ -23,26 +27,29 @@ For each design pattern, principle, or architectural approach discussed:
 - Flag advice that presents only benefits without costs
 - Flag universal claims ("always use X", "X is always better") without qualification
 
-### 2. IVP-Specific Honesty
-- IVP is presented as a meta-principle, not a universal optimizer
-- Any formal claims about IVP (e.g., a meta-theorem) respect their stated scope/conditions (e.g., ceteris paribus)
-- Counterexamples (where IVP compliance has costs) are presented where relevant
-- Flag any section that claims IVP solves all problems
-
-### 3. Complexity Cost Acknowledgment
+### 2. Complexity Cost Acknowledgment
 - Abstraction has costs (indirection, cognitive overhead). When recommending abstraction, acknowledge this
 - Separation has costs (more modules, more interfaces, coordination overhead). Acknowledge this
 - Pattern application has costs (learning curve, increased structure). Acknowledge this
 
-### 4. Context Sensitivity
+### 3. Context Sensitivity
 - Advice states the context in which it applies (team size, system scale, domain type)
 - Flag advice that ignores organizational, legacy, or time-pressure constraints
 - "This pattern is most valuable when..." should appear near pattern discussions
 
-### 5. Multiple Valid Approaches
+### 4. Multiple Valid Approaches
 - Where multiple designs could be reasonable, the text should acknowledge alternatives
 - Flag single-solution presentations where the design space is genuinely multi-valued
 - "An alternative approach would be..." or equivalent should appear where appropriate
+
+## IVP-Specific Checks
+
+Run these ONLY when the "IVP Content Detection" gate above fires (target content is IVP-related). These keep IVP's presentation honest, distinct from the generic trade-off checks.
+
+- **IVP as meta-principle, not universal optimizer**: IVP must be presented as a meta-principle, not a universal optimizer. Flag advice that elevates IVP compliance to a universal guarantee.
+- **Ceteris paribus on IVP meta-theorem claims**: any formal claims about IVP (e.g., a meta-theorem) must respect their stated scope/conditions (e.g., ceteris paribus). Flag a meta-theorem claim stated without its ceteris paribus or scope qualification.
+- **Counterexamples where IVP compliance has costs**: present counterexamples (where IVP compliance has costs) where relevant. Flag one-sided treatments that omit them.
+- **"IVP solves all problems" overclaim**: flag any section that claims IVP solves all problems.
 
 **Process**:
 1. Identify all prescriptive passages (patterns, principles, "should"/"must"/"always" statements)

@@ -23,6 +23,11 @@ model: deepseek/deepseek-v4-pro
 - `definition-auditor` (this agent): checks *definition quality* — is each definition formally rigorous, non-circular, unambiguous, and rooted in the theory's primitives?
 
 
+## IVP Content Detection
+
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+
+
 ## Audit Criteria
 
 For each definition, check ALL of the following:
@@ -55,7 +60,7 @@ For each definition, check ALL of the following:
 
 ### 5. Rootedness
 - Is the definition traceable (possibly through intermediate definitions) to the theory's primitives?
-- The primitive layer consists of the theory's foundational objects and axioms plus standard set theory. (For an IVP-formalized document, that is the system tuple S = (F, KF, E, Krel, C, G) and its driver-assignment function; for other documents, the project's stated axiomatic foundation.)
+- The primitive layer consists of the theory's foundational objects and axioms plus standard set theory (the project's stated axiomatic foundation).
 - Definitions that float free of this foundation (defined only in natural language with no connection to the formal apparatus) should be flagged.
 - Early, scene-setting chapters may be semi-formal if the full formal apparatus is introduced later — flag only when the document is past that point.
 
@@ -64,7 +69,7 @@ For each definition, check ALL of the following:
 - Does the definition contradict any axiom or previously established result?
 
 ### 7. Hidden Assumptions in Definitions
-- Does the definition silently assume a property that is not stated as a precondition and not established by a prior definition or axiom? For example, a definition that refers to "the dominant driver γ*" assumes a unique dominant driver exists — but this may never be defined and may be incoherent for certain cases.
+- Does the definition silently assume a property that is not stated as a precondition and not established by a prior definition or axiom? For example, a definition that refers to "the dominant case" assumes a unique such case exists — but this may never be defined and may be incoherent for certain cases.
 - Does the definition embed a condition in its body that functions as a prerequisite but is not extracted to a named assumption or listed as an explicit precondition? Such conditions are invisible to readers scanning definition statements.
 - Does the definition assume a specific system state (e.g., a compliance condition, a default case, finite sets) without stating it?
 - For each hidden assumption found: state what it is, whether the definition is coherent without it, and recommend either (a) adding it as an explicit precondition to the definition, (b) extracting it to a named assumption environment with a label, or (c) noting it as a scope limitation in a remark.
@@ -85,7 +90,11 @@ The following are accepted as primitive or foundational — they need no prior d
 
 **Logical**: for all (forall), there exists (exists), implies, if and only if, and, or, not, such that
 
-**IVP primitives** (when the document formalizes with the IVP methodology):
+## IVP-Specific Checks
+
+Run these ONLY when the "IVP Content Detection" gate above fires (target content is IVP-related). These check the IVP-formalized document's definitions against IVP's own primitives and characteristic hidden-assumption patterns.
+
+### IVP Primitives (accepted as primitive, do NOT flag these as undefined)
 - Software system S = (F, KF, E, Krel, C, G)
 - F: set of functional requirements
 - KF: knowledge of functional requirements
@@ -95,6 +104,16 @@ The following are accepted as primitive or foundational — they need no prior d
 - G: E -> P(C), driver assignment function
 - Module M (subset of E with specific properties)
 - Modularization M (partition of E into modules)
+
+### IVP Rootedness
+- Verify each definition is traceable (possibly through intermediate definitions) to the IVP system tuple S = (F, KF, E, Krel, C, G) and its driver-assignment function, plus standard set theory.
+- Definitions that float free of this foundation (defined only in natural language with no connection to the formal apparatus) should be flagged.
+- Early, scene-setting chapters may be semi-formal if the full formal apparatus is introduced later — flag only when the document is past that point.
+
+### IVP Hidden-Assumption Patterns
+- **Dominant-driver γ\***: a definition that refers to "the dominant driver γ\*" silently assumes a unique dominant driver exists — this may never be defined and may be incoherent for certain module types. Flag if γ\* is used without an existence/uniqueness precondition.
+- **Pure-element assumption**: a definition that assumes elements are pure (assigned to exactly one driver, single-member Γ) without stating it — flag when the definition's coherence depends on the pure-element default but the default is not declared.
+- **IVP-compliance as a state**: a definition that assumes a specific system state (e.g., IVP compliance, a pure-element default) without stating it — flag whether the definition is coherent without that state, and recommend (a) an explicit precondition, (b) a named assumption environment with a label, or (c) a scope-limitation remark.
 
 ## Process
 

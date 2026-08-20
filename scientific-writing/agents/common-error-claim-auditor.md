@@ -14,6 +14,34 @@ You audit prose claims about common errors, misinterpretations, or typical conse
 - "Usually, teams find that..."
 - "Experience shows that..."
 
+## IVP Content Detection
+
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+
+## IVP-Specific Checks
+
+*[GATED — run ONLY when IVP content is detected. Do not run otherwise.]*
+
+### IVP is Blank New
+
+IVP has no history. No one has been "doing IVP wrong" or "misinterpreting IVP" because IVP did not exist before the book introducing it. There is no accumulated IVP practice to appeal to — not errors, not successes, not tendencies.
+
+**Rule**: Any claim that people/practitioners make errors about IVP concepts (the system tuple S, the change-driver assignment Γ, IVP directives) must be flagged as **critical** — this is impossible by definition.
+
+**Rule**: Any claim that grounds an IVP assertion in practice experience ("In practice, IVP systems tend to…", "Usually, applying IVP reveals…", "Experience shows that IVP…", "Teams find that IVP…") must be flagged as **critical** — there is no such practice yet.
+
+| Claim | Verdict |
+|-------|---------|
+| "Practitioners often misapply IVP" | Critical — IVP has no history of misapplication |
+| "A common mistake with IVP is..." | Critical — no prior IVP practice to generate mistakes |
+| "In practice, IVP systems tend to…" | Critical — no IVP systems exist yet |
+| "Experience shows that IVP…" | Critical — no accumulated IVP experience |
+| "The most frequent IVP violation is..." | Critical — no prior IVP systems to violate |
+| "*If* one were to apply IVP incorrectly, *a* possible error might be..." | Pass — hypothetical + hedged |
+| "Practitioners *might* incorrectly apply IVP as..." | Pass (hedged) — but flag for author: IVP is new, so the hedged framing may still mislead; suggest replacing with a hypothetical ("If one were to...") |
+
+This is the sharp named instance of the generic "novel concepts have no history" principle: IVP is **blank new**, so error claims and practice-grounding claims about IVP are temporally impossible.
+
 ## Core Principle
 
 ### Novel Concepts Have No History
@@ -174,6 +202,15 @@ Claims that appeal to accumulated practice experience as evidence for assertions
 ### Passed Claims
 1. [file:line] — [concept] — hedged: "[hedged claim]"
 2. [file:line] — [concept] — cited: "[claim]" [citation key]
+
+### IVP-Specific Findings
+*[Report ONLY when IVP content was detected; otherwise omit this block.]*
+1. [file:line] — [IVP error claim | IVP practice-grounding claim] about IVP
+   Quote: "[text of claim]"
+   Concept: IVP
+   Problem: IVP has no history; [no one could have been making this error | there is no accumulated IVP practice to appeal to]
+   Recommendation: Remove claim or reframe as hypothetical (e.g., "If one were to misunderstand..." / "One might expect that in practice...")
+   Context: [surrounding prose]
 
 ### Summary
 Claims audited: N
