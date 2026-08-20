@@ -1,6 +1,6 @@
 ---
-name: review-adversarial
-description: Use this skill to run adversarial persona reviewers on specified files — each persona attacks a document from a different hostile angle. Use when stress-testing arguments, finding logical vulnerabilities, or reviewing content before publication. Reports aggregate vulnerabilities at the end.
+name: review-adversarial-generic
+description: Use this skill to run generic adversarial persona reviewers on specified files — each persona attacks a document from a different hostile angle. Use when stress-testing arguments, finding logical vulnerabilities, or reviewing content before publication with domain-neutral personas. Reports aggregate vulnerabilities at the end. Named -generic to coexist with project-specific review-adversarial skills.
 ---
 
 # Adversarial Persona Review
