@@ -9,10 +9,6 @@ final class SemanticCacheCli {
     private InvalidationEngine invalidation;
 
     SemanticCacheCli() {}
-    SemanticCacheCli(Path cacheDir) {
-        this.store = new CacheStore(cacheDir);
-        this.invalidation = new InvalidationEngine(cacheDir);
-    }
 
     void main(String[] args) throws Exception {
         if (args.length == 0) {
@@ -23,7 +19,6 @@ final class SemanticCacheCli {
 
         var cacheDir = parseCacheDir(args);
 
-        var cmdIndex = 0;
         var cmd = args[0];
 
         var offset = 1;
@@ -75,7 +70,7 @@ final class SemanticCacheCli {
         var prompt = readStdin();
         var result = store.lookup(prompt);
         if (result.hit()) {
-            System.out.println("{\"hit\":true,\"cached_response\":\"%s\"}".formatted(escapeJson(result.response())));
+            System.out.println("{\"hit\":true,\"cached_response\":\"%s\"}".formatted(CacheStore.escapeJson(result.response())));
         } else {
             System.out.println("{\"hit\":false}");
         }
@@ -96,21 +91,5 @@ final class SemanticCacheCli {
             }
             return sb.toString().strip();
         }
-    }
-
-    private String escapeJson(String s) {
-        var sb = new StringBuilder();
-        for (int i = 0; i < s.length(); i++) {
-            var c = s.charAt(i);
-            switch (c) {
-                case '\\' -> sb.append("\\\\");
-                case '"' -> sb.append("\\\"");
-                case '\n' -> sb.append("\\n");
-                case '\r' -> sb.append("\\r");
-                case '\t' -> sb.append("\\t");
-                default -> sb.append(c);
-            }
-        }
-        return sb.toString();
     }
 }
