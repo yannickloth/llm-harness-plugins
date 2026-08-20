@@ -371,12 +371,16 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           }
 
           if (mode === "index") {
-            if (existsSync(path.join(indexRoot, ".lock"))) {
-              return "An index job is already running (lockfile present). Try again later."
+            // Route through the same cross-session throttle as auto-update.
+            // claimSpawnSlot does the authoritative .lock PID-liveness check
+            // (so a stale .lock left by a crashed indexer is stolen, not a
+            // permanent block) and honors the .last-launch debounce — unlike a
+            // bare existsSync(.lock) check, which would wedge on a stale lock.
+            if (!(await claimSpawnSlot(indexRoot, cfg.debounceSeconds * 1000))) {
+              return "An index job is already running or was launched too recently. Try again later."
             }
             const isInit = !existsSync(manifestPath(root, cfg))
             try {
-              const { mkdirSync } = await import("fs")
               mkdirSync(logDir, { recursive: true })
             } catch { /* exists */ }
             const logFile = path.join(logDir, `${isInit ? "init" : "update"}-${Date.now()}.log`)
