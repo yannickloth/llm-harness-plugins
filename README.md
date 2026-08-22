@@ -74,6 +74,38 @@ Restart OpenCode. Plugins load and register their hooks/tools/events.
 > code (`packages/opencode/src/config/plugin.ts`, `resolvePluginSpec`) explicitly supports relative
 > and absolute paths — resolved relative to the config file's directory. This is confirmed working.
 
+### Topic gate (context injection)
+
+`datetime-inject`, `agentfeed`, `semantic-cache`, `offpeak-nudge`, and `agentmem`
+inject project context into prompts (datetime, coordination digests, cached
+answers, pricing nudges, persistent memory). This is useful for coding sessions
+but intrusive in personal, non-coding conversations.
+
+Each of these plugins therefore supports a `topicGate` option (default `true`).
+When enabled, the plugin only injects context into sessions it classifies as
+**project-related**, based on a lightweight classifier in
+`shared/session-topic.ts`:
+
+- **project** if the message mentions code, tooling, git, build/test, repo,
+  file paths, plugin/coordination jargon, or known project skills.
+- **personal** if it matches common personal vocabulary in French, German,
+  Spanish, or Italian.
+- **unknown** otherwise — treated as non-project (no injection).
+
+A session that becomes project-related later starts injecting on subsequent
+messages. To force the old always-inject behavior for a code-only project, pass
+`topicGate: false` to the plugin.
+
+```json
+{
+  "plugin": [
+    "./llm-harness-plugins/agentmem/opencode/index.ts",
+    "./llm-harness-plugins/datetime-inject/opencode/index.ts"
+  ]
+}
+```
+
+
 ### Plugin agents
 
 Some plugins ship subagents in their `agents/` directory. To activate a plugin agent, define it in `opencode.json` under the `agent` key with the model, mode, permissions, and a `prompt` field pointing to the plugin's `.md` file.

@@ -221,7 +221,7 @@ describe("datetime-inject helpers", () => {
 describe("datetime-inject plugin hooks", () => {
   async function loadHooks(opts: Record<string, unknown> = {}) {
     const mod = await import(`./index.ts?${Date.now()}`)
-    return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, opts)
+    return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: false, ...opts })
   }
 
   test("plugin registers both hooks", async () => {
@@ -323,5 +323,66 @@ describe("datetime-inject plugin hooks", () => {
     expect(output.system[0]).toContain(DATETIME_HEADER)
     expect(output.system[0]).toContain(PLATFORM_HEADER)
     expect(output.system.length).toBe(2)
+  })
+})
+
+describe("datetime-inject topic gate", () => {
+  async function loadHooks(opts: Record<string, unknown> = {}) {
+    const mod = await import(`./index.ts?${Date.now()}`)
+    return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: true, ...opts })
+  }
+
+  test("does not inject datetime into a personal session", async () => {
+    const hooks = await loadHooks()
+    await hooks["chat.message"]({ sessionID: "personal-1" }, { parts: [{ type: "text", text: "ma femme dort mieux sur un matelas gonflable" }] })
+    const output = { parts: [{ type: "text", text: "quelle est la meilleure position pour dormir" }] }
+    await hooks["chat.message"]({ sessionID: "personal-1" }, output)
+    expect(output.parts[0].text.startsWith(DATETIME_HEADER)).toBe(false)
+    expect(output.parts[0].text).toContain("meilleure position")
+  })
+
+  test("injects datetime into a project session (from second message on)", async () => {
+    const hooks = await loadHooks()
+    await hooks["chat.message"]({ sessionID: "project-1" }, { parts: [{ type: "text", text: "refactor the file src/app.ts to fix the bug" }] })
+    const output = { parts: [{ type: "text", text: "run the build and tests" }] }
+    await hooks["chat.message"]({ sessionID: "project-1" }, output)
+    expect(output.parts[0].text.startsWith(DATETIME_HEADER)).toBe(true)
+    expect(output.parts[0].text).toContain("run the build")
+  })
+
+  test("a session that turns project starts injecting on later messages", async () => {
+    const hooks = await loadHooks()
+    await hooks["chat.message"]({ sessionID: "mixed" }, { parts: [{ type: "text", text: "bonjour comment vas-tu" }] })
+    const personal = { parts: [{ type: "text", text: "parle moi du matelas" }] }
+    await hooks["chat.message"]({ sessionID: "mixed" }, personal)
+    expect(personal.parts[0].text.startsWith(DATETIME_HEADER)).toBe(false)
+
+    // Later the user asks about code -> session becomes project. The first
+    // project message is skipped (session-title hygiene); the next is injected.
+    const proj = { parts: [{ type: "text", text: "how do I fix the build in src/main.java?" }] }
+    await hooks["chat.message"]({ sessionID: "mixed" }, proj)
+    expect(proj.parts[0].text.startsWith(DATETIME_HEADER)).toBe(false)
+    const proj2 = { parts: [{ type: "text", text: "now run the tests" }] }
+    await hooks["chat.message"]({ sessionID: "mixed" }, proj2)
+    expect(proj2.parts[0].text.startsWith(DATETIME_HEADER)).toBe(true)
+  })
+
+  test("system transform skips injection for a personal session", async () => {
+    const hooks = await loadHooks()
+    // mark session personal via chat.message first
+    await hooks["chat.message"]({ sessionID: "p-sys" }, { parts: [{ type: "text", text: "je m'interroge sur le sommeil de ma femme" }] })
+    const output = { system: ["base"] }
+    await hooks["experimental.chat.system.transform"]({ sessionID: "p-sys" }, output)
+    expect(hasAnyMarker(output.system)).toBe(false)
+    expect(output.system).toEqual(["base"])
+  })
+
+  test("topicGate:false preserves original always-inject behavior", async () => {
+    const mod = await import(`./index.ts?${Date.now()}`)
+    const hooks = await mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: false })
+    await hooks["chat.message"]({ sessionID: "p2" }, { parts: [{ type: "text", text: "first" }] })
+    const output = { parts: [{ type: "text", text: "second" }] }
+    await hooks["chat.message"]({ sessionID: "p2" }, output)
+    expect(output.parts[0].text.startsWith(DATETIME_HEADER)).toBe(true)
   })
 })
