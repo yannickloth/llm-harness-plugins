@@ -6,6 +6,7 @@ import {
   isPeakUtc,
   localPeakWindows,
   localOffpeakWindows,
+  formatWindows,
   shiftWindow,
   isHeavyPrompt,
   shouldRemind,
@@ -27,6 +28,8 @@ import {
   planForProvider,
   windowsForPlan,
   ratioForPlan,
+  isWeekendOffPeak,
+  effectivePeakWindows,
   type PricingPlan,
 } from "./helpers"
 
@@ -75,6 +78,78 @@ describe("offpeak-nudge window math", () => {
     expect(shiftWindow([6, 10], 8)).toEqual([[14, 18]])
     // UTC peak 22-02 shifted +4 -> local 02-06 (wraps past midnight).
     expect(shiftWindow([22, 2], 4)).toEqual([[2, 6]])
+  })
+})
+
+describe("offpeak-nudge weekend policy", () => {
+  const BEIJING_WEEKEND: PricingPlan = {
+    providerID: "deepseek",
+    timeOfDay: true,
+    peakWindowsUtc: PEAK_WINDOWS_UTC,
+    offPeakRatio: 0.5,
+    weekendOffPeak: { since: "2026-08-23", utcOffsetHours: 8 },
+  }
+
+  test("isWeekendOffPeak uses policy timezone day-of-week", () => {
+    // 2026-08-22 15:59 UTC = Sat 07:59 Brussels = Sat 23:59 Beijing -> before effective.
+    expect(isWeekendOffPeak(new Date("2026-08-22T15:59:59Z"), BEIJING_WEEKEND.weekendOffPeak)).toBe(false)
+    // 2026-08-22 16:00 UTC = Sat 18:00 Brussels = Sun 00:00 Beijing -> weekend active.
+    expect(isWeekendOffPeak(new Date("2026-08-22T16:00:00Z"), BEIJING_WEEKEND.weekendOffPeak)).toBe(true)
+    // 2026-08-24 08:00 UTC = Mon 10:00 Brussels = Mon 16:00 Beijing -> weekday.
+    expect(isWeekendOffPeak(new Date("2026-08-24T08:00:00Z"), BEIJING_WEEKEND.weekendOffPeak)).toBe(false)
+  })
+
+  test("effectivePeakWindows is empty on weekend after effective date", () => {
+    // Sunday Aug 23 in Beijing; 08:00 UTC is normally inside peak window [6,10).
+    expect(effectivePeakWindows(new Date("2026-08-23T08:00:00Z"), BEIJING_WEEKEND)).toEqual([])
+    // Same instant on a weekday after the policy start remains peak.
+    expect(effectivePeakWindows(new Date("2026-08-25T08:00:00Z"), BEIJING_WEEKEND)).toEqual(PEAK_WINDOWS_UTC)
+  })
+
+  test("peak_price_status reports off-peak during Beijing weekend even in normal peak window", async () => {
+    const mod = await import(`./index.ts?${Date.now()}`)
+    const hooks = await mod.default(
+      {
+        directory: REPO_ROOT,
+        worktree: REPO_ROOT,
+        client: { app: { log: async () => {} }, tui: { showToast: async () => {} } },
+      },
+      { now: () => new Date("2026-08-23T08:00:00Z") },
+    )
+    const result = JSON.parse(
+      await hooks["tool"]["peak_price_status"].execute({}, { sessionID: "s", messageID: "m", agent: "default", directory: REPO_ROOT, worktree: REPO_ROOT, abort: new AbortController().signal, metadata: () => {}, ask: async () => {} }),
+    )
+    expect(result.status).toBe("offpeak")
+    expect(result.peakHoursLocal).toBe("")
+    expect(result.offPeakHoursLocal).toBe("00:00–00:00")
+  })
+
+  test("chat.message does not banner during Beijing weekend", async () => {
+    const mod = await import(`./index.ts?${Date.now()}`)
+    const hooks = await mod.default(
+      {
+        directory: REPO_ROOT,
+        worktree: REPO_ROOT,
+        client: { app: { log: async () => {} }, tui: { showToast: async () => {} } },
+      },
+      { now: () => new Date("2026-08-23T08:00:00Z") },
+    )
+    const out = { parts: [{ type: "text", text: "Run a full-document-review on the entire repo" }] }
+    await hooks["chat.message"](
+      { sessionID: "s-weekend", model: { providerID: "deepseek" } },
+      out,
+    )
+    expect(out.parts[0].text).not.toContain("PEAK PRICING")
+  })
+
+  test("recordSpend attributes weekend peak-window usage as off-peak under Beijing policy", () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-weekend-"))
+    const stateFile = path.join(stateDir, "state.json")
+    recordSpend("s-weekend", new Date("2026-08-23T08:00:00Z"), { cost: 0.03, tokens: { input: 1000, output: 500, cacheRead: 0 } }, stateFile, BEIJING_WEEKEND)
+    const state = readState(stateFile)
+    expect(state["s-weekend"].cost?.peak).toBeCloseTo(0)
+    expect(state["s-weekend"].cost?.offpeak).toBeCloseTo(0.03)
+    fs.rmSync(stateDir, { recursive: true, force: true })
   })
 })
 
@@ -473,6 +548,38 @@ describe("offpeak-nudge plugin hooks", () => {
     const parsed = JSON.parse(result as string)
     expect(parsed.status).toBe("peak")
     expect(parsed.provider).toBe("DeepSeek")
+  })
+
+  test("peak_price_status returns correct off-peak and peak hours in both states", async () => {
+    const mkHooks = (now: Date) =>
+      import(`./index.ts?${Date.now()}`).then(mod =>
+        mod.default(
+          {
+            directory: REPO_ROOT,
+            worktree: REPO_ROOT,
+            client: { app: { log: async () => {} }, tui: { showToast: async () => {} } },
+          },
+          { now: () => now },
+        ),
+      )
+
+    const peakTime = new Date("2026-08-13T02:00:00Z")
+    const peakHooks = await mkHooks(peakTime)
+    const peakResult = JSON.parse(
+      await peakHooks["tool"]["peak_price_status"].execute({}, { sessionID: "s", messageID: "m", agent: "default", directory: REPO_ROOT, worktree: REPO_ROOT, abort: new AbortController().signal, metadata: () => {}, ask: async () => {} }),
+    )
+    expect(peakResult.status).toBe("peak")
+    expect(peakResult.offPeakHoursLocal).toBe(formatWindows(localOffpeakWindows(peakTime, PEAK_WINDOWS_UTC)))
+    expect(peakResult.peakHoursLocal).toBe(formatWindows(localPeakWindows(peakTime, PEAK_WINDOWS_UTC)))
+
+    const offpeakTime = new Date("2026-08-13T12:00:00Z")
+    const offpeakHooks = await mkHooks(offpeakTime)
+    const offpeakResult = JSON.parse(
+      await offpeakHooks["tool"]["peak_price_status"].execute({}, { sessionID: "s", messageID: "m", agent: "default", directory: REPO_ROOT, worktree: REPO_ROOT, abort: new AbortController().signal, metadata: () => {}, ask: async () => {} }),
+    )
+    expect(offpeakResult.status).toBe("offpeak")
+    expect(offpeakResult.offPeakHoursLocal).toBe(formatWindows(localOffpeakWindows(offpeakTime, PEAK_WINDOWS_UTC)))
+    expect(offpeakResult.peakHoursLocal).toBe(formatWindows(localPeakWindows(offpeakTime, PEAK_WINDOWS_UTC)))
   })
 })
 

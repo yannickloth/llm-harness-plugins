@@ -30,6 +30,9 @@ export type PricingPlan = {
   peakWindowsUtc?: PeakWindow[]
   /** Off-peak cost as a ratio of peak cost (0.5 => half price). */
   offPeakRatio?: number
+  /** Optional weekend off-peak policy. From `since` (ISO date) onward, the given
+   *  UTC offset timezone treats Saturdays and Sundays as entirely off-peak. */
+  weekendOffPeak?: { since: string; utcOffsetHours: number }
 }
 
 export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
@@ -38,6 +41,7 @@ export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
     timeOfDay: true,
     peakWindowsUtc: PEAK_WINDOWS_UTC,
     offPeakRatio: 0.5,
+    weekendOffPeak: { since: "2026-08-23", utcOffsetHours: 8 },
   },
 ]
 
@@ -58,6 +62,29 @@ export function windowsForPlan(
 
 export function ratioForPlan(plan: PricingPlan | undefined): number {
   return plan?.offPeakRatio ?? 0.5
+}
+
+/** Convert a UTC timestamp to wall-clock date/day-of-week in a fixed UTC offset. */
+function dateInOffset(d: Date, offsetHours: number): { isoDate: string; day: number } {
+  const shifted = new Date(d.getTime() + offsetHours * 3_600_000)
+  return { isoDate: shifted.toISOString().slice(0, 10), day: shifted.getUTCDay() }
+}
+
+export function isWeekendOffPeak(
+  d: Date,
+  policy: { since: string; utcOffsetHours: number } | undefined,
+): boolean {
+  if (!policy) return false
+  const { isoDate, day } = dateInOffset(d, policy.utcOffsetHours)
+  if (isoDate < policy.since) return false
+  return day === 0 || day === 6 // Sunday or Saturday in policy timezone
+}
+
+/** Peak windows that apply at instant `d`, honoring any weekend-off-peak policy. */
+export function effectivePeakWindows(d: Date, plan: PricingPlan | undefined): PeakWindow[] {
+  if (!plan) return PEAK_WINDOWS_UTC
+  if (isWeekendOffPeak(d, plan.weekendOffPeak)) return []
+  return plan.peakWindowsUtc ?? PEAK_WINDOWS_UTC
 }
 
 const DEFAULT_SKILL_NAMES = [
@@ -340,10 +367,12 @@ export function recordSpend(
   now: Date,
   spend: { cost: number; tokens: { input: number; output: number; cacheRead: number } },
   statePath?: string,
+  plan?: PricingPlan,
 ): string | null {
   const state = readState(statePath)
-  const ledger = state[sessionID] ?? { windowIndex: peakWindowIndex(now), ts: now.toISOString() }
-  const bucket = isPeakUtc(utcHourOf(now)) ? "peak" : "offpeak"
+  const windows = effectivePeakWindows(now, plan)
+  const ledger = state[sessionID] ?? { windowIndex: peakWindowIndex(now, windows), ts: now.toISOString() }
+  const bucket = isPeakUtc(utcHourOf(now), windows) ? "peak" : "offpeak"
 
   const cost = ledger.cost ?? { peak: 0, offpeak: 0 }
   const tokens = ledger.tokens ?? {

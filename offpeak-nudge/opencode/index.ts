@@ -23,6 +23,8 @@ import {
   utcHourOf,
   isPeakUtc,
   windowsForPlan,
+  effectivePeakWindows,
+  DEFAULT_PRICING_PLANS,
   type HeavyOptions,
   type PricingPlan,
 } from "./helpers"
@@ -65,9 +67,12 @@ function systemRuleFor(plan: PricingPlan, provider: string): string {
   const windows = windowsForPlan(plan)
   const peak = windows.map(([s, e]) => `${s}:00–${e}:00`).join(" & ")
   const ratio = ratioForPlan(plan)
+  const weekendNote = plan.weekendOffPeak
+    ? ` From ${plan.weekendOffPeak.since} onward, weekends (Saturday and Sunday) in UTC${plan.weekendOffPeak.utcOffsetHours >= 0 ? "+" : ""}${plan.weekendOffPeak.utcOffsetHours} are entirely off-peak.`
+    : ""
   return `${NUDGE_MARKER}
 ${provider} uses peak/off-peak time-of-day pricing. Off-peak hours are ${Math.round((1 - ratio) * 100)}% cheaper than peak.
-Peak windows (UTC): ${peak}.
+Peak windows (UTC): ${peak}.${weekendNote}
 When the user requests a heavy task (complex skill, many steps, long-running batch) and the
 current local time is within a peak window, briefly offer the option to postpone to a
 cheaper off-peak window. Show the off-peak hours. Never refuse to run the task, never block,
@@ -86,6 +91,9 @@ export default async (
   const statePath = options.statePath
   const plans = options.plans ?? undefined
 
+  const defaultTimeOfDayPlan = (): PricingPlan | undefined =>
+    plans?.find(p => p.timeOfDay) ?? DEFAULT_PRICING_PLANS.find(p => p.timeOfDay)
+
   let lastStatus: "peak" | "offpeak" | null = null
   const countedMessages = new Set<string>()
 
@@ -101,7 +109,8 @@ export default async (
   }
 
   const checkBoundary = () => {
-    const status = pricingStatus(now())
+    const windows = effectivePeakWindows(now(), defaultTimeOfDayPlan())
+    const status = pricingStatus(now(), windows)
     if (lastStatus !== null && status !== lastStatus) {
       showToast(buildStatusToast(now(), { provider: "" }))
       if (status === "offpeak") {
@@ -131,8 +140,9 @@ export default async (
       peak_price_status: tool({
         description:
           "Returns the current time-of-day pricing status (peak or off-peak) for a provider, " +
-          "with the off-peak discount ratio and the off-peak hours. Deterministic — call this " +
-          "instead of guessing the pricing when a user asks whether to postpone a heavy task.",
+          "with the off-peak discount ratio, the local off-peak hours and the local peak hours. " +
+          "Deterministic — call this instead of guessing the pricing when a user asks whether to " +
+          "postpone a heavy task.",
         args: {
           provider: z.string().optional().describe("provider id (default: deepseek)"),
         },
@@ -142,7 +152,7 @@ export default async (
           if (!plan) {
             return `provider "${provider}" has no time-of-day pricing plan; pricing is flat.`
           }
-          const windows = windowsForPlan(plan)
+          const windows = effectivePeakWindows(now(), plan)
           const status = pricingStatus(now(), windows)
           const ratio = ratioForPlan(plan)
           const off = formatWindows(localOffpeakWindows(now(), windows))
@@ -153,7 +163,8 @@ export default async (
               status,
               offPeakRatio: ratio,
               offPeakPercentCheaper: Math.round((1 - ratio) * 100),
-              offPeakHoursLocal: status === "peak" ? off : peak,
+              offPeakHoursLocal: off,
+              peakHoursLocal: peak,
             },
             null,
             2,
@@ -180,15 +191,17 @@ export default async (
 
       if (ev.type === "server.connected") {
         checkBoundary()
-        lastStatus = pricingStatus(now())
-        showToast(buildStatusToast(now(), { provider: "" }))
+        const boundaryWindows = effectivePeakWindows(now(), defaultTimeOfDayPlan())
+        lastStatus = pricingStatus(now(), boundaryWindows)
+        showToast(buildStatusToast(now(), { provider: "", windows: boundaryWindows }))
         startBoundaryTimer()
         return
       }
 
       if (ev.type === "session.created") {
         // The Session event carries no model/provider; use provider-neutral status.
-        showToast(buildStatusToast(now(), { provider: "" }))
+        const boundaryWindows = effectivePeakWindows(now(), defaultTimeOfDayPlan())
+        showToast(buildStatusToast(now(), { provider: "", windows: boundaryWindows }))
         return
       }
 
@@ -211,6 +224,8 @@ export default async (
         // count the cost exactly once per message to avoid double-counting.
         if (countedMessages.has(info.id)) return
         countedMessages.add(info.id)
+        const provider = info.model?.providerID ?? "deepseek"
+        const plan = planForProvider(provider, plans)
         recordSpend(
           sessionID,
           now(),
@@ -223,6 +238,7 @@ export default async (
             },
           },
           statePath,
+          plan,
         )
         return
       }
@@ -270,7 +286,7 @@ export default async (
       const provider = input.model?.providerID ?? "deepseek"
       const plan = planForProvider(provider, plans)
       if (!plan) return
-      const windows = windowsForPlan(plan)
+      const windows = effectivePeakWindows(nowDate, plan)
       if (!isPeakUtc(utcHourOf(nowDate), windows)) return
       if (isQuiet(input.sessionID, statePath)) return
 
