@@ -7,7 +7,6 @@ import {
   buildStatusToast,
   formatWindows,
   isHeavyPrompt,
-  isQuiet,
   localOffpeakWindows,
   localPeakWindows,
   pricingStatus,
@@ -15,10 +14,6 @@ import {
   recordSpend,
   ratioForPlan,
   shouldRemind,
-  setQuiet,
-  setScheduled,
-  takeScheduled,
-  allScheduled,
   summarizeSpend,
   utcHourOf,
   isPeakUtc,
@@ -46,10 +41,9 @@ type NudgeOptions = {
   boundaryTimer?: boolean
 }
 
-const QUIET_RE = /^\s*\/(offpeak|deepseek)\s+(quiet|silent)\b/i
-const UNQUIET_RE = /^\s*\/(offpeak|deepseek)\s+(loud|noisy)\b/i
-const SCHEDULE_RE = /\b(?:schedule|postpone|defer|delay)\b[\s\S]*\b(?:off-?peak|cheaper|until|later|tomorrow|cheap)\b|\b(?:run|do|start|execute)\b[\s\S]*\boff-?peak\b/i
-const CANCEL_SCHEDULE_RE = /^\s*\/(offpeak|deepseek)\s+cancel\b/i
+// Marker used to rewrite a heavy prompt during peak so the model asks for the
+// user's explicit confirmation instead of running it (default: do not run).
+const CONFIRM_MARKER = "[offpeak-confirm]"
 
 const BRAND_NAMES: Record<string, string> = {
   deepseek: "DeepSeek",
@@ -73,11 +67,10 @@ function systemRuleFor(plan: PricingPlan, provider: string): string {
   return `${NUDGE_MARKER}
 ${provider} uses peak/off-peak time-of-day pricing. Off-peak hours are ${Math.round((1 - ratio) * 100)}% cheaper than peak.
 Peak windows (UTC): ${peak}.${weekendNote}
-When the user requests a heavy task (complex skill, many steps, long-running batch) and the
-current local time is within a peak window, briefly offer the option to postpone to a
-cheaper off-peak window. Show the off-peak hours. Never refuse to run the task, never block,
-and do not repeat the reminder if it was already shown earlier this peak window.
-The reminder is informational only — the user decides.`
+During OFF-PEAK: run heavy tasks unconditionally — price is low, no confirmation needed.
+During PEAK: a heavy task must NOT be run by default. Ask the user for explicit
+confirmation before running it. If the user does not confirm, do not run. Do not
+repeat the reminder if it was already shown earlier this peak window.`
 }
 
 export default async (
@@ -113,16 +106,6 @@ export default async (
     const status = pricingStatus(now(), windows)
     if (lastStatus !== null && status !== lastStatus) {
       showToast(buildStatusToast(now(), { provider: "" }))
-      if (status === "offpeak") {
-        const tasks = allScheduled(statePath)
-        if (tasks.length > 0) {
-          showToast({
-            title: "Off-peak started — scheduled tasks",
-            message: `Cheaper pricing is active. Re-run: ${tasks.join(" | ")}.`,
-            variant: "success",
-          })
-        }
-      }
     }
     lastStatus = status
   }
@@ -256,53 +239,31 @@ export default async (
       if (!textPart || !textPart.text.trim()) return
       const text = textPart.text
 
-      if (QUIET_RE.test(text)) {
-        setQuiet(input.sessionID, true, statePath)
-        textPart.text = text.replace(QUIET_RE, "/offpeak quiet — set for this session").trim()
-        return
-      }
-      if (UNQUIET_RE.test(text)) {
-        setQuiet(input.sessionID, false, statePath)
-        textPart.text = text.replace(UNQUIET_RE, "/offpeak loud — re-enabled for this session").trim()
-        return
-      }
-      if (CANCEL_SCHEDULE_RE.test(text)) {
-        takeScheduled(input.sessionID, statePath)
-        textPart.text = "/offpeak cancel — cleared scheduled task".trim()
-        return
-      }
-      if (SCHEDULE_RE.test(text)) {
-        const task = text.replace(SCHEDULE_RE, "").trim() || "scheduled task"
-        setScheduled(input.sessionID, task, statePath)
-        showToast({
-          title: "Scheduled for off-peak",
-          message: `Noted. I'll offer to re-run it when off-peak starts: "${task}".`,
-          variant: "info",
-        })
-        textPart.text = `(task postponed to off-peak by the user; do not run it now)\n\n${text}`
-        return
-      }
-
       const provider = input.model?.providerID ?? "deepseek"
       const plan = planForProvider(provider, plans)
       if (!plan) return
       const windows = effectivePeakWindows(nowDate, plan)
+      // Off-peak: run unconditionally — never touch the user's message.
       if (!isPeakUtc(utcHourOf(nowDate), windows)) return
-      if (isQuiet(input.sessionID, statePath)) return
 
       const { heavy } = isHeavyPrompt(text, heavyOpts)
       if (!heavy) return
 
+      // Peak + heavy task: keep the informational banner AND require explicit
+      // user confirmation. By default the task is not run.
       if (!shouldRemind(input.sessionID, nowDate, statePath, windows)) return
 
       const ratio = ratioForPlan(plan)
       const banner = buildBanner(nowDate, windows, displayName(provider), ratio)
-      textPart.text = `${banner}\n\n${textPart.text}`
-
       const off = formatWindows(localOffpeakWindows(nowDate, windows))
+      textPart.text = `${banner}\n\n${CONFIRM_MARKER}
+The user requested a heavy task during peak pricing. Do NOT run it unless the user
+explicitly confirms. Ask for confirmation, showing the off-peak hours (${off}).
+If the user confirms, run the task. If not, do not run it.\n\n${text}`
+
       showToast({
         title: `${displayName(provider)} peak`,
-        message: `Heavy task detected during ${displayName(provider)} peak hours — off-peak is ${Math.round((1 - ratio) * 100)}% cheaper (off-peak: ${off}). Say "schedule for off-peak" to postpone it.`,
+        message: `Heavy task detected during ${displayName(provider)} peak hours — off-peak is ${Math.round((1 - ratio) * 100)}% cheaper (off-peak: ${off}). Confirmation required before running.`,
         variant: "warning",
       })
     },

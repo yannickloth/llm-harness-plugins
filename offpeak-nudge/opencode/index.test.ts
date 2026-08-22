@@ -19,8 +19,6 @@ import {
   pricingStatus,
   recordSpend,
   summarizeSpend,
-  isQuiet,
-  setQuiet,
   setScheduled,
   takeScheduled,
   hasScheduled,
@@ -488,47 +486,36 @@ describe("offpeak-nudge plugin hooks", () => {
     expect(output.system.length).toBe(1)
   })
 
-  test("quiet toggles off nudges but keeps the message", async () => {
+  test("off-peak: heavy prompt is left untouched (run unconditionally)", async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
     const stateFile = path.join(stateDir, "state.json")
-    const hooks = await loadHooks({ now: () => new Date("2026-08-13T02:00:00Z"), statePath: stateFile })
-    const q = { parts: [{ type: "text", text: "/offpeak quiet" }] }
-    await hooks["chat.message"]({ sessionID: "s-q" }, q)
-    expect(isQuiet("s-q", stateFile)).toBe(true)
-    // heavy prompt now suppressed
-    const heavy = { parts: [{ type: "text", text: "run integrate-topic now" }] }
-    await hooks["chat.message"]({ sessionID: "s-q" }, heavy)
-    expect(heavy.parts[0].text).toBe("run integrate-topic now")
-    // loud re-enables
-    const l = { parts: [{ type: "text", text: "/offpeak loud" }] }
-    await hooks["chat.message"]({ sessionID: "s-q" }, l)
-    expect(isQuiet("s-q", stateFile)).toBe(false)
+    const hooks = await loadHooks({ now: () => new Date("2026-08-13T12:00:00Z"), statePath: stateFile })
+    const out = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
+    await hooks["chat.message"]({ sessionID: "s-off" }, out)
+    expect(out.parts[0].text).toBe("run integrate-topic for biofabrication")
     fs.rmSync(stateDir, { recursive: true, force: true })
   })
 
-  test("schedule intent stores the task and blocks execution", async () => {
+  test("peak: heavy prompt is rewritten to require confirmation (do not run by default)", async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
     const stateFile = path.join(stateDir, "state.json")
     const hooks = await loadHooks({ now: () => new Date("2026-08-13T02:00:00Z"), statePath: stateFile })
-    const out = { parts: [{ type: "text", text: "schedule this task for off-peak: run the full review" }] }
-    await hooks["chat.message"]({ sessionID: "s-sched" }, out)
-    expect(hasScheduled("s-sched", stateFile)).toBe(true)
-    expect(out.parts[0].text).toContain("postponed to off-peak")
-    // cancel clears it
-    const cancel = { parts: [{ type: "text", text: "/offpeak cancel" }] }
-    await hooks["chat.message"]({ sessionID: "s-sched" }, cancel)
-    expect(hasScheduled("s-sched", stateFile)).toBe(false)
+    const out = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
+    await hooks["chat.message"]({ sessionID: "s-confirm" }, out)
+    expect(out.parts[0].text.startsWith("╭")).toBe(true)
+    expect(out.parts[0].text).toContain("Do NOT run it")
+    expect(out.parts[0].text).toContain("Ask for confirmation")
+    expect(out.parts[0].text).toContain("run integrate-topic for biofabrication")
     fs.rmSync(stateDir, { recursive: true, force: true })
   })
 
-  test("normal instructions are NOT misinterpreted as schedule intent", async () => {
+  test("peak: light prompt is left untouched (no confirmation needed)", async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
     const stateFile = path.join(stateDir, "state.json")
     const hooks = await loadHooks({ now: () => new Date("2026-08-13T02:00:00Z"), statePath: stateFile })
-    const out = { parts: [{ type: "text", text: "run this task later today" }] }
-    await hooks["chat.message"]({ sessionID: "s-nosched" }, out)
-    expect(hasScheduled("s-nosched", stateFile)).toBe(false)
-    expect(out.parts[0].text).toBe("run this task later today")
+    const out = { parts: [{ type: "text", text: "add a comma" }] }
+    await hooks["chat.message"]({ sessionID: "s-light" }, out)
+    expect(out.parts[0].text).toBe("add a comma")
     fs.rmSync(stateDir, { recursive: true, force: true })
   })
 
