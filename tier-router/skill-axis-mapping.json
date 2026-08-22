@@ -3,9 +3,10 @@
   "benchmark_source": "https://themonoclebear.com/en/blog/coeos-divide-and-route/ | https://github.com/Odyssai-eu/coeos-SE/tree/main/coeos_se",
   "strategy": "retry-pool-escalate",
   "rationale": "Each axis has a ranked model list: cheaper model first [initial], quality-specialist [model] second. The agent tries initial first. If it fails to converge after 2 rounds, escalates to the quality-specialist. On axes where the cheapest model IS the quality-specialist, no initial is set (deepseek-primary axes).",
+  "pricing_date": "2026-08-22",
   "pricing": {
-    "deepseek/deepseek-v4-pro":       {"input": 0.435, "output": 0.87,  "source": "api-docs.deepseek.com"},
-    "deepseek/deepseek-v4-flash":     {"input": 0.14,  "output": 0.28,  "source": "api-docs.deepseek.com"},
+    "deepseek/deepseek-v4-pro":       {"input": 0.66,  "output": 1.98,  "source": "api-docs.deepseek.com (cache-miss; off-peak $0.66/$1.98, peak $1.32/$3.96; cache-hit $0.022/$1.98)"},
+    "deepseek/deepseek-v4-flash":     {"input": 0.22,  "output": 0.66,  "source": "api-docs.deepseek.com (cache-miss; off-peak $0.22/$0.66, peak $0.44/$1.32; cache-hit $0.007/$0.66)"},
     "kimi/kimi-k3":                   {"input": 3.00,  "output": 15.00, "source": "platform.kimi.ai"},
     "kimi-for-coding/kimi-k2.7-code": {"input": 0.71,  "output": 3.50,  "source": "OpenRouter"},
     "kimi-for-coding/kimi-k2.6":      {"input": 0.589, "output": 2.48,  "source": "OpenRouter"}
