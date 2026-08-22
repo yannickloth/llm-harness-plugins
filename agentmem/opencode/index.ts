@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, openSync, writeFileSync, closeSync, readFileSync
 import { collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
+import { shouldInjectProjectContext, updateSessionTopic, getSessionTopic } from "../../shared/session-topic"
 
 const agentmemDir = path.join(import.meta.dir, "..")
 const classesDir = path.join(agentmemDir, "build", "classes")
@@ -12,6 +13,9 @@ const mainClass = "eu.infolead.llmhp.memory.MemorySystemCli"
 
 const DREAM_INTERVAL_MS = 24 * 60 * 60 * 1000
 let lastDreamRun = 0
+function sanitize(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_-]/g, "_")
+}
 let injectedSessionId: string | null = null
 const injectedScopes = new Set<string>()
 let pendingClassifications = 0
@@ -19,6 +23,7 @@ let classificationGeneration = 0
 let flaggedTurnCount = 0
 let keeperBusy = false
 let logger: PluginLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+const startupInjectedForSession = new Set<string>()
 
 /**
  * The per-message classifier spawns `opencode run --agent memory-keeper` — a
@@ -74,10 +79,21 @@ async function injectBudgetedMem(client: ReturnType<Parameters<Plugin>[0]["clien
   const raw = proc.stdout
   const context = await parseFrontmatterOutput(raw)
   if (!context) return
+  // Keep the chat window lean: persist the full memory context to a markdown
+  // file and inject only a one-line pointer. The model reads the file on demand
+  // (mirrors the lazy-loaded AGENTS.md rule pattern), so the chat stays short.
+  const detailFile = path.join(mdir, "injections", `${sanitize(sessionId)}.md`)
+  try {
+    mkdirSync(path.dirname(detailFile), { recursive: true })
+    writeFileSync(detailFile, context + "\n")
+  } catch (e: any) {
+    logger.warn(`memory detail write failed: ${e?.message ?? String(e)}`)
+  }
+  const relPath = path.relative(root, detailFile)
   try {
     await client.session.prompt({
       path: { id: sessionId },
-      body: { noReply: true, parts: [{ type: "text", text: header + context }] },
+      body: { noReply: true, parts: [{ type: "text", text: header + `Full persistent memory — details in \`${relPath}\`.\n` }] },
     })
   } catch (e) {
     logger.error(`budget injection failed: ${(e as Error).message}`)
@@ -85,7 +101,7 @@ async function injectBudgetedMem(client: ReturnType<Parameters<Plugin>[0]["clien
 }
 
 async function reinjectMemory(client: ReturnType<Parameters<Plugin>[0]["client"]>, sessionId: string, root: string) {
-  await injectBudgetedMem(client, sessionId, root, "# Persistent Project Memory\n**UPDATED** — new memories just saved. These are now in your context.\n\n", true)
+  await injectBudgetedMem(client, sessionId, root, "# Persistent Project Memory\n**UPDATED** — new memories just saved. Details below; read the file if you need them.\n\n", true)
 }
 
 async function injectMemoryAtStartup(client: ReturnType<Parameters<Plugin>[0]["client"]>, sessionId: string, root: string) {
@@ -98,7 +114,7 @@ async function injectMemoryAtStartup(client: ReturnType<Parameters<Plugin>[0]["c
   await injectBudgetedMem(client, sessionId, root, [
     "# Persistent Project Memory",
     "",
-    "These memories persist across sessions. They are ALREADY IN your context — you do NOT need to read them again.",
+    "These memories persist across sessions. Full content is in the details file — read it on demand.",
     "Use `save-memory` to persist new learnings.",
     "",
   ].join("\n"), false)
@@ -110,9 +126,10 @@ export function isInRoot(absPath: string, root: string): boolean {
   return normalized === normalizedRoot || normalized.startsWith(normalizedRoot + (normalizedRoot === path.sep ? "" : path.sep))
 }
 
-function handleScopedInject(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, filePath: string) {
+function handleScopedInject(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, filePath: string, topicGate: boolean) {
   const sessionId = injectedSessionId
   if (!sessionId) return
+  if (topicGate && !shouldInjectProjectContext(sessionId)) return
   const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath)
   if (!isInRoot(absPath, root)) return
   const scoped = collectScopedMem(absPath, root)
@@ -126,9 +143,10 @@ function handleScopedInject(client: ReturnType<Parameters<Plugin>[0]["client"]>,
   }).catch(() => {})
 }
 
-function handleFileEditScoped(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, file: string) {
+function handleFileEditScoped(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, file: string, topicGate: boolean) {
   const sessionId = injectedSessionId
   if (!sessionId) return
+  if (topicGate && !shouldInjectProjectContext(sessionId)) return
   const absPath = path.isAbsolute(file) ? file : path.resolve(root, file)
   if (!isInRoot(absPath, root)) return
   const scoped = collectScopedMem(absPath, root)
@@ -327,9 +345,18 @@ function trySpawnDreamer(mdir: string) {
   ]).finally(release)
 }
 
-export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+type AgentmemOptions = {
+  /**
+   * If true (default), only inject memory context into sessions classified as
+   * project-related. Personal/non-coding sessions are left alone.
+   */
+  topicGate?: boolean
+}
+
+export default async ({ client, directory, worktree }: Parameters<Plugin>[0], options: AgentmemOptions = {}) => {
   logger = createLogger(client, "agentmem")
-  logger.info("plugin active — 6 tools + classifier + auto-injection hooks")
+  const topicGate = options.topicGate ?? true
+  logger.info(`plugin active — 6 tools + classifier + auto-injection hooks; topic gate: ${topicGate}`)
   const root = rootDir(directory, worktree)
   const mdir = memDir(directory, worktree)
 
@@ -342,13 +369,13 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           flushFlaggedTurns(client, root, false)
           injectedScopes.clear()
           injectedSessionId = sid
-          injectMemoryAtStartup(client, sid, root)
-            .then(() => logger.info(`injected memory into session ${sid}`))
-            .catch(e => logger.error(`session.created injection failed: ${(e as Error).message}`))
+          // Memory injection is deferred to the first chat.message so the topic
+          // gate can decide whether this is a project session. Personal
+          // sessions are never injected with project memory.
           break
         }
         case "file.edited": {
-          handleFileEditScoped(client, root, event.properties?.file ?? "")
+          handleFileEditScoped(client, root, event.properties?.file ?? "", topicGate)
           break
         }
         case "session.idle": {
@@ -358,6 +385,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         }
         case "session.deleted": {
           flushFlaggedTurns(client, root, false)
+          const dsid = event.properties?.sessionID
+          if (dsid) startupInjectedForSession.delete(dsid)
           break
         }
       }
@@ -366,6 +395,15 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     "chat.message": async (input, output) => {
       const text = output.parts?.map((p: any) => p.text ?? "").join(" ") ?? ""
       if (!text || text.length < 10) return
+      updateSessionTopic(input.sessionID, text)
+      const projectSession = topicGate ? shouldInjectProjectContext(input.sessionID) : true
+      if (projectSession && !startupInjectedForSession.has(input.sessionID)) {
+        startupInjectedForSession.add(input.sessionID)
+        injectMemoryAtStartup(client, input.sessionID, root)
+          .then(() => logger.info(`injected memory into session ${input.sessionID}`))
+          .catch(e => logger.error(`startup injection failed: ${(e as Error).message}`))
+      }
+      if (!projectSession) return
       const allow = await shouldClassifyNow(mdir)
       if (!allow) return
       pendingClassifications++
@@ -385,7 +423,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       const filePath = extractFilePathFromToolInput(input.args ?? {})
       if (!filePath) return
       if (input.sessionID) injectedSessionId = input.sessionID
-      handleScopedInject(client, root, filePath)
+      handleScopedInject(client, root, filePath, topicGate)
     },
 
     tool: {

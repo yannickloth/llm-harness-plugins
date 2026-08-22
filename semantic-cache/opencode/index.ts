@@ -1,6 +1,8 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import path from "path"
+import fs from "fs"
 import { createLogger } from "../../shared/plugin-logger"
+import { updateSessionTopic, shouldInjectProjectContext } from "../../shared/session-topic"
 import { cacheDir, invalidateFiles, invalidateStale, lookup, SOURCE_AUTO, SOURCE_FILEOP, stats, store } from "./daemon-client"
 
 const WRITE_TOOLS: ReadonlySet<string> = new Set(["edit", "write"])
@@ -45,10 +47,26 @@ function extractFilePath(args: Record<string, unknown>): string | null {
   return null
 }
 
-export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+/** Stable short hash for naming per-hit detail files (mirrors CacheStore.hashKey). */
+function hash(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (31 * h + s.charCodeAt(i)) | 0
+  return (h < 0 ? -h : h).toString(16)
+}
+
+type SemanticCacheOptions = {
+  /**
+   * If true (default), only inject cached context into sessions classified as
+   * project-related. Personal/non-coding sessions are left alone.
+   */
+  topicGate?: boolean
+}
+
+export default async ({ client, directory, worktree }: Parameters<Plugin>[0], options: SemanticCacheOptions = {}) => {
   const logger = createLogger(client, "semantic-cache")
   const cdir = cacheDir({ worktree, directory })
-  logger.info("plugin active — 3 tools + lookup/store/invalidation hooks (persistent daemon)")
+  const topicGate = options.topicGate ?? true
+  logger.info(`plugin active — 3 tools + lookup/store/invalidation hooks (persistent daemon); topic gate: ${topicGate}`)
 
   return {
     event: async ({ event }) => {
@@ -72,6 +90,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       if (!sessionId) return
       const text = output.parts?.map((p: any) => p.text ?? "").join(" ").trim() ?? ""
       if (!text) return
+      updateSessionTopic(sessionId, text)
 
       // Flush the prior turn's completed (prompt, assistant-response) pair —
       // unless that turn was served from the cache (we don't re-store a stale
@@ -88,11 +107,25 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       assistantTextBySession.delete(sessionId)
 
       // Inject a cached hit as stale context (deduped per session+prompt).
+      // Only do this for project sessions; personal sessions must not be
+      // diverted by unrelated cached answers.
+      if (topicGate && !shouldInjectProjectContext(sessionId)) return
       if (cached && markInjected(`${sessionId}|${text}`)) {
+        // Keep the chat window lean: persist the full cached response to a
+        // markdown file and inject only a one-line pointer. The model reads the
+        // file on demand (mirrors the lazy-loaded AGENTS.md rule pattern).
+        const detailFile = path.join(cdir, "hits", `${hash(text)}.md`)
+        try {
+          fs.mkdirSync(path.dirname(detailFile), { recursive: true })
+          fs.writeFileSync(detailFile, `[CACHE HIT] stale cached answer (verify before acting)\n\n${cached}\n`)
+        } catch {
+          // never let a detail-file write failure break the session
+        }
+        const relPath = path.relative(worktree ?? directory, detailFile)
         await injectContext(
           client,
           sessionId,
-          `[CACHE HIT] A semantically similar prompt was answered before. Treat the following as a **stale starting point** — verify against current state before acting.\n\n${cached}`,
+          `[CACHE HIT] A semantically similar prompt was answered before. Details (stale — verify against current state): \`${relPath}\`.`,
         )
         logger.info(`injected cached response for session ${sessionId}`)
       }

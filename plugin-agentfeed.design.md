@@ -61,7 +61,7 @@ agentfeed/
 │   └── SKILL.md            # coordination protocol guide (self-registered skill)
 ├── tools/
 │   └── AppendOnlyMergeDriver.java  # git merge driver for ledger.jsonl (Java ≥25)
-├── feeds/                  # generated *.xml — git-ignored
+├── feeds/                  # generated *.xml + digest.md — git-ignored
 ├── plugin-agentfeed.design.md
 └── plugin-agentfeed.manual.md
 ```
@@ -104,16 +104,11 @@ agentfeed/
 ## Watermark / injection
 
 - **Watermark** = last-rendered global position `(ts, host, seq)` per `(sessionID, agent)`, in `watermarks.json`. New = entries sorting after it.
-- **`chat.message` hook** prepends to text part when new entries exist:
+- **`chat.message` hook** keeps the chat window lean: it writes the full digest to `agentfeed/feeds/digest.md` (git-ignored) and prepends only a one-line pointer to the text part when new entries exist (mirrors the lazy-loaded AGENTS.md rule pattern — the model reads the file on demand):
 
 ```
-## Coordination digest (new since seq 3 on mbp)
-- [mbp:4] auditor: handed "ch.3" to writer
-- [desk:2] writer: claim "draft ch.4" (lease until 22:53)
-- [desk:3] writer: git push on main
-- [desk:4] writer: released on main
-
-⚠ possible conflict: agents auditor, writer hold branch/ref `main` concurrently — coordinate before proceeding.
+## Coordination digest
+3 new entries — details in `agentfeed/feeds/digest.md`.
 ```
 
 - **No-op → no injection** (skip when nothing new; save tokens). First user message skipped (session-title hygiene, mirrors datetime-inject).
@@ -167,7 +162,7 @@ Shared-resource activity is recorded **automatically** (no explicit tool call) s
 
 | Hook | Behavior |
 |------|----------|
-| `chat.message` | Prepend digest; advance watermark; record session→agent |
+| `chat.message` | Write digest to `feeds/digest.md`; prepend one-line pointer; advance watermark; record session→agent |
 | `experimental.chat.system.transform` | Static coord note + condensed use-case summary, once/session |
 | `config` | Self-register the `coordinate` skill |
 | `tool.execute.after` | Auto-record resource events (git/file), coalesced |

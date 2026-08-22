@@ -13,6 +13,7 @@ import {
   type WatermarkStore,
 } from "./watermarks"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
+import { updateSessionTopic, shouldInjectProjectContext, getSessionTopic } from "../../shared/session-topic"
 
 export type AgentfeedOptions = {
   ledgerDir?: string
@@ -30,6 +31,11 @@ export type AgentfeedOptions = {
   resourceLeaseMs?: number
   /** Retain raw ledger events younger than this before archiving on compact. */
   compactRetentionMs?: number
+  /**
+   * If true (default), only inject coordination context into sessions classified
+   * as project-related. Personal/non-coding sessions are left alone.
+   */
+  topicGate?: boolean
 }
 
 const SYSTEM_NOTE = `## Coordination ledger
@@ -72,6 +78,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   const ledgerFile = path.join(ledgerDir, "ledger.jsonl")
   const lockFile = path.join(ledgerDir, ".ledger.lock")
   const feedOutDir = options.feedOutDir ?? path.join(ledgerDir, "feeds")
+  const digestFile = path.join(feedOutDir, "digest.md")
   const maxDigestEntries = options.maxDigestEntries ?? 50
   const liveFeeds = options.liveFeeds ?? true
   const javaBinary = options.javaBinary ?? "java"
@@ -80,6 +87,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   const resourceCoalesceMs = options.resourceCoalesceMs ?? 30_000
   const resourceLeaseMs = options.resourceLeaseMs ?? 30 * 60_000
   let compactRetentionMs = options.compactRetentionMs ?? 7 * 24 * 60 * 60 * 1000
+  const topicGate = options.topicGate ?? true
   const archiveDir = path.join(ledgerDir, ".agentfeed", "ledger-archive")
 
   const ledger = new Ledger()
@@ -92,7 +100,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   const skillFile = path.join(import.meta.dir, "..", "skills", "coordinate", "SKILL.md")
   const skillName = skillNameFrom(skillFile)
 
-  logger.info(`plugin active — ledger: ${ledgerFile}; live feeds: ${liveFeeds}; autoGit: ${autoGit}; autoFile: ${autoFile}`)
+  logger.info(`plugin active — ledger: ${ledgerFile}; live feeds: ${liveFeeds}; autoGit: ${autoGit}; autoFile: ${autoFile}; topic gate: ${topicGate}`)
 
   function regenerateFeedsAsync(): void {
     if (!liveFeeds) return
@@ -210,11 +218,13 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
       try {
         const agent = input.agent ?? "default"
         agentBySession.set(input.sessionID, agent)
+        const textPart = output.parts.find((p) => p.type === "text")
+        if (textPart?.text) updateSessionTopic(input.sessionID, textPart.text)
+        if (topicGate && !shouldInjectProjectContext(input.sessionID)) return
         if (!seenSessions.has(input.sessionID)) {
           seenSessions.add(input.sessionID)
           return
         }
-        const textPart = output.parts.find((p) => p.type === "text")
         if (!textPart || !textPart.text?.trim()) return
         const wmPath = watermarkPath(ledgerDir, input.sessionID, agent)
         const wm = await wmStore.read(wmPath)
@@ -222,7 +232,17 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
         if (entries.length === 0) return
         const digest = buildDigest(entries, { maxEntries: maxDigestEntries })
         if (!digest) return
-        textPart.text = `${digest}\n\n${textPart.text}`
+        // Keep the chat window lean: persist the full digest to a markdown file
+        // and prepend only a one-line pointer. The model reads the file if it
+        // needs the details (mirrors the lazy-loaded AGENTS.md rule pattern).
+        try {
+          fs.mkdirSync(path.dirname(digestFile), { recursive: true })
+          fs.writeFileSync(digestFile, digest + "\n")
+        } catch (writeErr: any) {
+          logger.warn(`digest write failed: ${writeErr?.message ?? String(writeErr)}`)
+        }
+        const relPath = path.relative(root, digestFile)
+        textPart.text = `## Coordination digest\n${entries.length} new entr${entries.length === 1 ? "y" : "ies"} — details in \`${relPath}\`.\n\n${textPart.text}`
         // Advance watermark to the true last new entry (even if digest truncated)
         await wmStore.write(wmPath, watermarkAfter(entries))
       } catch (e: any) {
@@ -231,10 +251,12 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
     },
 
     "experimental.chat.system.transform": async (
-      _input: unknown,
+      input: { sessionID?: string },
       output: { system: string[] },
     ) => {
       try {
+        const sid = (input as any).sessionID
+        if (topicGate && sid && getSessionTopic(sid) === "personal") return
         if (output.system.some((s) => s.includes(SYSTEM_NOTE.split("\n")[0]))) return
         output.system = [SYSTEM_NOTE, ...output.system]
       } catch (e: any) {

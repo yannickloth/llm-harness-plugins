@@ -20,7 +20,7 @@ afterAll(async () => {
 
 async function loadHooks(opts: Record<string, unknown> = {}) {
   const mod = await import(`./index.ts?${Date.now()}`)
-  return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT, client: { app: { log: async () => {} } } }, opts)
+  return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT, client: { app: { log: async () => {} } } }, { topicGate: false, ...opts })
 }
 
 describe("agentfeed plugin", () => {
@@ -362,5 +362,52 @@ describe("agentfeed plugin", () => {
     const after = await h.tool["coord_who_does_what"].execute({}, auditor)
     expect(after).toContain('auditor claims "ch.3"')
     expect(after).not.toContain('writer claims "ch.3"')
+  })
+})
+
+describe("agentfeed topic gate", () => {
+  async function loadGated(opts: Record<string, unknown> = {}) {
+    const mod = await import(`./index.ts?${Date.now()}`)
+    return mod.default(
+      { directory: REPO_ROOT, worktree: REPO_ROOT, client: { app: { log: async () => {} } } },
+      { ledgerDir: `/tmp/agentfeed-gate-${Date.now()}`, javaBinary: "true", topicGate: true, ...opts },
+    )
+  }
+
+  test("does not inject a coordination digest into a personal session", async () => {
+    const h = await loadGated()
+    const ctx = { agent: "writer", sessionID: "sg-p", messageID: "m", directory: REPO_ROOT, worktree: REPO_ROOT, abort: new AbortController().signal, metadata: () => {}, ask: async () => {} }
+    await h.tool["coord_log"].execute({ type: "msg", text: "working on ch.4" }, ctx)
+    // personal first message
+    const first = { parts: [{ type: "text", text: "ma femme dort mieux sur un matelas gonflable" }] }
+    await h["chat.message"]({ sessionID: "sg-p", agent: "writer" }, first)
+    const out = { parts: [{ type: "text", text: "encore une question personnelle" }] }
+    await h["chat.message"]({ sessionID: "sg-p", agent: "writer" }, out)
+    expect(out.parts[0].text.startsWith("##")).toBe(false)
+    expect(out.parts[0].text).toBe("encore une question personnelle")
+  })
+
+  test("injects a lean coordination pointer into a project session", async () => {
+    const h = await loadGated()
+    const ctx = { agent: "writer", sessionID: "sg-pr", messageID: "m", directory: REPO_ROOT, worktree: REPO_ROOT, abort: new AbortController().signal, metadata: () => {}, ask: async () => {} }
+    await h.tool["coord_log"].execute({ type: "msg", text: "working on the build for ch.4" }, ctx)
+    const first = { parts: [{ type: "text", text: "refactor the file src/main.java to fix the bug" }] }
+    await h["chat.message"]({ sessionID: "sg-pr", agent: "writer" }, first)
+    const out = { parts: [{ type: "text", text: "now check who owns the next task" }] }
+    await h["chat.message"]({ sessionID: "sg-pr", agent: "writer" }, out)
+    expect(out.parts[0].text.startsWith("## Coordination digest")).toBe(true)
+    // lean: points at the details file instead of inlining every entry
+    expect(out.parts[0].text).toMatch(/details in `[^`]+digest\.md`/)
+    expect(out.parts[0].text).not.toContain("working on the build")
+    expect(out.parts[0].text).toContain("now check who owns the next task")
+  })
+
+  test("system note is not injected into a personal session", async () => {
+    const h = await loadGated()
+    await h["chat.message"]({ sessionID: "sg-sys", agent: "a" }, { parts: [{ type: "text", text: "ma femme et son matelas" }] })
+    const out = { system: ["base"] }
+    await h["experimental.chat.system.transform"]({ sessionID: "sg-sys" }, out)
+    expect(out.system.some(s => s.includes("Coordination ledger"))).toBe(false)
+    expect(out.system).toEqual(["base"])
   })
 })
