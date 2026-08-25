@@ -4,8 +4,9 @@ import { createLogger } from "../../shared/plugin-logger"
 import fs from "fs"
 import os from "os"
 import { safeSpawn, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
+import { moduleDir } from "../../shared/module-dir"
 
-const pluginDir = path.join(import.meta.dir, "..")
+const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
 const sharedClassesDir = path.join(pluginDir, "..", "shared", "build", "classes")
 const classpath = `${classesDir}${path.delimiter}${sharedClassesDir}`

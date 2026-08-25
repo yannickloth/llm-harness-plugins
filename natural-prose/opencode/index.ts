@@ -2,12 +2,13 @@ import { type Config, type Plugin } from "@opencode-ai/plugin"
 import fs from "fs"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
+import { moduleDir } from "../../shared/module-dir"
 
-const skillsDir = path.join(import.meta.dir, "..", "skills")
+const skillsDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 
 // The deterministic prose analyzer lives in the sibling general-skills plugin.
 // Resolve its absolute path once at plugin load (import.meta.dir = <root>/natural-prose/opencode).
-const analyzerDir = path.join(import.meta.dir, "..", "..", "general-skills", "tools")
+const analyzerDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..", "..", "general-skills", "tools")
 const analyzerPath = () => path.join(analyzerDir, "ProsePatternAnalyzer.java")
 
 function extractName(skillFile: string, dirName: string): string {

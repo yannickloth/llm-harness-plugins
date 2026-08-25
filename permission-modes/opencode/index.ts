@@ -2,11 +2,12 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
+import { moduleDir } from "../../shared/module-dir"
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
   const logger = createLogger(client, "permission-modes")
   const root = worktree ?? directory
-  const pluginDir = path.join(import.meta.dir, "..")
+  const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
   const classesDir = path.join(pluginDir, "build", "classes")
   const mainClass = "eu.infolead.llmhp.permissionmodes.PermissionModesCli"
 

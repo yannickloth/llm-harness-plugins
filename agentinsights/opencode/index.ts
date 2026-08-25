@@ -2,8 +2,9 @@ import { type Plugin, tool } from "@opencode-ai/plugin"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { safeSpawn } from "../../shared/safe-spawn"
+import { moduleDir } from "../../shared/module-dir"
 
-const agentinsightsDir = path.join(import.meta.dir, "..")
+const agentinsightsDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(agentinsightsDir, "build", "classes")
 const mainClass = "eu.infolead.llmhp.insights.InsightsCli"
 

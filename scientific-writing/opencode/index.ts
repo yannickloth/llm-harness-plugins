@@ -1,9 +1,9 @@
 import { type Config, type Plugin } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
+import { moduleDir } from "../../shared/module-dir"
 import fs from "fs"
 import path from "path"
-
-const skillsDir = path.join(import.meta.dir, "..", "skills")
+const skillsDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 
 function extractName(skillFile: string, dirName: string): string {
   const content = fs.readFileSync(skillFile, "utf-8")

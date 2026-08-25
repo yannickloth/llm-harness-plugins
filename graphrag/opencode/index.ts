@@ -4,8 +4,9 @@ import { $ } from "bun"
 import path from "path"
 import { existsSync, readFileSync, writeFileSync, openSync, closeSync, rmSync, mkdirSync } from "fs"
 import { createLogger } from "../../shared/plugin-logger"
+import { moduleDir } from "../../shared/module-dir"
 
-const pluginDir = path.join(import.meta.dir, "..")
+const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
 const kgClassesDir = path.join(pluginDir, "..", "knowledge-graph", "build", "classes")
 const indexCliClass = "eu.infolead.llmhp.graphrag.IndexCli"

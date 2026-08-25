@@ -1,4 +1,5 @@
 import path from "path"
+import { moduleDir } from "../../shared/module-dir"
 
 /**
  * Client for the persistent semantic-cache daemon (SemanticCacheDaemon).
@@ -8,7 +9,7 @@ import path from "path"
  * hung daemon is torn down and respawned once before a request fails.
  */
 
-const pluginDir = path.join(import.meta.dir, "..")
+const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
 const daemonMain = "eu.infolead.llmhp.cache.SemanticCacheDaemon"
 

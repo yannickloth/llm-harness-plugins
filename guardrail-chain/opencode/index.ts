@@ -3,8 +3,9 @@ import { $ } from "bun"
 import path from "path"
 import { existsSync, readdirSync, statSync, readFileSync } from "fs"
 import { createLogger } from "../../shared/plugin-logger"
+import { moduleDir } from "../../shared/module-dir"
 
-const pluginDir = path.join(import.meta.dir, "..")
+const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
 const mainClass = "eu.infolead.llmhp.guardrails.GuardrailPipelineCli"
 

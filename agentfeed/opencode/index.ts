@@ -14,6 +14,7 @@ import {
 } from "./watermarks"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import { updateSessionTopic, shouldInjectProjectContext, getSessionTopic } from "../../shared/session-topic"
+import { moduleDir } from "../../shared/module-dir"
 
 export type AgentfeedOptions = {
   ledgerDir?: string
@@ -95,9 +96,10 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   const seenSessions = new Set<string>()
   const agentBySession = new Map<string, string>()
   const lastAutoEvent = new Map<string, number>()
-  const classesDir = path.join(import.meta.dir, "..", "build", "classes")
+  const dir = moduleDir(import.meta.url, import.meta.dir)
+  const classesDir = path.join(dir, "..", "build", "classes")
   const mainClass = "eu.infolead.llmhp.agentfeed.AtomCli"
-  const skillFile = path.join(import.meta.dir, "..", "skills", "coordinate", "SKILL.md")
+  const skillFile = path.join(dir, "..", "skills", "coordinate", "SKILL.md")
   const skillName = skillNameFrom(skillFile)
 
   logger.info(`plugin active — ledger: ${ledgerFile}; live feeds: ${liveFeeds}; autoGit: ${autoGit}; autoFile: ${autoFile}; topic gate: ${topicGate}`)
@@ -207,7 +209,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
       // coordination protocol on demand (mirrors the general-skills pattern).
       if (skillName) {
         const existing = (input as any).skills ?? {}
-        ;(input as any).skills = { ...existing, [skillName]: { file: path.relative(import.meta.dir, skillFile) } }
+        ;(input as any).skills = { ...existing, [skillName]: { file: path.relative(dir, skillFile) } }
       }
     },
 
