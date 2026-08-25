@@ -6,8 +6,9 @@ import { collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../s
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
 import { shouldInjectProjectContext, updateSessionTopic, getSessionTopic } from "../../shared/session-topic"
+import { moduleDir } from "../../shared/module-dir"
 
-const agentmemDir = path.join(import.meta.dir, "..")
+const agentmemDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(agentmemDir, "build", "classes")
 const mainClass = "eu.infolead.llmhp.memory.MemorySystemCli"
 
