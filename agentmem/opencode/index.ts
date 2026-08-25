@@ -28,13 +28,23 @@ const startupInjectedForSession = new Set<string>()
 
 /**
  * The per-message classifier spawns `opencode run --agent memory-keeper` — a
- * heavyweight subprocess (own model connection + memory). With many opencode
- * sessions and one spawn per chat message, this is an unbounded spawn storm.
- * These limits cap both concurrency (one in flight per process) and rate
- * (one spawn per window, shared across all sessions via a coordination file
- * in `.agentmem/`).
+ * heavyweight subprocess (own model connection + memory + all plugins loaded,
+ * ~2GB RSS). With many opencode sessions and one spawn per chat message, this
+ * is an unbounded spawn storm. These limits cap both concurrency (one in
+ * flight per process) and rate (one spawn per window, shared across all
+ * sessions via a coordination file in `.agentmem/`).
+ *
+ * The interval must be generous: at the previous 30s the classifier spawned a
+ * 2GB subprocess every 30s per process (observed ~670/hr host-wide across 7+
+ * opencode processes), saturating CPU/RAM and stalling interactive sessions.
+ * The memory-keeper still runs on session.idle when turns were flagged, so
+ * memory capture is preserved without a subprocess per message.
  */
-const CLASSIFY_MIN_INTERVAL_MS = 30_000
+const CLASSIFY_MIN_INTERVAL_MS = (() => {
+  const raw = process.env.OPENCODE_MEMORY_CLASSIFY_INTERVAL_MS
+  const parsed = raw ? parseInt(raw, 10) : NaN
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5 * 60 * 1000
+})()
 let classifierBusy = false
 let lastClassifyAt = 0
 const CLASSIFY_LOCK_FILE = ".classify-lock"
