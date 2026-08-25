@@ -99,7 +99,8 @@ the author can veto.
   `#observation`, `#key-insight`, and display mathematics. No rhetorical
   questions, no narrative flourish, no "where does this lead" inside a box.
 - **Enforce controlled vocabulary** from the project terminology: banned words
-  (subsume, encompass, leverage, utilize, mid, etc.), and the prescribed
+  (subsume, encompass, leverage, utilize, mid, "read past", etc.), and the
+  prescribed
   spellings (British `-ise`/`-isation`, behaviour, colour, centre,
   organisation). Do not introduce synonyms the project forbids.
 - **Preserve modal discipline.** Do not collapse "can cause" into "does
