@@ -1,4 +1,5 @@
 import { loadMemIndex, collectScopedMem, collectTopicFiles, extractFilePathFromToolInput } from "../shared/memory-helpers"
+import { extractOpencodeSessionId } from "../../shared/safe-spawn"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
@@ -107,6 +108,30 @@ describe("OpenCode plugin helpers", () => {
 
     test("returns null when no path found", () => {
       expect(extractFilePathFromToolInput({ command: "ls", other: "stuff" })).toBeNull()
+    })
+  })
+
+  describe("extractOpencodeSessionId", () => {
+    test("returns null on empty or non-JSON input", () => {
+      expect(extractOpencodeSessionId("")).toBeNull()
+      expect(extractOpencodeSessionId("not json at all")).toBeNull()
+    })
+
+    test("returns the first sessionID from the JSON event stream", () => {
+      const out = [
+        '{"type":"session.status","timestamp":1,"sessionID":"ses_abc","properties":{}}',
+        '{"type":"text","timestamp":2,"sessionID":"ses_abc","part":{"text":"YES"}}',
+      ].join("\n")
+      expect(extractOpencodeSessionId(out)).toBe("ses_abc")
+    })
+
+    test("skips non-JSON lines and finds sessionID later", () => {
+      const out = 'log line\n{"type":"text","timestamp":3,"sessionID":"ses_xyz","part":{"text":"ok"}}'
+      expect(extractOpencodeSessionId(out)).toBe("ses_xyz")
+    })
+
+    test("ignores JSON without a sessionID field", () => {
+      expect(extractOpencodeSessionId('{"type":"text","part":{"text":"no id"}}')).toBeNull()
     })
   })
 })

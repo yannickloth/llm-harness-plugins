@@ -131,6 +131,29 @@ export function extractOpencodeText(out: string): string {
   return words.join(" ").trim()
 }
 
+/**
+ * Extract the first session ID seen in `opencode run --format json` output
+ * (newline-delimited JSON events). Every event carries a top-level
+ * `sessionID`; return the first non-empty one. Null when none is seen.
+ *
+ * Plugins that spawn maintenance `opencode run` subprocesses (classifier,
+ * keeper, dreamer) use this to find and delete the throwaway session those
+ * subprocesses create, so they do not clutter the user's session list.
+ */
+export function extractOpencodeSessionId(out: string): string | null {
+  for (const line of out.split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      const evt = JSON.parse(trimmed)
+      if (typeof evt?.sessionID === "string" && evt.sessionID) return evt.sessionID
+    } catch {
+      // ignore non-JSON lines (e.g. logs)
+    }
+  }
+  return null
+}
+
 export function safeSpawnSync(
   argv: string[],
   opts: { cwd?: string; env?: Record<string, string> } = {},

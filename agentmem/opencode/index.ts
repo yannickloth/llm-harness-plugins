@@ -4,7 +4,7 @@ import path from "path"
 import { existsSync, mkdirSync, openSync, writeFileSync, closeSync, readFileSync, rmSync } from "fs"
 import { collectScopedMem, extractFilePathFromToolInput, FILE_TOOLS } from "../shared/memory-helpers"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
-import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
+import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText, extractOpencodeSessionId } from "../../shared/safe-spawn"
 import { shouldInjectProjectContext, updateSessionTopic, getSessionTopic } from "../../shared/session-topic"
 import { moduleDir } from "../../shared/module-dir"
 
@@ -131,6 +131,55 @@ async function injectMemoryAtStartup(client: ReturnType<Parameters<Plugin>[0]["c
   ].join("\n"), false)
 }
 
+const MAINTENANCE_TITLE_RE = /^Memory maintenance(?: |$)/
+
+/**
+ * Delete a throwaway maintenance session (classifier/keeper/dreamer) created
+ * by an `opencode run` subprocess. These are vacuous by design; leaving them
+ * in the DB cluttered the `/sessions` list (observed: ~1800 at peak). Best
+ * effort — never fatal if the session is already gone or a delete races.
+ */
+async function deleteMaintenanceSession(
+  client: ReturnType<Parameters<Plugin>[0]["client"]>,
+  sessionId: string | null | undefined,
+  kind: string,
+): Promise<void> {
+  if (!sessionId) return
+  try {
+    await client.session.delete({ path: { id: sessionId } })
+    logger.info(`cleaned up ${kind} maintenance session ${sessionId}`)
+  } catch (e: any) {
+    logger.warn(`failed to clean up ${kind} session ${sessionId}: ${e?.message ?? String(e)}`)
+  }
+}
+
+/**
+ * Delete stale "Memory maintenance (...)" sessions already in the project's
+ * session list (leftovers from crashes or pre-fix runs). The typed SDK list
+ * endpoint only exposes `directory`, so we page through the most-recent
+ * sessions and delete every maintenance-titled root session, repeating until
+ * a full pass finds none. Self-terminating and idempotent — it only ever
+ * removes sessions with the plugin's own maintenance title.
+ */
+async function sweepMaintenanceSessions(
+  client: ReturnType<Parameters<Plugin>[0]["client"]>,
+  root: string,
+): Promise<void> {
+  let deleted = 0
+  for (let round = 0; round < 200; round++) {
+    const { data } = await client.session.list({ directory: root }).catch(() => ({ data: undefined }))
+    const rows = data ?? []
+    const targets = rows.filter((s: any) => !s.parentID && MAINTENANCE_TITLE_RE.test(s.title ?? ""))
+    if (targets.length === 0) break
+    const results = await Promise.allSettled(targets.map((s: any) => client.session.delete({ path: { id: s.id } })))
+    deleted += results.filter((r) => r.status === "fulfilled").length
+    // Limit a single sweep to a bounded volume; leftover rows are swept on the
+    // next activation.
+    if (deleted >= 5000) break
+  }
+  if (deleted > 0) logger.info(`swept ${deleted} stale Memory-maintenance sessions`)
+}
+
 export function isInRoot(absPath: string, root: string): boolean {
   const normalizedRoot = path.resolve(root)
   const normalized = path.resolve(absPath)
@@ -211,7 +260,7 @@ async function shouldClassifyNow(mdir: string): Promise<boolean> {
   }
 }
 
-async function classifyMessage(text: string): Promise<boolean> {
+async function classifyMessage(client: ReturnType<Parameters<Plugin>[0]["client"]>, text: string): Promise<boolean> {
   const prompt = `Classify whether this message contains information worth remembering across sessions. Answer YES or NO only.
 
 Memory-worthy signals:
@@ -250,8 +299,13 @@ Answer (YES/NO):`
       new Promise<string | null>(resolve => setTimeout(() => resolve(null), CAP_MS)),
     ])
     clearTimeout(kill)
-    if (out == null) return false
-    return extractOpencodeText(out).toUpperCase() === "YES"
+    // The classifier's `opencode run` created a throwaway session; remove it so
+    // it never shows up in the user's session list.
+    if (out != null) {
+      await deleteMaintenanceSession(client, extractOpencodeSessionId(out), "classifier")
+      return extractOpencodeText(out).toUpperCase() === "YES"
+    }
+    return false
   } catch {
     try { if (proc) killProcessTree(proc) } catch {}
     return false
@@ -267,7 +321,7 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
   let keeper: ReturnType<typeof Bun.spawn>
   try {
     keeper = spawnDetached(
-      ["opencode", "run", "--agent", "memory-keeper",
+      ["opencode", "run", "--format", "json", "--agent", "memory-keeper",
        "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
        "--title", "Memory maintenance (keeper)",
        "Extract non-derivable learnings from the most recent conversation and persist them to .agentmem/."],
@@ -288,7 +342,8 @@ function spawnKeeper(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: 
   const CAP_MS = 125_000
   const textP = new Response(keeper.stdout).text().catch(() => "")
   Promise.race([
-    textP.then(() => {
+    textP.then(async (out) => {
+      await deleteMaintenanceSession(client, extractOpencodeSessionId(out), "keeper")
       if (reinject && capturedSessionId) reinjectMemory(client, capturedSessionId, root).catch(e => logger.error(`keeper reinject failed: ${(e as Error).message}`))
     }),
     new Promise(resolve => setTimeout(resolve, CAP_MS)),
@@ -304,7 +359,7 @@ function flushFlaggedTurns(client: ReturnType<Parameters<Plugin>[0]["client"]>, 
   spawnKeeper(client, root, null, reinject)
 }
 
-function trySpawnDreamer(mdir: string) {
+function trySpawnDreamer(client: ReturnType<Parameters<Plugin>[0]["client"]>, mdir: string) {
   // A plugin-loaded child opencode process must never re-launch its own
   // dreamer/keeper/classifier subprocesses. Without this guard, `session.idle`
   // in the spawned `opencode run` fires this handler again, recursively
@@ -326,7 +381,7 @@ function trySpawnDreamer(mdir: string) {
   let dreamer: ReturnType<typeof Bun.spawn> | null = null
   try {
     dreamer = spawnDetached(
-      ["opencode", "run", "--agent", "memory-dreamer",
+      ["opencode", "run", "--format", "json", "--agent", "memory-dreamer",
        "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
        "--title", "Memory maintenance (dreamer)",
        "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
@@ -351,7 +406,7 @@ function trySpawnDreamer(mdir: string) {
   }
   const RELEASE_CAP_MS = 320_000
   Promise.race([
-    new Response(dreamer.stdout).text().catch(() => {}),
+    new Response(dreamer.stdout).text().catch(() => "").then(out => deleteMaintenanceSession(client, extractOpencodeSessionId(out), "dreamer")),
     new Promise(resolve => setTimeout(resolve, RELEASE_CAP_MS)),
   ]).finally(release)
 }
@@ -370,6 +425,11 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
   logger.info(`plugin active — 6 tools + classifier + auto-injection hooks; topic gate: ${topicGate}`)
   const root = rootDir(directory, worktree)
   const mdir = memDir(directory, worktree)
+  // Clear any pre-existing "Memory maintenance" sessions (leftovers from
+  // crashes or pre-cleanup runs) so they no longer clutter the session list.
+  // Fire-and-forget: it only deletes sessions bearing the plugin's own
+  // maintenance title and is self-limiting.
+  sweepMaintenanceSessions(client, root).catch(e => logger.warn(`maintenance sweep failed: ${(e as Error).message}`))
 
   return {
     event: async ({ event }) => {
@@ -391,7 +451,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
         }
         case "session.idle": {
           flushFlaggedTurns(client, root)
-          trySpawnDreamer(mdir)
+          trySpawnDreamer(client, mdir)
           break
         }
         case "session.deleted": {
@@ -419,7 +479,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
       if (!allow) return
       pendingClassifications++
       const gen = classificationGeneration
-      classifyMessage(text).then(interesting => {
+      classifyMessage(client, text).then(interesting => {
         if (gen !== classificationGeneration) return
         pendingClassifications--
         if (interesting) flaggedTurnCount++
@@ -539,7 +599,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
           if (lockResult.exitCode !== 0) return "Dream already in progress (lock busy)."
           try {
             const dreamer = spawnDetached(
-              ["opencode", "run", "--agent", "memory-dreamer",
+              ["opencode", "run", "--format", "json", "--agent", "memory-dreamer",
                "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
                "--title", "Memory maintenance (dreamer)",
                "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
@@ -554,6 +614,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
                 new Response(dreamer.stdout).text(),
                 new Promise<string | null>(resolve => setTimeout(() => resolve(null), CAP_MS)),
               ])
+              if (out != null) await deleteMaintenanceSession(client, extractOpencodeSessionId(out), "dreamer")
               return out == null ? "Dream timed out after 320s." : (out.trim() || "Dream complete.")
             } finally { clearTimeout(kill) }
           } finally {

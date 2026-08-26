@@ -10,6 +10,7 @@ node_modules/
 .vscode/
 **/build/
 *.class
+*.bundle.js
 agentfeed/feeds/
 agentfeed/.agentfeed/
 agentfeed/.ledger.lock
