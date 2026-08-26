@@ -7,9 +7,27 @@ import { cacheDir, invalidateFiles, invalidateStale, lookup, SOURCE_AUTO, SOURCE
 
 const WRITE_TOOLS: ReadonlySet<string> = new Set(["edit", "write"])
 
+// Marker prefix used on every cache-hit injection we push into the session.
+// The injected noReply message re-fires the chat.message hook; skipping lines
+// that carry this marker breaks the re-entrant inject→lookup→inject loop that
+// otherwise runs away (observed: 569k lookups and 316k hit files in minutes).
+const CACHE_HIT_MARKER = "[CACHE HIT]"
+
 // Bounded dedup for cache-hit injection (avoid re-injecting the same stale block).
 const injectedKeys = new Set<string>()
 const MAX_INJECTED_KEYS = 1000
+
+// Hard runtime backstop: cap cache-hit injections per session per turn. Even if
+// a re-entrancy path ever slips past the marker guard, this bounds the damage
+// (no more 316k hit files / runaway lookups).
+const MAX_INJECTIONS_PER_SESSION = 8
+const injectionsBySession = new Map<string, number>()
+function canInject(sessionId: string): boolean {
+  const n = injectionsBySession.get(sessionId) ?? 0
+  if (n >= MAX_INJECTIONS_PER_SESSION) return false
+  injectionsBySession.set(sessionId, n + 1)
+  return true
+}
 
 // Auto-store bookkeeping: the assistant's completed text for a turn is paired
 // with that turn's user prompt (pendingBySession) and flushed on the next user
@@ -80,6 +98,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
           if (!sid) break
           pendingBySession.delete(sid)
           assistantTextBySession.delete(sid)
+          injectionsBySession.delete(sid)
           break
         }
       }
@@ -90,6 +109,11 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
       if (!sessionId) return
       const text = output.parts?.map((p: any) => p.text ?? "").join(" ").trim() ?? ""
       if (!text) return
+      // Never re-process a cache-hit pointer we injected ourselves. Without
+      // this, the injected noReply message re-fires this hook, whose text is
+      // semantically similar to cached prompts → another hit → another unique
+      // detail file → infinite inject loop (see CACHE_HIT_MARKER).
+      if (text.startsWith(CACHE_HIT_MARKER)) return
       updateSessionTopic(sessionId, text)
 
       // Flush the prior turn's completed (prompt, assistant-response) pair —
@@ -110,7 +134,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
       // Only do this for project sessions; personal sessions must not be
       // diverted by unrelated cached answers.
       if (topicGate && !shouldInjectProjectContext(sessionId)) return
-      if (cached && markInjected(`${sessionId}|${text}`)) {
+      if (cached && canInject(sessionId) && markInjected(`${sessionId}|${text}`)) {
         // Keep the chat window lean: persist the full cached response to a
         // markdown file and inject only a one-line pointer. The model reads the
         // file on demand (mirrors the lazy-loaded AGENTS.md rule pattern).
@@ -125,7 +149,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
         await injectContext(
           client,
           sessionId,
-          `[CACHE HIT] A semantically similar prompt was answered before. Details (stale — verify against current state): \`${relPath}\`.`,
+          `${CACHE_HIT_MARKER} A semantically similar prompt was answered before. Details (stale — verify against current state): \`${relPath}\`.`,
         )
         logger.info(`injected cached response for session ${sessionId}`)
       }
