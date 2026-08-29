@@ -84,6 +84,7 @@ compile_plugin "agentfeed"
 
 compile_plugin "session-lifecycle" "$SHARED_CP"
 compile_plugin "graphics-toolkit"
+compile_plugin "sdlc-guardrails"
 
 run_tests "agentmem" "$GUARDRAIL_CP"
 echo "--- Running agentmem TS tests ---"
@@ -101,6 +102,11 @@ run_tests "tier-router" "$SHARED_CP"
 run_tests "permission-modes"
 echo "--- Running permission-modes TS tests ---"
 bun test "$SCRIPT_DIR/permission-modes/opencode/index.test.ts" || echo "permission-modes TS tests: FAILED (bun not available?)"
+
+echo "--- Running sdlc-guardrails Java tests ---"
+run_tests "sdlc-guardrails"
+echo "--- Running sdlc-guardrails TS tests ---"
+bun test "$SCRIPT_DIR/sdlc-guardrails/opencode/index.test.ts" || echo "sdlc-guardrails TS tests: FAILED (bun not available?)"
 
 echo "--- Running general-skills TS tests ---"
 bun test "$SCRIPT_DIR/general-skills/opencode/index.test.ts" || echo "general-skills TS tests: FAILED (bun not available?)"

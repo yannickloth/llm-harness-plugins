@@ -19,7 +19,8 @@
     "./general-skills/opencode/index.ts",
     "./natural-prose/opencode/index.ts",
     "./permission-modes/opencode/index.ts",
-    "./system-message-merge/opencode/index.ts"
+    "./system-message-merge/opencode/index.ts",
+    "./sdlc-guardrails/opencode/index.ts"
   ],
   "agent": {
     "memory-keeper": {
@@ -77,6 +78,14 @@
     "insights": {
       "description": "Generate session analytics + AI-powered insights report",
       "template": "Run this: java --class-path agentinsights/build/classes eu.infolead.llmhp.insights.InsightsCli run --session-dir .opencode/sessions --insights-dir .agentmem/insights --platform opencode"
+    },
+    "sdlc-fix": {
+      "description": "Mark this session as a fix task. While active, edits to test files are blocked unless they add coverage (R3).",
+      "template": "Run this: echo 'Fix scope ON — test files are protected against weakening.'"
+    },
+    "sdlc-plan": {
+      "description": "Return this session to normal build scope, disabling test-protection (R3).",
+      "template": "Run this: echo 'Fix scope OFF — normal build scope.'"
     }
   }
 }
