@@ -15,6 +15,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`agentinsights`](./agentinsights) | Session analytics + AI-generated narrative reports — scan transcripts, extract facets via LLM, generate HTML insights |
 | [`graphrag`](./graphrag) | MS GraphRAG semantic layer — LLM-extracted entities/relationships, community summaries, vector-backed local/global/drift search |
 | [`datetime-inject`](./datetime-inject) | Injects current datetime, platform, and repo toolchain context into every LLM prompt |
+| [`sdlc-guardrails`](./sdlc-guardrails) | SDLC artifact-contract enforcement — plan/diff sync (R1), protected-path blocks (R2), test-protection during fixes (R3), bash write gating, verification-before-done commit gate (R6), incident→intent loop, audit log |
 
 ---
 
@@ -45,7 +46,8 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
     "./llm-harness-plugins/prompt-registry/opencode/index.ts",
     "./llm-harness-plugins/typst-toolkit/opencode/index.ts",
     "./llm-harness-plugins/latex-toolkit/opencode/index.ts",
-    "./llm-harness-plugins/general-skills/opencode/index.ts"
+    "./llm-harness-plugins/general-skills/opencode/index.ts",
+    "./llm-harness-plugins/sdlc-guardrails/opencode/index.ts"
   ]
 }
 ```
@@ -65,6 +67,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 | 9 | `typst-toolkit` | — | Format-bound skills |
 | 10 | `latex-toolkit` | — | Format-bound skills |
 | 11 | `general-skills` | — | Generic audit agents, load last |
+| 12 | `sdlc-guardrails` | — | Enforcement layer; reads plan.md/spec.md/intent.md, load after skills |
 
 Hard dependency: `guardrail-chain` → `agentmem`. Rest is soft layering.
 
@@ -136,6 +139,7 @@ Plugins that ship agents:
 | `agentmem` | `memory-keeper`, `memory-dreamer` | Both work with `{file:...}` prompt |
 | `tier-router` | `fable-general`, `haiku-general`, `sonnet-general`, `opus-general` | Generic tier agents; typically overridden globally |
 | `general-skills` | `proof-soundness-auditor`, `xref-checker`, `style-naturalizer`, `style-auditor`, `citation-fidelity-auditor`, `bibliography-auditor`, `math-verifier`, `logic-auditor`, `redundancy-auditor`, `config-auditor`, `ste-100-auditor` | Use `{file:...}` prompt |
+| `sdlc-guardrails` | `plan-auditor`, `test-guard-auditor` | Verify diff vs plan / weakened tests |
 | `latex-toolkit` | `latex-xref-checker`, `latex-syntax-fixer`, `latex-figure-caption-auditor`, `latex-production-readiness-checker`, `latex-notation-consistency-checker`, `latex-index-auditor`, `latex-citation-checker`, `latex-formatting-fixer` | Use `{file:...}` prompt |
 | `typst-toolkit` | `typst-diagram-checker`, `typst-syntax-fixer`, `typst-citation-checker`, `typst-xref-checker`, `typst-production-readiness-checker`, `typst-formatting-fixer` | Use `{file:...}` prompt |
 
