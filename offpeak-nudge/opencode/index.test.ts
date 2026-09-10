@@ -305,14 +305,27 @@ describe("offpeak-nudge plugin hooks", () => {
   test("system.transform injects rule once, dedups on repeat", async () => {
     const hooks = await loadHooks()
     const output = { system: ["base"] }
-    await hooks["experimental.chat.system.transform"]({}, output)
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "s-sys", model: { providerID: "deepseek" } },
+      output,
+    )
     expect(output.system[0]).toContain(NUDGE_MARKER)
     expect(output.system.length).toBe(2)
-    await hooks["experimental.chat.system.transform"]({}, output)
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "s-sys", model: { providerID: "deepseek" } },
+      output,
+    )
     expect(output.system.length).toBe(2)
   })
 
-  test("event shows a status toast on session.created", async () => {
+  test("system.transform without a provider does not inject", async () => {
+    const hooks = await loadHooks()
+    const output = { system: ["base"] }
+    await hooks["experimental.chat.system.transform"]({}, output)
+    expect(output.system.length).toBe(1)
+  })
+
+  test("session.created shows pricing toast only for a session already using a plan provider", async () => {
     const shown: unknown[] = []
     const mod = await import(`./index.ts?${Date.now()}`)
     const hooks = await mod.default(
@@ -328,16 +341,29 @@ describe("offpeak-nudge plugin hooks", () => {
         now: () => new Date("2026-08-13T02:00:00Z"),
       },
     )
-    await hooks["event"]({ event: { type: "session.created" } })
+    // New session with no provider observed yet → no toast.
+    await hooks["event"]({
+      event: { type: "session.created", properties: { info: { id: "s-new" } } },
+    })
+    expect(shown.length).toBe(0)
+    // After a deepseek message on the session, session.created carries status.
+    await hooks["chat.message"](
+      { sessionID: "s-new", model: { providerID: "deepseek" } },
+      { parts: [{ type: "text", text: "hello" }] },
+    )
+    await hooks["event"]({
+      event: { type: "session.created", properties: { info: { id: "s-new" } } },
+    })
     expect(shown.length).toBe(1)
     const toast = shown[0] as { body: { title: string; variant: string } }
+    expect(toast.body.title).toBe("DeepSeek peak")
     expect(toast.body.variant).toBe("warning")
     // non-session.created events do not trigger a toast
     await hooks["event"]({ event: { type: "session.idle" } })
     expect(shown.length).toBe(1)
   })
 
-  test("event shows a status toast on server.connected", async () => {
+  test("server.connected shows no neutral toast (nudges are provider-scoped)", async () => {
     const shown: unknown[] = []
     const mod = await import(`./index.ts?${Date.now()}`)
     const hooks = await mod.default(
@@ -354,10 +380,7 @@ describe("offpeak-nudge plugin hooks", () => {
       },
     )
     await hooks["event"]({ event: { type: "server.connected" } })
-    expect(shown.length).toBe(1)
-    const toast = shown[0] as { body: { variant: string; title: string } }
-    expect(toast.body.title).toBe("Off-peak pricing")
-    expect(toast.body.variant).toBe("info")
+    expect(shown.length).toBe(0)
   })
 
   test("chat.message prepends banner to heavy prompt during peak", async () => {
@@ -369,7 +392,10 @@ describe("offpeak-nudge plugin hooks", () => {
       statePath: stateFile,
     })
     const output = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
-    await hooks["chat.message"]({ sessionID: "s-deterministic" }, output)
+    await hooks["chat.message"](
+      { sessionID: "s-deterministic", model: { providerID: "deepseek" } },
+      output,
+    )
     expect(output.parts[0].text.startsWith("╭")).toBe(true)
     expect(output.parts[0].text).toContain("run integrate-topic for biofabrication")
     fs.rmSync(stateDir, { recursive: true, force: true })
@@ -395,7 +421,10 @@ describe("offpeak-nudge plugin hooks", () => {
       },
     )
     const output = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
-    await hooks["chat.message"]({ sessionID: "s-toast" }, output)
+    await hooks["chat.message"](
+      { sessionID: "s-toast", model: { providerID: "deepseek" } },
+      output,
+    )
     expect(shown.length).toBe(1)
     const toast = shown[0] as { body: { title: string; variant: string; message: string } }
     expect(toast.body.title).toBe("DeepSeek peak")
@@ -413,10 +442,44 @@ describe("offpeak-nudge plugin hooks", () => {
     })
     const a = { parts: [{ type: "text", text: "run integrate-topic alpha" }] }
     const b = { parts: [{ type: "text", text: "run integrate-topic beta" }] }
-    await hooks["chat.message"]({ sessionID: "s1" }, a)
+    await hooks["chat.message"]({ sessionID: "s1", model: { providerID: "deepseek" } }, a)
     expect(a.parts[0].text.startsWith("╭")).toBe(true)
-    await hooks["chat.message"]({ sessionID: "s1" }, b)
+    await hooks["chat.message"]({ sessionID: "s1", model: { providerID: "deepseek" } }, b)
     expect(b.parts[0].text).toBe("run integrate-topic beta")
+    fs.rmSync(stateDir, { recursive: true, force: true })
+  })
+
+  test("dedup is provider-scoped: deepseek nudge does not suppress zai nudge", async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
+    const stateFile = path.join(stateDir, "state.json")
+    // 02:00 UTC Wed → deepseek peak, zai off-peak.
+    // 08:00 UTC Wed → zai peak (06–10 UTC, weekday in UTC+8).
+    const mod = await import(`./index.ts?${Date.now()}`)
+    const t = { v: new Date("2026-09-09T02:00:00Z") }
+    const hooks = await mod.default(
+      {
+        directory: REPO_ROOT,
+        worktree: REPO_ROOT,
+        client: {
+          app: {
+            log: async () => {},
+            agents: async () => [
+              { name: "cynic-auditor", model: { providerID: "zai", modelID: "glm-5.3" } },
+            ],
+          },
+          tui: { showToast: async () => {} },
+        },
+      },
+      { now: () => t.v, statePath: stateFile },
+    )
+    const a = { parts: [{ type: "text", text: "run integrate-topic alpha" }] }
+    await hooks["chat.message"]({ sessionID: "s-multi", model: { providerID: "deepseek" } }, a)
+    expect(a.parts[0].text.startsWith("╭")).toBe(true)
+    // Later same session, zai peak via agent reference → still banners.
+    t.v = new Date("2026-09-09T08:00:00Z")
+    const b = { parts: [{ type: "text", text: "run the cynic-auditor on chapter 3" }] }
+    await hooks["chat.message"]({ sessionID: "s-multi", model: { providerID: "anthropic" } }, b)
+    expect(b.parts[0].text.startsWith("╭")).toBe(true)
     fs.rmSync(stateDir, { recursive: true, force: true })
   })
 
@@ -428,7 +491,7 @@ describe("offpeak-nudge plugin hooks", () => {
       statePath: stateFile,
     })
     const output = { parts: [{ type: "text", text: "run integrate-topic now" }] }
-    await hooks["chat.message"]({ sessionID: "s2" }, output)
+    await hooks["chat.message"]({ sessionID: "s2", model: { providerID: "deepseek" } }, output)
     expect(output.parts[0].text).toBe("run integrate-topic now")
     fs.rmSync(stateDir, { recursive: true, force: true })
   })
@@ -441,15 +504,118 @@ describe("offpeak-nudge plugin hooks", () => {
       statePath: stateFile,
     })
     const output = { parts: [{ type: "text", text: "add a comma" }] }
-    await hooks["chat.message"]({ sessionID: "s3" }, output)
+    await hooks["chat.message"]({ sessionID: "s3", model: { providerID: "deepseek" } }, output)
     expect(output.parts[0].text).toBe("add a comma")
+    fs.rmSync(stateDir, { recursive: true, force: true })
+  })
+
+  test("no provider information → no nudge even for heavy prompts during peak", async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
+    const stateFile = path.join(stateDir, "state.json")
+    const hooks = await loadHooks({
+      now: () => new Date("2026-08-13T02:00:00Z"),
+      statePath: stateFile,
+    })
+    const output = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
+    await hooks["chat.message"]({ sessionID: "s-unknown" }, output)
+    expect(output.parts[0].text).toBe("run integrate-topic for biofabrication")
+    fs.rmSync(stateDir, { recursive: true, force: true })
+  })
+
+  test("non-plan primary provider + agent bound to a plan provider → banner", async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
+    const stateFile = path.join(stateDir, "state.json")
+    const mod = await import(`./index.ts?${Date.now()}`)
+    const hooks = await mod.default(
+      {
+        directory: REPO_ROOT,
+        worktree: REPO_ROOT,
+        client: {
+          app: {
+            log: async () => {},
+            agents: async () => [
+              { name: "cynic-auditor", model: { providerID: "deepseek", modelID: "deepseek-v4-pro" } },
+            ],
+          },
+          tui: { showToast: async () => {} },
+        },
+      },
+      {
+        now: () => new Date("2026-08-13T02:00:00Z"),
+        statePath: stateFile,
+      },
+    )
+    const output = { parts: [{ type: "text", text: "run the cynic-auditor on chapter 3" }] }
+    await hooks["chat.message"](
+      { sessionID: "s-agentref", model: { providerID: "anthropic" } },
+      output,
+    )
+    expect(output.parts[0].text.startsWith("╭")).toBe(true)
+    expect(output.parts[0].text).toContain("Do NOT run it")
+    fs.rmSync(stateDir, { recursive: true, force: true })
+  })
+
+  test("non-plan primary provider + skillProviders mapping → banner", async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
+    const stateFile = path.join(stateDir, "state.json")
+    const mod = await import(`./index.ts?${Date.now()}`)
+    const hooks = await mod.default(
+      {
+        directory: REPO_ROOT,
+        worktree: REPO_ROOT,
+        client: { app: { log: async () => {} }, tui: { showToast: async () => {} } },
+      },
+      {
+        now: () => new Date("2026-08-13T02:00:00Z"),
+        statePath: stateFile,
+        skillProviders: { "integrate-topic": "deepseek" },
+      },
+    )
+    const output = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
+    await hooks["chat.message"](
+      { sessionID: "s-skillref", model: { providerID: "anthropic" } },
+      output,
+    )
+    expect(output.parts[0].text.startsWith("╭")).toBe(true)
+    fs.rmSync(stateDir, { recursive: true, force: true })
+  })
+
+  test("agent reference bound to a plan provider does not trigger banner off-peak", async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
+    const stateFile = path.join(stateDir, "state.json")
+    const mod = await import(`./index.ts?${Date.now()}`)
+    const hooks = await mod.default(
+      {
+        directory: REPO_ROOT,
+        worktree: REPO_ROOT,
+        client: {
+          app: {
+            log: async () => {},
+            agents: async () => [
+              { name: "cynic-auditor", model: { providerID: "deepseek", modelID: "deepseek-v4-pro" } },
+            ],
+          },
+          tui: { showToast: async () => {} },
+        },
+      },
+      {
+        now: () => new Date("2026-08-13T12:00:00Z"),
+        statePath: stateFile,
+      },
+    )
+    const output = { parts: [{ type: "text", text: "run the cynic-auditor on chapter 3" }] }
+    await hooks["chat.message"](
+      { sessionID: "s-agentoff", model: { providerID: "anthropic" } },
+      output,
+    )
+    expect(output.parts[0].text).toBe("run the cynic-auditor on chapter 3")
     fs.rmSync(stateDir, { recursive: true, force: true })
   })
 
   test("disabled option suppresses injection", async () => {
     const hooks = await loadHooks({ disabled: true })
     const output = { parts: [{ type: "text", text: "run integrate-topic now" }] }
-    await hooks["chat.message"]({ sessionID: "s" }, output)
+    await hooks["chat.message"]({ sessionID: "s", model: { providerID: "deepseek" } }, output)
     expect(output.parts[0].text).toBe("run integrate-topic now")
   })
 
@@ -491,7 +657,7 @@ describe("offpeak-nudge plugin hooks", () => {
     const stateFile = path.join(stateDir, "state.json")
     const hooks = await loadHooks({ now: () => new Date("2026-08-13T12:00:00Z"), statePath: stateFile })
     const out = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
-    await hooks["chat.message"]({ sessionID: "s-off" }, out)
+    await hooks["chat.message"]({ sessionID: "s-off", model: { providerID: "deepseek" } }, out)
     expect(out.parts[0].text).toBe("run integrate-topic for biofabrication")
     fs.rmSync(stateDir, { recursive: true, force: true })
   })
@@ -501,7 +667,7 @@ describe("offpeak-nudge plugin hooks", () => {
     const stateFile = path.join(stateDir, "state.json")
     const hooks = await loadHooks({ now: () => new Date("2026-08-13T02:00:00Z"), statePath: stateFile })
     const out = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
-    await hooks["chat.message"]({ sessionID: "s-confirm" }, out)
+    await hooks["chat.message"]({ sessionID: "s-confirm", model: { providerID: "deepseek" } }, out)
     expect(out.parts[0].text.startsWith("╭")).toBe(true)
     expect(out.parts[0].text).toContain("Do NOT run it")
     expect(out.parts[0].text).toContain("Ask for confirmation")
@@ -514,7 +680,7 @@ describe("offpeak-nudge plugin hooks", () => {
     const stateFile = path.join(stateDir, "state.json")
     const hooks = await loadHooks({ now: () => new Date("2026-08-13T02:00:00Z"), statePath: stateFile })
     const out = { parts: [{ type: "text", text: "add a comma" }] }
-    await hooks["chat.message"]({ sessionID: "s-light" }, out)
+    await hooks["chat.message"]({ sessionID: "s-light", model: { providerID: "deepseek" } }, out)
     expect(out.parts[0].text).toBe("add a comma")
     fs.rmSync(stateDir, { recursive: true, force: true })
   })
@@ -705,14 +871,30 @@ describe("offpeak-nudge provider plans", () => {
     expect(ratioForPlan(plan)).toBe(0.25)
   })
 
-  test("buildStatusToast uses plan ratio and provider label", () => {
-    const t = buildStatusToast(new Date("2026-08-13T02:00:00Z"), {
-      windows: [[2, 5]],
-      provider: "Foo",
-      offPeakRatio: 0.25,
+  test("zai plan applies weekday-only peak windows in UTC+8", () => {
+    const plan = planForProvider("zai")
+    expect(plan).toBeDefined()
+    // Wed 16:00 SGT (08:00 UTC) -> peak window 06:00-10:00 UTC applies
+    const weekday = new Date("2026-09-09T08:00:00Z")
+    expect(effectivePeakWindows(weekday, plan)).toEqual([[6, 10]])
+    expect(isPeakUtc(weekday.getUTCHours(), effectivePeakWindows(weekday, plan))).toBe(true)
+    // Sat 16:00 SGT (08:00 UTC) -> no peak windows
+    const saturday = new Date("2026-09-12T08:00:00Z")
+    expect(effectivePeakWindows(saturday, plan)).toEqual([])
+    // Sun 16:00 SGT (08:00 UTC) -> no peak windows
+    const sunday = new Date("2026-09-13T08:00:00Z")
+    expect(effectivePeakWindows(sunday, plan)).toEqual([])
+  })
+
+  test("buildStatusToast uses zai plan ratio and provider label", () => {
+    const plan = planForProvider("zai")!
+    const t = buildStatusToast(new Date("2026-09-09T08:00:00Z"), {
+      windows: effectivePeakWindows(new Date("2026-09-09T08:00:00Z"), plan),
+      provider: "Z.AI",
+      offPeakRatio: ratioForPlan(plan),
     })
-    expect(t.title).toBe("Foo peak")
-    expect(t.message).toContain("75%")
+    expect(t.title).toBe("Z.AI peak")
+    expect(t.message).toContain("50%")
   })
 })
 

@@ -33,6 +33,10 @@ export type PricingPlan = {
   /** Optional weekend off-peak policy. From `since` (ISO date) onward, the given
    *  UTC offset timezone treats Saturdays and Sundays as entirely off-peak. */
   weekendOffPeak?: { since: string; utcOffsetHours: number }
+  /** If true, peak windows only apply on weekdays in the policy timezone. */
+  peakWeekdaysOnly?: boolean
+  /** Timezone offset (hours) for weekday checks. Defaults to 0 (UTC). */
+  peakTimezoneOffsetHours?: number
 }
 
 export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
@@ -42,6 +46,14 @@ export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
     peakWindowsUtc: PEAK_WINDOWS_UTC,
     offPeakRatio: 0.5,
     weekendOffPeak: { since: "2026-08-23", utcOffsetHours: 8 },
+  },
+  {
+    providerID: "zai",
+    timeOfDay: true,
+    peakWindowsUtc: [[6, 10]],
+    offPeakRatio: 0.5,
+    peakWeekdaysOnly: true,
+    peakTimezoneOffsetHours: 8,
   },
 ]
 
@@ -70,6 +82,12 @@ function dateInOffset(d: Date, offsetHours: number): { isoDate: string; day: num
   return { isoDate: shifted.toISOString().slice(0, 10), day: shifted.getUTCDay() }
 }
 
+/** Returns true if `d` falls on a Saturday or Sunday in the given UTC offset. */
+function isWeekendInOffset(d: Date, offsetHours: number): boolean {
+  const day = dateInOffset(d, offsetHours).day
+  return day === 0 || day === 6
+}
+
 export function isWeekendOffPeak(
   d: Date,
   policy: { since: string; utcOffsetHours: number } | undefined,
@@ -80,9 +98,12 @@ export function isWeekendOffPeak(
   return day === 0 || day === 6 // Sunday or Saturday in policy timezone
 }
 
-/** Peak windows that apply at instant `d`, honoring any weekend-off-peak policy. */
+/** Peak windows that apply at instant `d`, honoring any weekend-off-peak policy
+ *  or weekday-only peak policy. */
 export function effectivePeakWindows(d: Date, plan: PricingPlan | undefined): PeakWindow[] {
   if (!plan) return PEAK_WINDOWS_UTC
+  const offset = plan.peakTimezoneOffsetHours ?? 0
+  if (plan.peakWeekdaysOnly && isWeekendInOffset(d, offset)) return []
   if (isWeekendOffPeak(d, plan.weekendOffPeak)) return []
   return plan.peakWindowsUtc ?? PEAK_WINDOWS_UTC
 }
@@ -209,6 +230,41 @@ export function hasSkillReference(text: string, skillNames: string[] = DEFAULT_S
   return skillNames.some(name =>
     new RegExp(`(?:^|[^\\w-])${escapeRegExp(name)}(?:$|[^\\w-])`, "i").test(text),
   )
+}
+
+export function hasAgentReference(text: string, agentNames: string[]): boolean {
+  return agentNames.some(name =>
+    new RegExp(`(?:^|[^\\w-])${escapeRegExp(name)}(?:$|[^\\w-])`, "i").test(text),
+  )
+}
+
+/**
+ * Resolve the pricing plan that applies to a prompt even when the primary
+ * model has no time-of-day plan: the task may invoke an agent (matched by
+ * agent name) or a skill (matched via an explicit skill→provider map) that
+ * runs on a plan-bearing provider such as DeepSeek.
+ */
+export function planForPrompt(
+  text: string,
+  opts: {
+    plans?: PricingPlan[]
+    /** providerID (lowercase) → agent names whose model uses that provider. */
+    agentNamesByProvider?: Record<string, string[]>
+    /** skill name → providerID, for skills pinned to a plan provider. */
+    skillProviders?: Record<string, string>
+  } = {},
+): PricingPlan | undefined {
+  const plans = (opts.plans ?? DEFAULT_PRICING_PLANS).filter(p => p.timeOfDay)
+  for (const plan of plans) {
+    const id = plan.providerID.toLowerCase()
+    const agentNames = opts.agentNamesByProvider?.[id]
+    if (agentNames?.length && hasAgentReference(text, agentNames)) return plan
+    const skillNames = Object.entries(opts.skillProviders ?? {})
+      .filter(([, prov]) => prov.toLowerCase() === id)
+      .map(([name]) => name)
+    if (skillNames.length && hasSkillReference(text, skillNames)) return plan
+  }
+  return undefined
 }
 
 export function hasLongRunningMarker(text: string, keywords: string[] = DEFAULT_LONG_RUNNING): boolean {

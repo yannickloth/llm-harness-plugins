@@ -11,6 +11,7 @@ import {
   localPeakWindows,
   pricingStatus,
   planForProvider,
+  planForPrompt,
   recordSpend,
   ratioForPlan,
   shouldRemind,
@@ -35,6 +36,9 @@ type NudgeOptions = {
   statePath?: string
   /** Provider pricing plans. Defaults to the built-in registry (DeepSeek). */
   plans?: PricingPlan[]
+  /** Skill name → providerID: skills whose execution runs on a plan-bearing
+   *  provider. Skills without a mapping are not provider-attributed. */
+  skillProviders?: Record<string, string>
   /** Interval (ms) for boundary checks. Default 60s. Test seam. */
   boundaryIntervalMs?: number
   /** Enable the boundary-timer (default true). */
@@ -47,6 +51,7 @@ const CONFIRM_MARKER = "[offpeak-confirm]"
 
 const BRAND_NAMES: Record<string, string> = {
   deepseek: "DeepSeek",
+  zai: "Z.AI",
   anthropic: "Anthropic",
   openai: "OpenAI",
   openrouter: "OpenRouter",
@@ -64,14 +69,19 @@ function systemRuleFor(plan: PricingPlan, provider: string): string {
   const weekendNote = plan.weekendOffPeak
     ? ` From ${plan.weekendOffPeak.since} onward, weekends (Saturday and Sunday) in UTC${plan.weekendOffPeak.utcOffsetHours >= 0 ? "+" : ""}${plan.weekendOffPeak.utcOffsetHours} are entirely off-peak.`
     : ""
+  const weekdayNote = plan.peakWeekdaysOnly
+    ? ` Peak windows apply Monday–Friday only in UTC${(plan.peakTimezoneOffsetHours ?? 0) >= 0 ? "+" : ""}${plan.peakTimezoneOffsetHours ?? 0}.`
+    : ""
   return `${NUDGE_MARKER}
 ${provider} uses peak/off-peak time-of-day pricing. Off-peak hours are ${Math.round((1 - ratio) * 100)}% cheaper than peak.
-Peak windows (UTC): ${peak}.${weekendNote}
+Peak windows (UTC): ${peak}.${weekendNote}${weekdayNote}
 During OFF-PEAK: run heavy tasks unconditionally — price is low, no confirmation needed.
 During PEAK: a heavy task must NOT be run by default. Ask the user for explicit
 confirmation before running it. If the user does not confirm, do not run. Do not
 repeat the reminder if it was already shown earlier this peak window.`
 }
+
+type AgentEntry = { name: string; model?: { providerID?: string } }
 
 export default async (
   { client, worktree, directory }: Parameters<Plugin>[0],
@@ -83,12 +93,68 @@ export default async (
   const now = options.now ?? (() => new Date())
   const statePath = options.statePath
   const plans = options.plans ?? undefined
+  const skillProviders = options.skillProviders ?? undefined
 
-  const defaultTimeOfDayPlan = (): PricingPlan | undefined =>
-    plans?.find(p => p.timeOfDay) ?? DEFAULT_PRICING_PLANS.find(p => p.timeOfDay)
+  /** providerID (lowercase) → plan, for every configured time-of-day plan. */
+  const planIndex = (): Map<string, PricingPlan> => {
+    const all = plans ?? DEFAULT_PRICING_PLANS
+    return new Map(
+      all.filter(p => p.timeOfDay).map(p => [p.providerID.toLowerCase(), p]),
+    )
+  }
+
+  // Agent names per plan provider, resolved once from the opencode API
+  // (agent .md frontmatter / opencode.json `agent` entries carry `model`).
+  let agentNamesByProvider: Record<string, string[]> | null = null
+  const loadAgentNames = async (): Promise<Record<string, string[]>> => {
+    if (agentNamesByProvider) return agentNamesByProvider
+    const byProvider: Record<string, string[]> = {}
+    try {
+      const res = await (client as { app?: { agents?: (o?: unknown) => Promise<unknown> } })
+        ?.app?.agents?.({ query: { directory: worktree ?? directory } })
+      const agents = ((res as { data?: unknown })?.data ?? res) as AgentEntry[] | undefined
+      for (const a of agents ?? []) {
+        const prov = a.model?.providerID
+        if (!prov) continue
+        ;(byProvider[prov.toLowerCase()] ??= []).push(a.name)
+      }
+    } catch {
+      // agent resolution is best-effort; nudges still work via primary provider
+    }
+    agentNamesByProvider = byProvider
+    return byProvider
+  }
+
+  /** Plan for the primary session model, or — when the task invokes an
+   *  agent/skill bound to a plan-bearing provider — that provider's plan. */
+  const resolvePlan = async (
+    providerID: string | undefined,
+    text: string,
+  ): Promise<{ plan: PricingPlan; provider: string } | undefined> => {
+    const primary = providerID ? planForProvider(providerID, plans) : undefined
+    if (primary) return { plan: primary, provider: providerID! }
+    const promptPlan = planForPrompt(text, {
+      plans,
+      agentNamesByProvider: await loadAgentNames(),
+      skillProviders,
+    })
+    if (promptPlan) return { plan: promptPlan, provider: promptPlan.providerID }
+    return undefined
+  }
 
   let lastStatus: "peak" | "offpeak" | null = null
   const countedMessages = new Set<string>()
+  /** providerID (lowercase) of the last plan-bearing model seen, per session. */
+  const sessionProviders = new Map<string, string>()
+  let activeProvider: string | null = null
+
+  const trackProvider = (sessionID: string | undefined, providerID: string | undefined) => {
+    if (!providerID) return
+    const id = providerID.toLowerCase()
+    if (!planIndex().has(id)) return
+    if (sessionID) sessionProviders.set(sessionID, id)
+    activeProvider = id
+  }
 
   logger.info(`plugin active — disabled: ${disabled}`)
 
@@ -101,11 +167,26 @@ export default async (
     }
   }
 
+  const statusToastFor = (providerID: string | null) => {
+    const plan = providerID ? planIndex().get(providerID) : undefined
+    if (!plan) return null
+    const windows = effectivePeakWindows(now(), plan)
+    return buildStatusToast(now(), {
+      provider: displayName(plan.providerID),
+      windows,
+      offPeakRatio: ratioForPlan(plan),
+    })
+  }
+
   const checkBoundary = () => {
-    const windows = effectivePeakWindows(now(), defaultTimeOfDayPlan())
+    if (!activeProvider) return
+    const plan = planIndex().get(activeProvider)
+    if (!plan) return
+    const windows = effectivePeakWindows(now(), plan)
     const status = pricingStatus(now(), windows)
     if (lastStatus !== null && status !== lastStatus) {
-      showToast(buildStatusToast(now(), { provider: "" }))
+      const toast = statusToastFor(activeProvider)
+      if (toast) void showToast(toast)
     }
     lastStatus = status
   }
@@ -161,11 +242,12 @@ export default async (
       output: { system: string[] },
     ) => {
       if (disabled) return
-      const provider = input.model?.providerID ?? "deepseek"
-      const plan = planForProvider(provider, plans)
+      const provider = input.model?.providerID
+      const plan = provider ? planForProvider(provider, plans) : undefined
       if (!plan) return
+      trackProvider(input.sessionID, provider)
       if (output.system.some(s => s.includes(NUDGE_MARKER))) return
-      output.system = [systemRuleFor(plan, displayName(provider)), ...output.system]
+      output.system = [systemRuleFor(plan, displayName(provider!)), ...output.system]
     },
 
     event: async (input: { event: { type: string; properties?: any } }) => {
@@ -173,18 +255,23 @@ export default async (
       const ev = input.event
 
       if (ev.type === "server.connected") {
-        checkBoundary()
-        const boundaryWindows = effectivePeakWindows(now(), defaultTimeOfDayPlan())
-        lastStatus = pricingStatus(now(), boundaryWindows)
-        showToast(buildStatusToast(now(), { provider: "", windows: boundaryWindows }))
         startBoundaryTimer()
         return
       }
 
       if (ev.type === "session.created") {
-        // The Session event carries no model/provider; use provider-neutral status.
-        const boundaryWindows = effectivePeakWindows(now(), defaultTimeOfDayPlan())
-        showToast(buildStatusToast(now(), { provider: "", windows: boundaryWindows }))
+        // Sessions start provider-neutral; only surface pricing status once a
+        // plan-bearing provider is actually in use for this session.
+        const providerID =
+          sessionProviders.get(ev.properties?.info?.id ?? "") ?? null
+        const toast = statusToastFor(providerID)
+        if (toast) void showToast(toast)
+        return
+      }
+
+      if (ev.type === "session.deleted") {
+        const id = ev.properties?.info?.id
+        if (id) sessionProviders.delete(id)
         return
       }
 
@@ -207,8 +294,9 @@ export default async (
         // count the cost exactly once per message to avoid double-counting.
         if (countedMessages.has(info.id)) return
         countedMessages.add(info.id)
-        const provider = info.model?.providerID ?? "deepseek"
-        const plan = planForProvider(provider, plans)
+        const provider = info.model?.providerID
+        trackProvider(sessionID, provider)
+        const plan = provider ? planForProvider(provider, plans) : undefined
         recordSpend(
           sessionID,
           now(),
@@ -239,19 +327,31 @@ export default async (
       if (!textPart || !textPart.text.trim()) return
       const text = textPart.text
 
-      const provider = input.model?.providerID ?? "deepseek"
-      const plan = planForProvider(provider, plans)
-      if (!plan) return
+      const providerID = input.model?.providerID
+      const resolved = await resolvePlan(providerID, text)
+      if (!resolved) return
+      const { plan, provider } = resolved
+      trackProvider(input.sessionID, providerID)
+
       const windows = effectivePeakWindows(nowDate, plan)
       // Off-peak: run unconditionally — never touch the user's message.
       if (!isPeakUtc(utcHourOf(nowDate), windows)) return
 
-      const { heavy } = isHeavyPrompt(text, heavyOpts)
-      if (!heavy) return
+      // Primary model is on the plan → heavy-prompt heuristics decide.
+      // Otherwise the plan was matched via an agent/skill reference, which is
+      // itself the heavy signal (it bills the plan provider).
+      const primaryHasPlan = providerID
+        ? planForProvider(providerID, plans) !== undefined
+        : false
+      if (primaryHasPlan) {
+        const { heavy } = isHeavyPrompt(text, heavyOpts)
+        if (!heavy) return
+      }
 
       // Peak + heavy task: keep the informational banner AND require explicit
-      // user confirmation. By default the task is not run.
-      if (!shouldRemind(input.sessionID, nowDate, statePath, windows)) return
+      // user confirmation. By default the task is not run. Dedup key is
+      // provider-scoped so distinct plan providers nudge independently.
+      if (!shouldRemind(`${provider}:${input.sessionID}`, nowDate, statePath, windows)) return
 
       const ratio = ratioForPlan(plan)
       const banner = buildBanner(nowDate, windows, displayName(provider), ratio)
