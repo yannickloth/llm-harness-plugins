@@ -296,7 +296,7 @@ models:
     model_provider: openai     # LiteLLM prefix — openrouter/<model> naming works
     auth_type: api_key
     api_key: ${OPENROUTER_API_KEY}
-    model: openrouter/deepseek/deepseek-v4-flash
+    model: openrouter/deepseek/deepseek-flash
     model_supports_json: true
   default_embedding_model:     # see §9 — embedding question
     type: embedding
@@ -415,7 +415,7 @@ debounce_seconds: 300
 graphrag_binary: graphrag      # override for frozen pins / non-direnv setups
 index_root: graph-index
 models:
-  chat_model: openrouter/deepseek/deepseek-v4-flash
+  chat_model: openrouter/deepseek/deepseek-flash
   chat_api_key_env: OPENROUTER_API_KEY
   embedding_provider: ollama
   embedding_model: nomic-embed-text
@@ -443,7 +443,7 @@ idle window (debounce). Lockfile prevents overlap with manual `index` mode.
 ## 8. Cost Model
 
 Extraction, summarization, claims/covariates, community reports: cheap model
-(deepseek-v4-flash or a free OpenRouter model). Calibration gate (§11) before
+(deepseek-flash or a free OpenRouter model). Calibration gate (§11) before
 full indexing.
 
 | Operation | Model | Estimated cost |

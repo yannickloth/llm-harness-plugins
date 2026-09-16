@@ -2,7 +2,7 @@
 name: scope-qualifier-checker
 mode: subagent
 description: Verify that claims and advice explicitly state their level of applicability — class-level vs module-level vs system-level, paradigm scope, technology context, and temporal validity.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 ---
 
 # scope-qualifier-checker Agent

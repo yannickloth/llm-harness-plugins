@@ -360,7 +360,7 @@ public class ExportTest {
             index_root: graph-index
 
             models:
-              chat_model: openrouter/deepseek/deepseek-v4-flash
+              chat_model: openrouter/deepseek/deepseek-flash
               chat_api_key_env: OPENROUTER_API_KEY
               embedding_provider: ollama
               embedding_model: nomic-embed-text
@@ -378,7 +378,7 @@ public class ExportTest {
         assert_equals("config: project name", "ivp-book-series", config.projectName());
         assert_equals("config: root", "/home/nicky/code/ivp-book-series",
             config.projectRoot().toString());
-        assert_equals("config: chat model", "openrouter/deepseek/deepseek-v4-flash",
+        assert_equals("config: chat model", "openrouter/deepseek/deepseek-flash",
             config.models().chatModel());
         assert_equals("config: embedding provider", "ollama", config.models().embeddingProvider());
         assert_true("config: exclude parsed", config.excludeDirs().contains("result"));

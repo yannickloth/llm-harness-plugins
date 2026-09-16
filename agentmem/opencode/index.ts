@@ -283,7 +283,7 @@ Answer (YES/NO):`
   let proc: ReturnType<typeof Bun.spawn> | null = null
   try {
     proc = spawnDetached(
-      ["opencode", "run", "--model", "deepseek/deepseek-v4-flash",
+      ["opencode", "run", "--model", "deepseek/deepseek-flash",
        "--agent", "memory-keeper", "--format", "json", "--title", "Memory maintenance (classifier)", "--",
        "Answer YES or NO only, based on the prompt in stdin."],
       { stdin: "pipe", stdout: "pipe", stderr: "ignore" }

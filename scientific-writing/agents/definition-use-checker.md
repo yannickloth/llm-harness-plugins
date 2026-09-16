@@ -2,7 +2,7 @@
 name: definition-use-checker
 mode: subagent
 description: Verify every formal term is defined before first use (definitions, axioms, notation appear before prose/proof/example references).
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 ---
 
 # definition-use-checker Agent

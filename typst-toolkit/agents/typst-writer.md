@@ -2,7 +2,7 @@
 mode: subagent
 name: typst-writer
 description: Typst (.typ) file writer — syntax-correct output guaranteed. Reads the project syntax rules first, verifies against a checklist, then writes content. Use when writing or editing Typst source files.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 permission:
   read: allow
   glob: allow

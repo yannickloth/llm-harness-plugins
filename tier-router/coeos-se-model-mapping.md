@@ -2,7 +2,7 @@
 
 Source: TMB Settings (2026-07-22), 18 skill axes, 30+ models benchmarked across 5 bench suites.
 Benchmarks: https://themonoclebear.com/en/blog/coeos-divide-and-route/ | https://github.com/Odyssai-eu/coeos-SE/tree/main/coeos_se
-Fleet: deepseek-v4-pro, deepseek-v4-flash, kimi-k3, kimi-k2.7-code, kimi-k2.6.
+Fleet: deepseek-v4-pro, deepseek-flash, kimi-k3, kimi-k2.7-code, kimi-k2.6.
 
 | Axis | TMB king (score) | Your best in fleet | Notes |
 |---|---|---|---|
@@ -21,7 +21,7 @@ Fleet: deepseek-v4-pro, deepseek-v4-flash, kimi-k3, kimi-k2.7-code, kimi-k2.6.
 | plan_decompo | kimi-k2.7-code (100.0) | kimi-k2.7-code | Direct match |
 | plan_spec | o3 (100.0) | deepseek-v4-pro | No o3-equivalent in fleet |
 | plan_judgment | kimi-k3 (100.0) | kimi-k3 | Direct match |
-| fast_tools | mercury-2 (unverified) | deepseek-v4-flash | mercury-2 unverified; flash for speed |
+| fast_tools | mercury-2 (unverified) | deepseek-flash | mercury-2 unverified; flash for speed |
 | agent_exec | kimi-k2.6 (100.0) | kimi-k2.6 | Direct match |
 | agent_safety | mistral-l3 (100.0) | deepseek-v4-pro | No safety specialist in fleet |
 

@@ -35,20 +35,20 @@ DeepSeek prices are cache-miss off-peak; peak is 2×. Cache-hit input is ~30× c
 |----------------|-------|----------------|---------------------|----------------|
 | Fable | Fable 5 | Yes | none | — |
 | Opus | Opus 5 | Yes | none | — |
-| Sonnet | Sonnet 5 | Yes | `deepseek-v4-flash-vision-exp` | Yes |
-| Haiku | Haiku 4.5 | Yes | `deepseek-v4-flash-vision-exp` | Yes |
+| Sonnet | Sonnet 5 | Yes | `deepseek-flash-vision-exp` | Yes |
+| Haiku | Haiku 4.5 | Yes | `deepseek-flash-vision-exp` | Yes |
 
 Key facts:
 
-- DeepSeek restricts image input to the `deepseek-v4-flash-vision-exp` model. The docs explicitly state that other models return a `400` error with message "This model does not support image".
-- `deepseek-v4-flash-vision-exp` is priced identically to `deepseek-v4-flash` and supports both non-thinking and thinking modes.
+- DeepSeek restricts image input to the `deepseek-flash-vision-exp` model. The docs explicitly state that other models return a `400` error with message "This model does not support image".
+- `deepseek-flash-vision-exp` is priced identically to `deepseek-flash` and supports both non-thinking and thinking modes.
 - Anthropic's current model overview says every current Claude model supports text and image input, text output, multilingual capabilities, and vision. So Haiku 4.5, Sonnet 5, Opus 5, and Fable 5 all accept images natively.
 
 Routing implications:
 
-- Agents routed from Anthropic tiers to DeepSeek that need image understanding must target `deepseek-v4-flash-vision-exp`, not the base `deepseek-v4-flash` or `deepseek-v4-pro`.
+- Agents routed from Anthropic tiers to DeepSeek that need image understanding must target `deepseek-flash-vision-exp`, not the base `deepseek-flash` or `deepseek-v4-pro`.
 - There is no DeepSeek Pro vision model, so Opus/Fable tasks that combine images with frontier reasoning have no direct equivalent in the DeepSeek fleet.
-- For vision-only or vision+tool-use work at Sonnet/Haiku quality, `deepseek-v4-flash-vision-exp` (high/max thinking) is the only available substitute.
+- For vision-only or vision+tool-use work at Sonnet/Haiku quality, `deepseek-flash-vision-exp` (high/max thinking) is the only available substitute.
 
 ## Benchmark comparison
 
@@ -70,8 +70,8 @@ Routing implications:
 
 | Anthropic tier | DeepSeek mapping | Confidence | Rationale |
 |----------------|------------------|------------|-----------|
-| Haiku | `deepseek-v4-flash` non-think | Medium | Fast and cheap. But Haiku 4.5 is a *thinking* model (128K thinking budget); flash non-think is reasoning-disabled and collapses on reasoning tasks. Use only for latency-critical mechanical work. |
-| Sonnet | `deepseek-v4-flash` high/max | High | Flash high/max matches or beats Sonnet 4.5 on SWE Verified (79.0 vs 77.2) and GPQA Diamond (88.1 vs 83.4). Sonnet 5 is stronger on HLE no-tools (43.2 vs 34.8), so flash max maps to lower-Sonnet through mid-Sonnet depending on task. |
+| Haiku | `deepseek-flash` non-think | Medium | Fast and cheap. But Haiku 4.5 is a *thinking* model (128K thinking budget); flash non-think is reasoning-disabled and collapses on reasoning tasks. Use only for latency-critical mechanical work. |
+| Sonnet | `deepseek-flash` high/max | High | Flash high/max matches or beats Sonnet 4.5 on SWE Verified (79.0 vs 77.2) and GPQA Diamond (88.1 vs 83.4). Sonnet 5 is stronger on HLE no-tools (43.2 vs 34.8), so flash max maps to lower-Sonnet through mid-Sonnet depending on task. |
 | Opus | `deepseek-v4-pro` max | High | Pro max is competitive with Opus-4.6 on SWE Verified (80.6 vs 80.8) and Terminal Bench (67.9 vs 65.4), and closes flash's long-context gap. Still below Opus on hardest long-context / frontier reasoning. |
 | Fable | `deepseek-v4-pro` max (best available) | Low | No DeepSeek equivalent. Fable 5 is priced above Opus; pro max is the fleet ceiling but not a true Fable peer. |
 
@@ -81,7 +81,7 @@ Opus-level work should not map to a single DeepSeek model. Split by task profile
 
 | Task type | Route to | Why |
 |-----------|----------|-----|
-| Coding, debugging, refactoring, tool use, agentic execution | `deepseek-v4-flash` max | Flash max ≈ Opus on SWE Verified / LiveCodeBench at 1/3 the price. |
+| Coding, debugging, refactoring, tool use, agentic execution | `deepseek-flash` max | Flash max ≈ Opus on SWE Verified / LiveCodeBench at 1/3 the price. |
 | Long-context retrieval, hardest frontier reasoning, formal planning | `deepseek-v4-pro` max | Pro closes the MRCR / CorpusQA / HLE gap that flash cannot. |
 
 ## Caveats

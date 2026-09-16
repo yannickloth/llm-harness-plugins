@@ -2,7 +2,7 @@
 name: document-health-monitor
 mode: subagent
 description: Generate structural health metrics for a document — section lengths, citation density, empty-section detection, placeholder identification. Use when checking document balance, finding stub sections, or assessing how complete a document skeleton is. Format-agnostic (Typst or LaTeX).
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 ---
 
 ## Purpose

@@ -9,7 +9,7 @@ permission:
   edit: deny
   bash: deny
   task: deny
-model: sonnet
+model: deepseek/deepseek-flash
 ---
 
 You audit formal proofs for soundness. Not style, not notation — soundness. Does the proof establish its conclusion under its stated hypotheses, with every step justified?
