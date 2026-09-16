@@ -85,6 +85,7 @@ compile_plugin "agentfeed"
 compile_plugin "session-lifecycle" "$SHARED_CP"
 compile_plugin "graphics-toolkit"
 compile_plugin "sdlc-guardrails"
+compile_plugin "premium-read-offload"
 
 run_tests "agentmem" "$GUARDRAIL_CP"
 echo "--- Running agentmem TS tests ---"
@@ -120,6 +121,9 @@ bun test "$SCRIPT_DIR/offpeak-nudge/opencode/index.test.ts" || echo "offpeak-nud
 echo "--- Running system-message-merge TS tests ---"
 bun test "$SCRIPT_DIR/system-message-merge/opencode/index.test.ts" || echo "system-message-merge TS tests: FAILED (bun not available?)"
 
+echo "--- Running semantic-router TS tests ---"
+bun test "$SCRIPT_DIR/semantic-router/opencode/index.test.ts" || echo "semantic-router TS tests: FAILED (bun not available?)"
+
 echo "--- Running agentfeed Java tests ---"
 run_tests "agentfeed"
 
@@ -128,6 +132,15 @@ bun test "$SCRIPT_DIR/agentfeed/opencode/ledger.test.ts" \
           "$SCRIPT_DIR/agentfeed/opencode/digest.test.ts" \
           "$SCRIPT_DIR/agentfeed/opencode/activity.test.ts" \
           "$SCRIPT_DIR/agentfeed/opencode/index.test.ts" || echo "agentfeed TS tests: FAILED (bun not available?)"
+
+echo "--- Running premium-read-offload Java tests ---"
+run_tests "premium-read-offload"
+echo "--- Running premium-read-offload TS tests ---"
+bun test "$SCRIPT_DIR/premium-read-offload/opencode/index.test.ts" || echo "premium-read-offload TS tests: FAILED (bun not available?)"
+echo "--- Running premium-read-offload evals ---"
+bash "$SCRIPT_DIR/premium-read-offload/evals/run.sh" >/dev/null 2>&1 \
+  && echo "premium-read-offload evals: PASSED" \
+  || echo "premium-read-offload evals: FAILED"
 
 echo "--- Running graphics-toolkit Java self-checks on vendored examples ---"
 GFX_CP="$SCRIPT_DIR/graphics-toolkit/build/classes"

@@ -20,6 +20,8 @@
     "./natural-prose/opencode/index.ts",
     "./permission-modes/opencode/index.ts",
     "./system-message-merge/opencode/index.ts",
+    "./semantic-router/opencode/index.ts",
+    "./premium-read-offload/opencode/index.ts",
     "./sdlc-guardrails/opencode/index.ts"
   ],
   "agent": {
@@ -52,6 +54,18 @@
     "natural-prose-perplexity-judge": {
       "file": "./natural-prose/agents/natural-prose-perplexity-judge.md",
       "mode": "subagent"
+    },
+    "bulk-reader": {
+      "file": "./premium-read-offload/agents/bulk-reader.md",
+      "model": "deepseek/deepseek-flash",
+      "mode": "all",
+      "permission": { "read": "allow", "edit": "deny", "bash": "deny", "glob": "allow", "grep": "allow" }
+    },
+    "code-writer": {
+      "file": "./premium-read-offload/agents/code-writer.md",
+      "model": "deepseek/deepseek-flash",
+      "mode": "all",
+      "permission": { "read": "allow", "edit": "deny", "bash": "deny", "glob": "allow", "grep": "allow" }
     }
   },
   "command": {

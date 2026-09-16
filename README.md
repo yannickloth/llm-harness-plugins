@@ -16,6 +16,8 @@ with a Java backend and OpenCode TypeScript shim.
 | [`graphrag`](./graphrag) | MS GraphRAG semantic layer — LLM-extracted entities/relationships, community summaries, vector-backed local/global/drift search |
 | [`datetime-inject`](./datetime-inject) | Injects current datetime, platform, and repo toolchain context into every LLM prompt |
 | [`sdlc-guardrails`](./sdlc-guardrails) | SDLC artifact-contract enforcement — plan/diff sync (R1), protected-path blocks (R2), test-protection during fixes (R3), bash write gating, verification-before-done commit gate (R6), incident→intent loop, audit log |
+| [`premium-read-offload`](./premium-read-offload) | Offload bulk file reads and boilerplate generation from premium subscription sessions (Kimi K3, GLM-5.3) to a cheap persistent DeepSeek worker — hard gate with escapes, cache-aware worker sessions |
+| [`semantic-router`](./semantic-router) | Fast local intent routing — embeds each message, matches config-defined routes, injects the route's directive into the system prompt and optionally gates tools. No LLM call |
 
 ---
 
@@ -47,6 +49,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
     "./llm-harness-plugins/typst-toolkit/opencode/index.ts",
     "./llm-harness-plugins/latex-toolkit/opencode/index.ts",
     "./llm-harness-plugins/general-skills/opencode/index.ts",
+    "./llm-harness-plugins/premium-read-offload/opencode/index.ts",
     "./llm-harness-plugins/sdlc-guardrails/opencode/index.ts"
   ]
 }
@@ -67,6 +70,8 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 | 9 | `typst-toolkit` | — | Format-bound skills |
 | 10 | `latex-toolkit` | — | Format-bound skills |
 | 11 | `general-skills` | — | Generic audit agents, load last |
+| 11b | `premium-read-offload` | — | Premium-session read/generation offload; independent of other plugins |
+| 11c | `semantic-router` | — | Local intent→directive routing; independent of other plugins (TS-only) |
 | 12 | `sdlc-guardrails` | — | Enforcement layer; reads plan.md/spec.md/intent.md, load after skills |
 
 Hard dependency: `guardrail-chain` → `agentmem`. Rest is soft layering.
@@ -119,7 +124,7 @@ The `.md` file frontmatter is for metadata. All config (model, mode, steps, desc
 {
   "agent": {
     "memory-keeper": {
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "deepseek/deepseek-flash",
       "mode": "subagent",
       "steps": 5,
       "description": "Extracts non-derivable learnings from conversation to persistent memory",
@@ -142,9 +147,9 @@ Plugins that ship agents:
 | `sdlc-guardrails` | `plan-auditor`, `test-guard-auditor` | Verify diff vs plan / weakened tests |
 | `latex-toolkit` | `latex-xref-checker`, `latex-syntax-fixer`, `latex-figure-caption-auditor`, `latex-production-readiness-checker`, `latex-notation-consistency-checker`, `latex-index-auditor`, `latex-citation-checker`, `latex-formatting-fixer` | Use `{file:...}` prompt |
 | `typst-toolkit` | `typst-diagram-checker`, `typst-syntax-fixer`, `typst-citation-checker`, `typst-xref-checker`, `typst-production-readiness-checker`, `typst-formatting-fixer` | Use `{file:...}` prompt |
+| `premium-read-offload` | `bulk-reader`, `code-writer` | Worker prompts for the offload gate; run on `deepseek/deepseek-flash` |
 
-Plugins without agents: `guardrail-chain`, `semantic-cache`, `agentinsights`, `knowledge-graph`, `graphrag`, `prompt-registry`, `session-lifecycle` (tools/hooks only).
-
+Plugins without agents: `guardrail-chain`, `semantic-cache`, `semantic-router`, `agentinsights`, `knowledge-graph`, `graphrag`, `prompt-registry`, `session-lifecycle` (tools/hooks only).
 ### Adding a plugin agent to your project
 
 ```json
