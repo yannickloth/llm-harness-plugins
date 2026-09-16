@@ -60,7 +60,19 @@ just because it is not on the list. If the project is the IVP book series,
    Reconcile your contextual read against the scan: where they agree you have
    high confidence; where they disagree, note the disagreement.
 6. Audit against the registry: tell-words, formulaic construction, hedging,
-   nominalisation, passive voice, rhythmic uniformity, description-vs-argument.
+   nominalisation, passive voice, rhythmic uniformity, description-vs-argument,
+   anthropomorphized abstraction (inanimate/conceptual subjects governing verbs
+   of action, intention, or appearance — flag per the registry's tolerance list).
+   Apply the registry's tolerance override rule: when the document's own thesis
+   argues that abstractions do not act, that claims must be exact, or that
+   personifying a concept is a category error, a normally-tolerated idiom that
+   personifies an abstraction is self-undermining and must be flagged.
+   Also audit metaphor-bearing claims (pseudo-generalization): figurative terms
+   ("home", "spine", "margins", "fills the space") standing where the precise
+   term is required in a sentence that states a general rule. Apply the
+   operationalization test: if the metaphor cannot be replaced by a precise term
+   from the text, it IS the claim and fails. Load-bearing metaphors (in the
+   sentence stating the diagnosis, gap, or conclusion) are MUST-FIX.
 7. **Classify structural repetition.** Distinguish mechanical uniformity
    (flag, worth fixing) from deliberate rhetorical device or house-style
    convention (do NOT flag). When unsure whether a repetition is deliberate or
@@ -146,3 +158,37 @@ substitute for contextual reading.
 
 A grouped findings report with severities and quoted text, plus a short list
 of positive targets that are missing. No edits.
+
+### Required section: Anthropomorphized abstractions
+
+The report MUST contain a section titled exactly
+`## Anthropomorphized abstractions` with one of:
+
+- `None found.` — after an explicit scan for inanimate/conceptual subjects
+  governing verbs of action, intention, or appearance (announce, reveal,
+  surface, show up, want, refuse, demand, try, win, lose, compete, tell, show,
+  go unread, travel, land, call for, beg, invite).
+- A list of findings, each with file:line, the quoted construction, the subject
+  that should replace the abstraction (a person or the concrete situation), and
+  the registry's tolerance note if the instance is borderline.
+
+State the result explicitly even when empty. Do not omit this section. An
+absent section means the check was skipped, which is a failure of the audit —
+the same discipline as a required "Skipped agents" log.
+
+### Required section: Metaphor-bearing claims
+
+The report MUST contain a section titled exactly
+`## Metaphor-bearing claims` with one of:
+
+- `None found.` — after an explicit pass applying the operationalization test
+  to every figurative term in the scope (can the metaphor be replaced by a
+  precise term from the text while keeping the claim?).
+- A list of findings, each with file:line, the quoted metaphor, whether it is
+  load-bearing (in a sentence stating the diagnosis, gap, or conclusion) or
+  decorative, and the precise restatement.
+- Tolerance notes where applicable (dead field idiom, author-defined metaphor,
+  rhetorical figure carrying no claim).
+
+State the result explicitly even when empty. Do not omit this section — an
+absent section means the check was skipped.

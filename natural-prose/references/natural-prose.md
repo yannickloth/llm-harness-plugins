@@ -74,6 +74,99 @@ the reader to a verdict. Flag:
 
 Fix: report what you observe; let the reader draw the conclusion.
 
+### Anthropomorphized abstraction (non-living things don't act)
+
+An inanimate or conceptual thing is made the grammatical subject of a verb of
+**action, intention, or appearance**. Non-living things, especially conceptual
+ones, do not do and do not act; making them the agent is a category error and a
+low-perplexity rhetorical tic. AI reaches for it because it produces a tidy
+sentence with a strong verb at no informational cost, and it hides the human
+actor whose naming would have been the more precise statement.
+
+Flag constructions such as:
+
+| Pattern | Example (flag) |
+|---------|----------------|
+| abstraction *announces / reveals / surfaces / shows up* | "the absence does not announce itself as failure" |
+| abstraction *wants / refuses / demands / tries* | "the theory wants a definition" |
+| abstraction *wins / loses / competes* | "the substitutes keep winning by default" |
+| abstraction *tells / shows us* | "the metric tells us the class is cohesive" |
+| claim / result *goes unread / travels / lands* | "the claim goes unread" |
+| gap / problem *calls for / begs / invites* | "the gap invites a theory" |
+
+**Fix: make the human or the concrete situation the subject.** Name who
+observes, meets, reads, or decides. "The absence announces itself as X" → "What
+a designer meets instead is X." "The metric tells us Y" → "We read Y from the
+metric." "The pattern wins by default" → "Nothing displaces the pattern."
+
+**Tolerance (do NOT flag):**
+
+- Established technical idiom that is effectively dead metaphor — "the program
+  runs", "the compiler reports an error", "the system responds". These are
+  conventional shorthand, not anthropomorphizing.
+- Standard mathematical or formal idiom where the abstraction is the subject of
+  a *non-agentive* verb — "the theorem holds", "the result follows", "the set
+  contains". These are correct and required.
+- Deliberate rhetorical personification the author clearly intends for effect.
+
+**Override rule (explicit).** The tolerance above applies by default. It does
+not apply when the document's own thesis makes the idiom self-undermining.
+
+- Trigger: the document argues that abstractions do not act, that claims must be
+  exact, or that personifying a concept is a category error.
+- Condition: the same document contains a tolerated idiom that personifies an
+  abstraction.
+- Action: flag the idiom and replace it with a phrase that states the actual
+  content.
+
+Worked case: "the argument proves too much" is a recognised idiom in philosophy
+and logic, normally tolerated. In a text whose thesis concerns what can and
+cannot be proven, or which argues that non-living things do not act, the idiom
+undercuts the claim. Replace it with "this line of reasoning takes us too far",
+"this reasoning would entail", or the precise entailment itself.
+
+The pattern is specifically *verbs of action, intention, or appearance* applied
+to abstractions — not every abstraction in subject position.
+
+### Metaphor bearing the claim (pseudo-generalization)
+
+A figurative term sits where the precise term is required, in a sentence that
+states — or reads as stating — a general rule. The metaphor borrows the
+authority of a definition without supplying one. The writing *looks* like
+intelligent generalization but the claim cannot be checked, because the
+metaphor has no identity conditions: no referent, no boundary, no threshold.
+
+**Operationalization test (the check).** Try to replace the metaphor with a
+precise term and keep the same claim. If the text supplies no precise term —
+or the sentence collapses when the metaphor is removed — the metaphor IS the
+claim, and it fails.
+
+| Metaphor as claim (flag) | Precise restatement |
+|---|---|
+| "there is no home for the result" | "no journal publishes such results within its normal scope" |
+| "the field's theoretical spine" | name the tradition and its central result |
+| "fills the space" / "fills the gap" | name what occupies what, by whom |
+| "work published in the margins" | name the venue classes and why they are marginal |
+| "a thin scattering of venues" | name the venue classes and give the count or the criterion |
+
+**Severity rule.** When the metaphor is **load-bearing** — it appears in the
+sentence that states the diagnosis, gap, or conclusion — MUST-FIX. When it is
+decorative in a sentence making no claim, minor or leave.
+
+**Tolerance (do NOT flag):**
+
+- Dead technical metaphor with a precise, conventional referent in the field —
+  "memory leak", "bottleneck", "race condition", "technical debt" (when the
+  debt framing is conventional, not load-bearing).
+- Metaphors the author explicitly defines ("by *spine* I mean the sequence of
+  results P1–P3").
+- Deliberate figures in clearly rhetorical positions (openings, closes) that
+  carry no factual claim.
+
+**Fix.** State the general rule with its conditions: who, what, where, by what
+criterion. The restatement is often longer than the metaphor; that cost is the
+point — precision is not free.
+
 ## What makes prose genuinely human (positive targets)
 
 Flag the *absence* of these as much as the presence of robotic patterns.
