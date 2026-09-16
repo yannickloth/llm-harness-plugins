@@ -1,0 +1,48 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "_comment": "Copy to <project>/.semantic-router/routes.json. Encoder is any OpenAI-compatible /v1/embeddings endpoint; the default below is a local Unsloth/LM Studio server.",
+  "encoder": {
+    "baseURL": "http://127.0.0.1:8888/v1",
+    "model": "auto",
+    "timeoutMs": 5000
+  },
+  "_thresholds": "A route matches only if its similarity clears `threshold` AND leads the runner-up by `margin`. Chat-model embeddings have a high baseline, so the margin matters; raise it if unrelated messages match, lower it if valid ones don't. Inspect scores with the semantic-route tool.",
+  "defaultThreshold": 0.5,
+  "defaultMargin": 0.08,
+  "routes": [
+    {
+      "name": "code-review",
+      "utterances": [
+        "review this code for bugs",
+        "review this implementation",
+        "find bugs in this file",
+        "what is wrong with this function",
+        "check this code for security issues"
+      ],
+      "threshold": 0.45,
+      "inject": "This is a CODE REVIEW request. Read the code, then report concrete findings (bugs, edge cases, security, style) with file:line references. Do not rewrite unless asked.",
+      "denyTools": ["write", "edit"]
+    },
+    {
+      "name": "research",
+      "utterances": [
+        "find sources about this topic",
+        "summarize the literature on this",
+        "what does the evidence say about this",
+        "look up references for this claim"
+      ],
+      "inject": "This is a RESEARCH request. Cite sources with links or ids; separate claim from evidence; state uncertainty explicitly.",
+      "skill": "research"
+    },
+    {
+      "name": "brainstorm",
+      "utterances": [
+        "give me ideas for this",
+        "brainstorm approaches to this",
+        "what are some options for this",
+        "explore possible designs"
+      ],
+      "inject": "This is a BRAINSTORM request. Produce a divergent list of options first, then a brief recommendation. Do not implement yet."
+    }
+  ]
+}
