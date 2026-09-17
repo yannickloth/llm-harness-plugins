@@ -19,6 +19,16 @@ objection, manage tension, and resume the thread — in passing, never as a
 lecture. It lives in openings, signposts, and transitions, not in expanding
 the body. The artifact stays focused.
 
+**These links are load-bearing, not decoration.** A reader follows an argument
+by tracking how each sentence stands to the one before it — consequence,
+contrast, concession, example, return. When the prose omits that relation, the
+reader must reconstruct it unaided, and the cost is invisible in the text but
+paid on every sentence: the reading turns into work. The correct amount of
+reader-guidance is therefore not "as little as possible" but "enough that no
+relation is left for the reader to guess." Sparsity (below) governs how many
+*distinct* moves you mark, not whether to mark them at all. Dry, connectiveless
+prose is not neutral — it is a comprehension tax.
+
 **Grounding principle (sourced):** transitions are not decoration — "they are
 words with particular meanings that tell the reader to think and react in a
 particular way to your ideas" (UNC Writing Center). They make *existing*
@@ -55,12 +65,20 @@ Each row is a *family* of moves; the examples are ways it can be voiced.
 
 - **Non-exhaustive.** Invent a phrase that fits the sentence. The list is a
   sketch of functions, not a fixed vocabulary.
-- **Sparsity (sourced).** Guidance is the exception, not the norm. Most
-  connections should be carried by idea order; a transition only highlights a
-  relationship that already exists. Over-using them reads as over-explaining
-  or patronising: "if you use too many transitions, your readers might feel
-  like you are over-explaining connections that are already clear" (UW–Madison).
-  Use the fewest transitions that keep the reader oriented.
+- **Sparsity, as a ceiling — not a floor (sourced).** The rule is: mark every
+  relation the reader would otherwise have to infer, and no relation that idea
+  order already makes plain. So most *consecutive* sentences need nothing,
+  because their relation is obvious; but every genuine turn — a pivot, a
+  consequence the reader could miss, a concession, a return from a detour —
+  needs its link. Omitting a needed link is a defect, not restraint. Do not
+  mark what is already clear: over-using them reads as over-explaining or
+  patronising — "if you use too many transitions, your readers might feel like
+  you are over-explaining connections that are already clear" (UW–Madison).
+  The failure to avoid is the *unearned* transition, not the transition itself.
+- **Measure by turns, not by sentences.** Count the pivots, consequences,
+  concessions, and returns in a passage; each should be marked once. A passage
+  with three such turns and no markers is under-linked; one with a marker on
+  every sentence is over-linked. Both are defects, in opposite directions.
 - **One per boundary.** A single meaningful transition per paragraph or
   section turn. Stacked transitions ("Moreover, furthermore, additionally…")
   are the AI tell.
