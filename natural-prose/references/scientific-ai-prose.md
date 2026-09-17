@@ -170,6 +170,66 @@ decorative in a sentence making no claim, minor or leave.
 criterion. The restatement is often longer than the metaphor; that cost is the
 point — precision is not free.
 
+### Vague relation verbs and deferred claims (oracular style)
+
+Three co-occurring defects that deliver a verdict the reader cannot check.
+Any two of the three in one sentence should trigger a finding; all three is a
+MUST-FIX.
+
+**1. Bleached relation verb.** A figurative or eroded verb sits where a
+determinate relation predicate is required. The sentence asserts something no
+reader can confirm or refute, because the verb names no specific relation.
+
+| Bleached verb (flag) | Determinate replacement |
+|---|---|
+| X *reaches* / *touches* / *bears on* Y | X *imposes / requires / constrains / rules out* Y — or state the actual content |
+| X *relates to* / *concerns* / *impacts* Y | name the relation: *determines*, *is required by*, *is an input to* |
+| X *plays a role* / *matters* | state what X determines or is required by |
+
+**Operationalization test.** Replace the verb with `imposes`, `requires`,
+`constrains`, or `rules out`. If the replacement changes the claim, the
+original was too vague to make one.
+
+**Tolerance:** standard mathematical idiom ("the theorem bears on the case"
+where a specific logical relation is conventional), and dead metaphors in
+non-claim sentences.
+
+**2. Left-branching deferred claim.** Heavy material — a fronted object
+clause, a list of unknowns — precedes the main clause, so the reader holds a
+subordinate structure in memory while waiting for the sentence's actual claim.
+
+| Deferred claim (flag) | Claim-first rewrite |
+|---|---|
+| "Which mechanism to use, and how it fails over, the SLA does not constrain" | "The SLA constrains neither the failover mechanism nor the cache strategy" |
+| "Whether to retry, and how often, no contract addresses" | "No contract addresses retry policy" |
+
+**Fix.** State the main clause first: subject, determinate verb, then the
+scoped qualifier.
+
+**3. Unbounded-irrelevance claim.** A negative-existence or freedom claim
+quantifies over an open-ended totality ("no obligation", "no requirement",
+"nothing in the domain") that no derivation can survey, instead of the
+enumerated set the text can actually check.
+
+| Unbounded (flag) | Scoped rewrite |
+|---|---|
+| "no obligation reaches the cache" | "none of the artifacts in force (the contract, the statute) imposes a requirement on the cache" |
+| "purely technical / just an implementation detail" | name the artifacts examined, or state what knowledge would bear on the choice |
+| "the domain doesn't care" | state the domain facts actually consulted |
+
+**Detection markers:** `no obligation`, `no requirement`, `nothing forces`,
+`purely technical`, `merely technical`, `just an implementation detail`,
+`implementation detail`, `free choice`, `arbitrary`, `doesn't affect the
+domain`, `only infrastructure`.
+
+**Legitimate-use test (do NOT flag):** the claim is (a) **scoped** to an
+enumerated set named in the sentence or its paragraph; (b) **warranted** by
+the criterion procedure with artifacts named; or (c) **definitional** —
+derived from a definition rather than an empirical absence survey.
+
+**Fix.** Scope the negation to the enumerated set, or exhibit the search. The
+scoped form is often shorter than the sweeping one; that is not a loss.
+
 ## What makes scientific writing genuinely human (positive targets)
 
 These are the *additive* goals. Flag their absence as much as the presence of

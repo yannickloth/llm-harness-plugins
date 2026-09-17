@@ -73,6 +73,17 @@ just because it is not on the list. If the project is the IVP book series,
    operationalization test: if the metaphor cannot be replaced by a precise term
    from the text, it IS the claim and fails. Load-bearing metaphors (in the
    sentence stating the diagnosis, gap, or conclusion) are MUST-FIX.
+   Also audit oracular-style verdicts — three co-occurring defects, flag when
+   any two appear in one sentence, all three is MUST-FIX: (a) bleached relation
+   verbs ("reaches", "bears on", "touches", "concerns", "impacts") where a
+   determinate predicate (imposes, requires, constrains, rules out) is
+   available — apply the replace-and-compare test; (b) left-branching deferred
+   claims, where heavy fronted material precedes the main clause; (c)
+   unbounded-irrelevance claims ("no obligation", "no requirement", "purely
+   technical", "just an implementation detail", "free choice") whose negation
+   quantifies over an unenumerated totality. Do not flag (c) when the claim is
+   scoped to an enumerated set named nearby, warranted by named artifacts, or
+   definitional.
 7. **Classify structural repetition.** Distinguish mechanical uniformity
    (flag, worth fixing) from deliberate rhetorical device or house-style
    convention (do NOT flag). When unsure whether a repetition is deliberate or

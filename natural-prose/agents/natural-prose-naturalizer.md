@@ -89,6 +89,15 @@ the author can veto.
 - Add specificity, voice, and original examples where they are missing and
   the author's content supports them — **never introduce new facts, claims,
   or ideas**.
+- **Repair oracular-style verdicts** (matching the auditor's category):
+  (a) replace bleached relation verbs ("reaches", "bears on", "touches") with
+  the determinate predicate the claim actually makes ("imposes", "requires",
+  "constrains", "rules out");
+  (b) reorder left-branching sentences so the main clause comes first;
+  (c) scope unbounded-irrelevance claims to the set actually examined
+  ("none of the three contracts…"), or replace the sweeping negation with the
+  specific content. Never invent the enumeration the text lacks — if no set
+  is named in the source, flag rather than fabricate.
 
 ## Scientific-mode constraints (HARD)
 

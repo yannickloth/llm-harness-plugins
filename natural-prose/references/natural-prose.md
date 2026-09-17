@@ -167,6 +167,33 @@ decorative in a sentence making no claim, minor or leave.
 criterion. The restatement is often longer than the metaphor; that cost is the
 point — precision is not free.
 
+### Vague relation verbs and deferred claims (oracular style)
+
+Three co-occurring defects that deliver a verdict the reader cannot check.
+Any two in one sentence: flag; all three: MUST-FIX.
+
+**1. Bleached relation verb.** A figurative or eroded verb ("reaches",
+"bears on", "touches", "concerns", "impacts") sits where a determinate
+relation is required. Test: replace with `imposes`, `requires`,
+`constrains`, or `rules out`; if the claim changes, the original was too
+vague to make one.
+
+**2. Left-branching deferred claim.** Heavy fronted material ("Which
+mechanism to use, and how it fails over, …") precedes the main clause, so the
+reader holds a subordinate structure while waiting for the claim. Fix:
+main clause first — subject, determinate verb, then the qualifier.
+
+**3. Unbounded-irrelevance claim.** A negative-existence or freedom claim
+quantifies over an open-ended totality: "no obligation", "no requirement",
+"purely technical", "just an implementation detail", "free choice",
+"doesn't affect the domain", "only infrastructure". Fix: scope the negation
+to the set actually examined ("none of the three contracts we reviewed…"),
+or exhibit the search that licenses it.
+
+**Tolerance:** established idioms in non-claim sentences; claims scoped to an
+enumerated set named nearby; definitional statements derived from a
+definition rather than an empirical absence survey.
+
 ## What makes prose genuinely human (positive targets)
 
 Flag the *absence* of these as much as the presence of robotic patterns.
