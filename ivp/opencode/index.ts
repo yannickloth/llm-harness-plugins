@@ -1,48 +1,32 @@
 import type { Config, Plugin } from "@opencode-ai/plugin"
-import fs from "fs"
-import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import fs from "fs"
+import path from "path"
 
-const skillsDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
+const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 
-function extractName(skillFile: string, dirName: string): string {
-  const content = fs.readFileSync(skillFile, "utf-8")
-  if (!content.startsWith("---")) return dirName
-  const endIdx = content.indexOf("---", 3)
-  if (endIdx === -1) return dirName
-  const fm = content.slice(3, endIdx)
-  const m = fm.match(/^name:\s*(.+)$/m)
-  return m ? m[1].trim() : dirName
+function skillCount(dir: string): number {
+  if (!fs.existsSync(dir)) return 0
+  return fs
+    .readdirSync(dir)
+    .filter(entry => {
+      const d = path.join(dir, entry)
+      return fs.statSync(d).isDirectory() && fs.existsSync(path.join(d, "SKILL.md"))
+    }).length
 }
 
-function skillEntries(dir: string): Record<string, { file: string }> {
-  const entries: Record<string, { file: string }> = {}
-  if (!fs.existsSync(dir)) return entries
-  for (const entry of fs.readdirSync(dir)) {
-    const d = path.join(dir, entry)
-    if (!fs.statSync(d).isDirectory()) continue
-    const sf = path.join(d, "SKILL.md")
-    if (!fs.existsSync(sf)) continue
-    try {
-      const name = extractName(sf, entry)
-      entries[name] = { file: path.relative(path.join(dir, "../.."), sf) }
-    } catch {}
-  }
-  return entries
-}
-
-export default async ({ client, directory }: Parameters<Plugin>[0]) => {
+export default async ({ client }: Parameters<Plugin>[0]) => {
   const logger = createLogger(client, "ivp")
-  logger.info("plugin active — IVP skill self-registration")
-  const entries = skillEntries(skillsDir)
-  logger.info(`discovered ${Object.keys(entries).length} skills`)
+  const count = skillCount(skillsDir)
+  logger.info(`plugin active — IVP skill self-registration (${count} skills in ${skillsDir})`)
 
   return {
     config: async (input: Config) => {
-      const existing = (input as any).skills ?? {}
-      ;(input as any).skills = { ...existing, ...entries }
+      const skills = (input as any).skills ?? {}
+      const paths: string[] = Array.isArray(skills.paths) ? [...skills.paths] : []
+      if (count > 0 && !paths.includes(skillsDir)) paths.push(skillsDir)
+      ;(input as any).skills = { ...skills, paths }
     },
-    tool: {},
   }
 }
