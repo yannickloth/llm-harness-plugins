@@ -18,6 +18,7 @@
     "./latex-toolkit/opencode/index.ts",
     "./general-skills/opencode/index.ts",
     "./natural-prose/opencode/index.ts",
+    "./laya/opencode/index.ts",
     "./permission-modes/opencode/index.ts",
     "./system-message-merge/opencode/index.ts",
     "./semantic-router/opencode/index.ts",
