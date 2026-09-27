@@ -190,6 +190,22 @@ Tools registered: `save-memory`, `forget-memory`, `check-memory-health`, `init-m
 
 ---
 
+## Global custom tools
+
+[`global-config/tools/local_decide.ts`](./global-config/tools/local_decide.ts) — a bounded,
+decisional `choice` for routing/triage/escalate-or-not, backed by `deepseek-flash`. It returns the
+chosen action plus a logprob-derived `confidence` and a `confident` boolean (treat `false` as
+"decide yourself or escalate"). It reads `LOCAL_DECIDE_{BASE_URL,MODEL,API_KEY,TIMEOUT_MS}`; the key
+falls back to `DEEPSEEK_API_KEY`, then `~/.config/opencode/keys/deepseek.key`.
+
+OpenCode loads custom tools from `~/.config/opencode/tools/`, so symlink it there:
+
+```bash
+ln -s "$PWD/llm-harness-plugins/global-config/tools/local_decide.ts" ~/.config/opencode/tools/local_decide.ts
+```
+
+---
+
 ## Building from source
 
 ```bash
