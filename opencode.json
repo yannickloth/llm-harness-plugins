@@ -6,11 +6,23 @@
     "./ivp/opencode/index.ts",
     "./graphics-toolkit/opencode/index.ts",
     "./scientific-writing/opencode/index.ts",
-    "./laya/opencode/index.ts",
     "./clm/opencode/index.ts",
     "./context-toolkit/opencode/index.ts",
     "./system-message-merge/opencode/index.ts"
   ],
+  "mcp": {
+    "laya": {
+      "enabled": false
+    },
+    "jev": {
+      "type": "local",
+      "command": ["npx", "-y", "@jkudish/jev-mcp"],
+      "environment": {
+        "TYPESAFE_API_KEY": "{file:~/.config/opencode/keys/typesafe.key}"
+      },
+      "enabled": true
+    }
+  },
   "agent": {
     "driver-identifier": {
       "file": "./ivp/agents/driver-identifier.md",
