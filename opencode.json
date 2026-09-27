@@ -7,6 +7,7 @@
     "./graphics-toolkit/opencode/index.ts",
     "./scientific-writing/opencode/index.ts",
     "./laya/opencode/index.ts",
+    "./clm/opencode/index.ts",
     "./context-toolkit/opencode/index.ts",
     "./system-message-merge/opencode/index.ts"
   ],

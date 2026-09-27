@@ -19,6 +19,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`premium-read-offload`](./premium-read-offload) | Offload bulk file reads and boilerplate generation from premium subscription sessions (Kimi K3, GLM-5.3) to a cheap persistent DeepSeek worker — hard gate with escapes, cache-aware worker sessions |
 | [`semantic-router`](./semantic-router) | Fast local intent routing — embeds each message, matches config-defined routes, injects the route's directive into the system prompt and optionally gates tools. No LLM call |
 | [`laya`](./laya) | Skill-only (no backend): teaches the agent to use Laya, the local System 1 decision engine, via its `laya_*` MCP tools — calibrated choice/score/noul judgments with probabilities in a single forward pass (triage, email, guardrails, moderation, model routing) |
+| [`clm`](./clm) | Skill-only (no backend): teaches the agent to use CLM (Contrastive Language Models), the local System 1 decision engine served by `clm-serve` — typed noul/choice/score questions and best-of-N ranking over a closed candidate set via loopback HTTP |
 
 ---
 
@@ -51,6 +52,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
     "./llm-harness-plugins/latex-toolkit/opencode/index.ts",
     "./llm-harness-plugins/general-skills/opencode/index.ts",
     "./llm-harness-plugins/laya/opencode/index.ts",
+    "./llm-harness-plugins/clm/opencode/index.ts",
     "./llm-harness-plugins/premium-read-offload/opencode/index.ts",
     "./llm-harness-plugins/sdlc-guardrails/opencode/index.ts"
   ]
@@ -73,6 +75,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 | 10 | `latex-toolkit` | — | Format-bound skills |
 | 11 | `general-skills` | — | Generic audit agents, load last |
 | 11d | `laya` | — | Skill self-registration (Laya decision engine via `skills.paths`); independent of other plugins |
+| 11e | `clm` | — | Skill self-registration (CLM decision engine via `skills.paths`); independent of other plugins |
 | 11b | `premium-read-offload` | — | Premium-session read/generation offload; independent of other plugins |
 | 11c | `semantic-router` | — | Local intent→directive routing; independent of other plugins (TS-only) |
 | 12 | `sdlc-guardrails` | — | Enforcement layer; reads plan.md/spec.md/intent.md, load after skills |
