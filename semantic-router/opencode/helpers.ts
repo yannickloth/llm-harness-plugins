@@ -30,7 +30,10 @@ export interface RouteConfig {
 }
 
 export interface RouterConfig {
-  encoder: EncoderConfig
+  /** Embeddings endpoint, or null for lexical-only routing. Lexical mode needs
+   * no model at all, so a config can omit `encoder` when no embeddings server
+   * (e.g. a local Unsloth one that is not running) is available. */
+  encoder: EncoderConfig | null
   /** Tried in order after `encoder` when embeddings fail. */
   fallbackEncoders: EncoderConfig[]
   defaultThreshold: number
@@ -114,7 +117,9 @@ function optStringArray(v: unknown, what: string): string[] | undefined {
 /** Validate and normalize a raw config object (from JSON). */
 export function parseConfig(raw: unknown): RouterConfig {
   const root = asRecord(raw, "config")
-  const encoder = parseEncoder(root.encoder, "config.encoder")
+  const encoder = root.encoder === undefined || root.encoder === null
+    ? null
+    : parseEncoder(root.encoder, "config.encoder")
   let fallbackEncoders: EncoderConfig[] = []
   if (root.fallbackEncoders !== undefined) {
     if (!Array.isArray(root.fallbackEncoders)) throw new ConfigError("config.fallbackEncoders must be an array")
@@ -318,8 +323,8 @@ export function hashString(s: string): string {
 /** Identity of an index: encoder + the exact utterance set. A change to either
  * invalidates the cached utterance embeddings. Pass the encoder actually used
  * (a fallback encoder yields different vectors). */
-export function configSignature(cfg: RouterConfig, encoder: EncoderConfig = cfg.encoder): string {
-  const enc = `${encoder.baseURL}|${encoder.model}`
+export function configSignature(cfg: RouterConfig, encoder: EncoderConfig | null = cfg.encoder): string {
+  const enc = encoder ? `${encoder.baseURL}|${encoder.model}` : "lexical"
   const utts = cfg.routes.map((r) => `${r.name}\u0000${r.utterances.join("\u0001")}`).join("\u0002")
   return hashString(`${enc}\u0003${utts}`)
 }

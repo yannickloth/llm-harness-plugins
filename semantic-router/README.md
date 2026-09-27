@@ -16,7 +16,7 @@ Add to your project's `opencode.json`:
 }
 ```
 
-Requires a reachable OpenAI-compatible `/v1/embeddings` endpoint. No build step.
+Requires a reachable OpenAI-compatible `/v1/embeddings` endpoint, or omit `encoder` to run lexical-only. No build step.
 
 ## Configure
 
@@ -24,6 +24,8 @@ Copy `routes.example.json` to `<project>/.semantic-router/routes.json` and edit:
 
 ```jsonc
 {
+  // Optional: omit `encoder` (and fallbacks) to route with the local lexical
+  // matcher only — no model, no endpoint, no timeout.
   "encoder": { "baseURL": "http://127.0.0.1:8888/v1", "model": "auto" },
   "fallbackEncoders": [ { "baseURL": "http://127.0.0.1:1234/v1", "model": "auto" } ],
   "defaultThreshold": 0.5,
@@ -49,7 +51,7 @@ Copy `routes.example.json` to `<project>/.semantic-router/routes.json` and edit:
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `encoder` | required | OpenAI-compatible `/v1/embeddings` endpoint (`baseURL`, `model`, optional `apiKey`, `timeoutMs`). `model: "auto"` resolves the endpoint's currently loaded model via `/v1/models` |
+| `encoder` | no | OpenAI-compatible `/v1/embeddings` endpoint (`baseURL`, `model`, optional `apiKey`, `timeoutMs`). `model: "auto"` resolves the endpoint's currently loaded model via `/v1/models`. **Omit it to run lexical-only** (no model needed). |
 | `fallbackEncoders` | `[]` | Encoders tried in order when the primary fails, before the lexical fallback |
 | `defaultThreshold` | `0.5` | Cosine cutoff a route must clear |
 | `defaultMargin` | `0.08` | Required lead over the runner-up route |

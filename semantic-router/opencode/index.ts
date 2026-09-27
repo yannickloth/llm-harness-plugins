@@ -84,12 +84,16 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     const threshold = process.env[THRESHOLD_ENV]
     const margin = process.env[MARGIN_ENV]
     const timeout = process.env[TIMEOUT_ENV]
-    const encoder = {
-      ...cfg.encoder,
+    const overrides = {
       ...(baseURL ? { baseURL: baseURL.replace(/\/+$/, "") } : {}),
       ...(model ? { model } : {}),
       ...(apiKey !== undefined ? { apiKey } : {}),
       ...(timeout ? { timeoutMs: Number(timeout) } : {}),
+    }
+    let encoder = cfg.encoder
+    if (Object.keys(overrides).length) {
+      const merged = { ...(cfg.encoder ?? {}), ...overrides }
+      encoder = merged.baseURL && merged.model ? (merged as EncoderConfig) : cfg.encoder
     }
     return {
       ...cfg,
@@ -129,8 +133,10 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
   logger.info(
     loaded.config
-      ? `plugin active — routes=${loaded.config.routes.length} encoder=${loaded.config.encoder.baseURL} ` +
-        `(${loaded.config.encoder.model})${loaded.config.fallbackEncoders.length ? ` +${loaded.config.fallbackEncoders.length} fallback` : ""}`
+      ? `plugin active — routes=${loaded.config.routes.length} ` +
+        (loaded.config.encoder
+          ? `encoder=${loaded.config.encoder.baseURL} (${loaded.config.encoder.model})${loaded.config.fallbackEncoders.length ? ` +${loaded.config.fallbackEncoders.length} fallback` : ""}`
+          : "lexical-only (no encoder)")
       : `plugin active — no routes configured (inert)${loaded.error ? `; ${loaded.error}` : ""}`,
   )
 
@@ -141,7 +147,7 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     const cfg = loaded.config
     if (!cfg) return []
     const seen = new Set<string>()
-    return [cfg.encoder, ...cfg.fallbackEncoders].filter((e) => {
+    return [cfg.encoder, ...cfg.fallbackEncoders].filter((e): e is EncoderConfig => e != null).filter((e) => {
       const k = `${e.baseURL}|${e.model}`
       if (seen.has(k)) return false
       seen.add(k)
@@ -443,7 +449,9 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
             configError: loaded.error,
             configPaths: configPaths(),
             encoders: cfg
-              ? [cfg.encoder, ...cfg.fallbackEncoders].map((e) => ({ baseURL: e.baseURL, model: e.model, hasApiKey: !!e.apiKey }))
+              ? [cfg.encoder, ...cfg.fallbackEncoders]
+                  .filter((e): e is EncoderConfig => e != null)
+                  .map((e) => ({ baseURL: e.baseURL, model: e.model, hasApiKey: !!e.apiKey }))
               : [],
             mode: usingLexical ? "lexical" : "embeddings",
             activeEncoder: activeEncoder ? { baseURL: activeEncoder.baseURL, model: activeEncoder.model } : null,

@@ -58,13 +58,16 @@ describe("semantic-router helpers", () => {
       encoder: { baseURL: "http://x/v1/", model: "m" },
       routes: [{ name: "r", utterances: [" hello "] }],
     })
-    expect(cfg.encoder.baseURL).toBe("http://x/v1") // trailing slash trimmed
-    expect(cfg.encoder.timeoutMs).toBe(5000)
+    expect(cfg.encoder!.baseURL).toBe("http://x/v1") // trailing slash trimmed
+    expect(cfg.encoder!.timeoutMs).toBe(5000)
     expect(cfg.defaultThreshold).toBe(0.5)
     expect(cfg.routes[0].utterances).toEqual(["hello"])
 
     const bad = (raw: unknown) => () => parseConfig(raw)
-    expect(bad({ routes: [{ name: "r", utterances: ["x"] }] })).toThrow(/encoder/)
+    // No encoder is valid: routing runs lexical-only (no model required).
+    expect(parseConfig({ routes: [{ name: "r", utterances: ["x"] }] }).encoder).toBeNull()
+    // A present-but-malformed encoder is still rejected.
+    expect(bad({ encoder: { baseURL: "u" }, routes: [{ name: "r", utterances: ["x"] }] })).toThrow(/model/)
     expect(bad({ encoder: { baseURL: "u", model: "m" }, routes: [] })).toThrow(/routes/)
     expect(bad({ encoder: { baseURL: "u", model: "m" }, routes: [{ name: "r", utterances: [] }] })).toThrow(/utterances/)
     expect(bad({ encoder: { baseURL: "u", model: "m" }, routes: [{ name: "r", utterances: ["x"], threshold: 2 }] })).toThrow(/threshold/)
@@ -77,7 +80,7 @@ describe("semantic-router helpers", () => {
     const m = mergeConfigs(a, b)!
     expect(m.routes.map((r) => r.name).sort()).toEqual(["x", "y"])
     expect(m.routes.find((r) => r.name === "x")!.utterances).toEqual(["b"])
-    expect(m.encoder.baseURL).toBe("u2")
+    expect(m.encoder!.baseURL).toBe("u2")
   })
 
   test("configSignature is stable and sensitive", () => {
