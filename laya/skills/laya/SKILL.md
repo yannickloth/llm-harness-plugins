@@ -28,8 +28,10 @@ weighting and gating, not just display.
   (default 8765), `LAYA_DEVICE` (cuda | cpu | mps; auto-detect), `LAYA_MAX_LEN`
   (context-window override, tokens).
 
-**If the `laya_*` tools are missing from your session, the server is down.** Check
-`systemctl --user status laya-mcp` and `journalctl --user -u laya-mcp.service`.
+**If the `laya_*` tools are missing from your session, the server is down** — since
+2026-09-27 the unit is installed but **not auto-started**; bring it up with
+`systemctl --user start laya-mcp`, then check `systemctl --user status laya-mcp`
+and `journalctl --user -u laya-mcp.service`.
 The classic failure is another service squatting port 8765 (Serena's MCP server did
 this on 2026-09-21 and held the port for ~1,900 laya restarts) — check
 `ss -tlnp | grep 8765` to see who owns the port.
