@@ -20,10 +20,12 @@ with a Java backend and OpenCode TypeScript shim.
 | [`semantic-router`](./semantic-router) | Fast local intent routing — embeds each message, matches config-defined routes, injects the route's directive into the system prompt and optionally gates tools. No LLM call |
 | [`laya`](./laya) | Skill-only (no backend): teaches the agent to use Laya, the local System 1 decision engine, via its `laya_*` MCP tools — calibrated choice/score/noul judgments with probabilities in a single forward pass (triage, email, guardrails, moderation, model routing) |
 | [`clm`](./clm) | Skill-only (no backend): teaches the agent to use CLM (Contrastive Language Models), the local System 1 decision engine served by `clm-serve` — typed noul/choice/score questions and best-of-N ranking over a closed candidate set via loopback HTTP |
-| [`local-decide`](./local-decide) | Plugin exposing the `local_decide` tool: a bounded System 1 choice (routing/triage/escalate-or-not) via `deepseek-flash`, returning the action plus a logprob-derived `confidence`/`confident` |
+| [`local-decide`](./local-decide) | Plugin exposing the `local_decide` tool: a bounded System 1 choice (routing/triage/escalate-or-not) via **laya**, the local decision engine, returning the action plus laya's calibrated `confidence`/`confident`. **Dormant** until `laya-mcp` is enabled |
 
-`local-decide` is loaded globally (registered by absolute path in the global opencode config) so
-`local_decide` is available in every project. The rest are opt-in per project.
+`local-decide` is currently dormant: its backend is laya, whose `laya-mcp` service is installed but
+not auto-started, so the plugin is registered nowhere. Register `local-decide/opencode/index.ts`
+(or its absolute path) once `systemctl --user start laya-mcp` is running. The rest of the plugins are
+opt-in per project.
 
 ---
 
