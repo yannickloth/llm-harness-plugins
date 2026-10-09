@@ -178,7 +178,7 @@ describe("keeper busy guard", () => {
 
 describe("isInRoot path boundary check", () => {
   test("imports and exercises real isInRoot", async () => {
-    const { isInRoot } = await import("./index.ts")
+    const { isInRoot } = await import("./path-utils.ts")
     expect(isInRoot("/a/b", "/a/b")).toBe(true)
     expect(isInRoot("/a/b/c", "/a/b")).toBe(true)
     expect(isInRoot("/a/b-other/c", "/a/b")).toBe(false)
@@ -186,7 +186,7 @@ describe("isInRoot path boundary check", () => {
   })
 
   test("filesystem root '/' allows all absolute paths", async () => {
-    const { isInRoot } = await import("./index.ts")
+    const { isInRoot } = await import("./path-utils.ts")
     expect(isInRoot("/foo", "/")).toBe(true)
     expect(isInRoot("/", "/")).toBe(true)
     expect(isInRoot("/foo/bar", "/")).toBe(true)

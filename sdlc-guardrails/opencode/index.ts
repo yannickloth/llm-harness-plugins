@@ -4,6 +4,7 @@ import path from "path"
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { extractFilePath } from "./helpers"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -14,14 +15,6 @@ const FIX_STATE_REL = ".sdlc-guardrails/fix-scope.json"
 function java(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const allArgs = ["java", "--class-path", classesDir, mainClass, ...args]
   return $`${allArgs}`.nothrow().quiet()
-}
-
-export function extractFilePath(args: Record<string, unknown>): string | null {
-  if (typeof args.filePath === "string" && args.filePath) return args.filePath
-  if (typeof args.file_path === "string" && args.file_path) return args.file_path
-  if (typeof args.path === "string" && args.path) return args.path
-  if (typeof args.file === "string" && args.file) return args.file
-  return null
 }
 
 /** Sessions currently declared in fix scope (persisted so it survives JVM restarts). */

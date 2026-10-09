@@ -7,6 +7,7 @@ import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText, extractOpencodeSessionId } from "../../shared/safe-spawn"
 import { shouldInjectProjectContext, updateSessionTopic, getSessionTopic } from "../../shared/session-topic"
 import { moduleDir } from "../../shared/module-dir"
+import { isInRoot } from "./path-utils"
 
 const agentmemDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(agentmemDir, "build", "classes")
@@ -178,12 +179,6 @@ async function sweepMaintenanceSessions(
     if (deleted >= 5000) break
   }
   if (deleted > 0) logger.info(`swept ${deleted} stale Memory-maintenance sessions`)
-}
-
-export function isInRoot(absPath: string, root: string): boolean {
-  const normalizedRoot = path.resolve(root)
-  const normalized = path.resolve(absPath)
-  return normalized === normalizedRoot || normalized.startsWith(normalizedRoot + (normalizedRoot === path.sep ? "" : path.sep))
 }
 
 function handleScopedInject(client: ReturnType<Parameters<Plugin>[0]["client"]>, root: string, filePath: string, topicGate: boolean) {

@@ -126,7 +126,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
       }
 
       // Determine whether the current turn is served from cache.
-      const cached = await lookup(cdir, text)
+      // A cache daemon failure (e.g. `java` missing from PATH) must never break
+      // the session: treat it as a cache miss and continue.
+      const cached = await lookup(cdir, text).catch((e: unknown) => {
+        logger.warn(`cache lookup unavailable: ${(e as Error)?.message ?? String(e)}`)
+        return undefined
+      })
       pendingBySession.set(sessionId, { prompt: text, served: !!cached })
       assistantTextBySession.delete(sessionId)
 
@@ -185,7 +190,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
         },
         async execute(args, context) {
           const cd = cacheDir(context)
-          const cached = await lookup(cd, args.prompt)
+          let cached: string | undefined
+          try {
+            cached = await lookup(cd, args.prompt)
+          } catch (e) {
+            return `[CACHE UNAVAILABLE] ${(e as Error)?.message ?? String(e)}`
+          }
           if (cached) {
             return `[CACHE HIT] ${cached}\n\n⚠️ Stale — verify against current state before acting.`
           }
@@ -200,8 +210,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
           response: tool.schema.string().describe("The response to cache"),
         },
         async execute(args, context) {
-          await store(cacheDir(context), args.prompt, args.response)
-          return "Cached response for prompt."
+          try {
+            await store(cacheDir(context), args.prompt, args.response)
+            return "Cached response for prompt."
+          } catch (e) {
+            return `[CACHE UNAVAILABLE] ${(e as Error)?.message ?? String(e)}`
+          }
         },
       }),
 
@@ -209,8 +223,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
         description: "Get cache statistics: hits, misses, entry count, total size, hit rate.",
         args: {},
         async execute(_args, context) {
-          const body = await stats(cacheDir(context))
-          return body || "No cache data."
+          try {
+            const body = await stats(cacheDir(context))
+            return body || "No cache data."
+          } catch (e) {
+            return `[CACHE UNAVAILABLE] ${(e as Error)?.message ?? String(e)}`
+          }
         },
       }),
     },

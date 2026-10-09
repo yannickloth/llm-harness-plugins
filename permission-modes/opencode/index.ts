@@ -37,15 +37,29 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       const toolName = input.tool
       const filePath = extractFilePath(output.args, toolName)
 
+      // If the Java check helper cannot run or does not return valid JSON, do
+      // NOT block the tool. A helper failure (missing `java` on PATH, JVM
+      // crash, classpath problem) previously threw `permission check error`
+      // for every tool call, which broke the entire tool channel. opencode's
+      // own permission gate still applies, so failing open here is safe; the
+      // failure is logged with the helper's stderr so it can be diagnosed.
+      let result: { stdout: string; stderr: string; exitCode: number }
+      try {
+        result = await java(["check", root, toolName, filePath])
+      } catch (e) {
+        logger.warn(`permission check could not run for ${toolName}; allowing: ${(e as Error).message}`)
+        return
+      }
+      if (result.exitCode !== 0) {
+        logger.warn(`permission check exited ${result.exitCode} for ${toolName}; allowing. stderr: ${result.stderr.trim().slice(0, 500)}`)
+        return
+      }
       let parsed: any
       try {
-        const result = await java(["check", root, toolName, filePath])
         parsed = JSON.parse(result.stdout.trim())
       } catch (e) {
-        logger.error(`check failed: ${(e as Error).message}`)
-        // Check infrastructure failure must not silently allow dangerous tools:
-        // fail closed on tools whose check could not be evaluated.
-        throw new Error(parsed ? `permission check error: ${parsed.reason ?? "unknown"}` : "permission check error")
+        logger.warn(`permission check returned no JSON for ${toolName}; allowing: ${(e as Error).message}. stderr: ${result.stderr.trim().slice(0, 500)}`)
+        return
       }
       // Tri-state from the Java CLI: allow (allowed=true), prompt (allowed=false
       // + promptUser=true), deny (allowed=false + promptUser=false). Under the

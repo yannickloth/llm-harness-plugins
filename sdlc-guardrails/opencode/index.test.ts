@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { join } from "path"
-import { extractFilePath } from "./index"
+import { extractFilePath } from "./helpers"
 
 describe("sdlc-guardrails", () => {
   test("plugin directory structure exists", () => {

@@ -1,7 +1,7 @@
 import { describe, test, expect, afterAll } from "bun:test"
 import { join } from "path"
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "fs"
-import { claimSpawnSlot } from "./index"
+import { claimSpawnSlot } from "./spawn-slot"
 
 let tmpRoot = join(import.meta.dir, "..", "build", "test-tmp-graphrag-plugin")
 

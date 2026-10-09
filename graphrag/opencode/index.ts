@@ -5,6 +5,7 @@ import path from "path"
 import { existsSync, readFileSync, writeFileSync, openSync, closeSync, rmSync, mkdirSync } from "fs"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { claimSpawnSlot } from "./spawn-slot"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -144,74 +145,6 @@ function launchDetached(args: string[], logFile: string): void {
     stdin: "ignore",
   })
   proc.unref()
-}
-
-/**
- * Remove a `.spawn-lock` left behind by a session that crashed while holding it.
- * Only steals when the recorded owner PID is dead, mirroring the Java lock logic.
- */
-function stealIfOwnerDead(lockFile: string): void {
-  if (!existsSync(lockFile)) return
-  const pid = parseInt(readFileSync(lockFile, "utf8").trim().split("\n")[0] ?? "", 10)
-  if (!Number.isFinite(pid) || pid <= 0) return
-  if (Bun.spawnSync(["kill", "-0", String(pid)]).exitCode !== 0) {
-    try {
-      rmSync(lockFile, { force: true })
-    } catch { /* best effort */ }
-  }
-}
-
-/**
- * Cross-instance indexer throttle. Returns true iff this process may launch an
- * indexer job right now, atomically claiming the slot so no other session on
- * the same host launches concurrently. Guards against an N-session spawn storm
- * (each opencode session loads this plugin, so per-instance debounce counters
- * do NOT serialize).
- *
- * Serialization is filesystem-backed: an O_EXCL `.spawn-lock` ensures exactly
- * one winner per slot; under the lock we refuse when an indexer is already
- * running (live PID in `.lock`) or a launch happened too recently
- * (`minIntervalMs`, tracked in `.last-launch`).
- */
-export async function claimSpawnSlot(indexRoot: string, minIntervalMs: number): Promise<boolean> {
-  if (!Number.isFinite(minIntervalMs) || minIntervalMs <= 0) minIntervalMs = 60_000
-  mkdirSync(indexRoot, { recursive: true })
-  const spawnLock = path.join(indexRoot, ".spawn-lock")
-  stealIfOwnerDead(spawnLock)
-  try {
-    const fd = openSync(spawnLock, "wx")
-    writeFileSync(fd, `${process.pid}\n`)
-    closeSync(fd)
-  } catch (err: any) {
-    if (err?.code === "EEXIST") return false // another session holds the slot
-    throw err
-  }
-
-  try {
-    const lockFile = path.join(indexRoot, ".lock")
-    if (existsSync(lockFile)) {
-      const content = readFileSync(lockFile, "utf8").split("\n")
-      const pid = parseInt(content[0] ?? "", 10)
-      if (Number.isFinite(pid) && pid > 0 && Bun.spawnSync(["kill", "-0", String(pid)]).exitCode === 0) {
-        return false // an indexer job is already running
-      }
-    }
-
-    const lastLaunchFile = path.join(indexRoot, ".last-launch")
-    const now = Date.now()
-    if (existsSync(lastLaunchFile)) {
-      const last = parseInt(readFileSync(lastLaunchFile, "utf8").trim(), 10)
-      if (Number.isFinite(last) && now - last < minIntervalMs) {
-        return false // too soon since the last launch (across all sessions)
-      }
-    }
-    writeFileSync(lastLaunchFile, String(now))
-    return true
-  } finally {
-    try {
-      rmSync(spawnLock, { force: true })
-    } catch { /* best effort */ }
-  }
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
