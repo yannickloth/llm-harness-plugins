@@ -4,6 +4,7 @@ import { moduleDir } from "../../shared/module-dir"
 import { $ } from "bun"
 import fs from "fs"
 import path from "path"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 
@@ -29,6 +30,7 @@ function findNixRoot(startDir: string): string | null {
 }
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("typst-toolkit")
   const logger = createLogger(client, "typst-toolkit")
   const count = skillCount(skillsDir)
   logger.info(`plugin active — skill self-registration (${count} skills in ${skillsDir})`)

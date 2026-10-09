@@ -6,6 +6,7 @@ import { existsSync, readFileSync, writeFileSync, openSync, closeSync, rmSync, m
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
 import { claimSpawnSlot } from "./spawn-slot"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -148,6 +149,7 @@ function launchDetached(args: string[], logFile: string): void {
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("graphrag")
   const logger = createLogger(client, "graphrag")
   const cfg = loadConfig()
   const root = worktree ?? directory

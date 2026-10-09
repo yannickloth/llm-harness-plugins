@@ -3,6 +3,7 @@ import { createLogger } from "../../shared/plugin-logger"
 import { $ } from "bun"
 import fs from "fs"
 import path from "path"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 function findRoot(startDir: string, needle: string): string | null {
   let dir = startDir
@@ -15,6 +16,7 @@ function findRoot(startDir: string, needle: string): string | null {
 }
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("js-toolkit")
   const logger = createLogger(client, "js-toolkit")
   logger.info("plugin active")
 

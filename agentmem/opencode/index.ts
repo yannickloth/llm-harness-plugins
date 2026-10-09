@@ -8,6 +8,7 @@ import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_E
 import { shouldInjectProjectContext, updateSessionTopic, getSessionTopic } from "../../shared/session-topic"
 import { moduleDir } from "../../shared/module-dir"
 import { isInRoot } from "./path-utils"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const agentmemDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(agentmemDir, "build", "classes")
@@ -415,6 +416,7 @@ type AgentmemOptions = {
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0], options: AgentmemOptions = {}) => {
+  writeLoadCanary("agentmem")
   logger = createLogger(client, "agentmem")
   const topicGate = options.topicGate ?? true
   logger.info(`plugin active — 6 tools + classifier + auto-injection hooks; topic gate: ${topicGate}`)

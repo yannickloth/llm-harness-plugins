@@ -4,6 +4,7 @@ import fs from "fs"
 import { createLogger } from "../../shared/plugin-logger"
 import { updateSessionTopic, shouldInjectProjectContext } from "../../shared/session-topic"
 import { cacheDir, invalidateFiles, invalidateStale, lookup, SOURCE_AUTO, SOURCE_FILEOP, stats, store } from "./daemon-client"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const WRITE_TOOLS: ReadonlySet<string> = new Set(["edit", "write"])
 
@@ -81,6 +82,7 @@ type SemanticCacheOptions = {
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0], options: SemanticCacheOptions = {}) => {
+  writeLoadCanary("semantic-cache")
   const logger = createLogger(client, "semantic-cache")
   const cdir = cacheDir({ worktree, directory })
   const topicGate = options.topicGate ?? true

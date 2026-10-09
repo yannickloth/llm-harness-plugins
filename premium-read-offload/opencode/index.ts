@@ -12,6 +12,7 @@ import {
   type CitationReport,
   type LineRange,
 } from "./contract"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -34,6 +35,7 @@ function agentArgs(agent: string | undefined): string[] {
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("premium-read-offload")
   const logger = createLogger(client, "premium-read-offload")
   const root = worktree ?? directory
 

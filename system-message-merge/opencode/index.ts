@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 type MergeOptions = {
   providers?: string[]
@@ -10,6 +11,7 @@ export default async (
   { client }: Parameters<Plugin>[0],
   options: MergeOptions = {},
 ) => {
+  writeLoadCanary("system-message-merge")
   const logger = createLogger(client, "system-message-merge")
   const providers = (options.providers ?? ["hetzner"]).map(p => p.toLowerCase())
   const enabled = options.enabled ?? true

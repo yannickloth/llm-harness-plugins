@@ -4,6 +4,7 @@ import path from "path"
 import { existsSync, readdirSync, statSync, readFileSync } from "fs"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -15,6 +16,7 @@ function java(args: string[]): Promise<{ stdout: string; stderr: string; exitCod
 }
 
 export default async ({ project, client, $_, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("guardrail-chain")
   const logger = createLogger(client, "guardrail-chain")
   logger.info("plugin active — 4 tools (scan-secrets, check-injection, check-path, transcript-filter)")
   const root = worktree ?? directory

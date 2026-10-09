@@ -25,6 +25,7 @@ import {
   type PricingPlan,
 } from "./helpers"
 import { createLogger } from "../../shared/plugin-logger"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 type NudgeOptions = {
   heavy?: HeavyOptions
@@ -87,6 +88,7 @@ export default async (
   { client, worktree, directory }: Parameters<Plugin>[0],
   options: NudgeOptions = {},
 ): Promise<{ [key: string]: unknown }> => {
+  writeLoadCanary("offpeak-nudge")
   const logger = createLogger(client, "offpeak-nudge")
   const heavyOpts = options.heavy ?? {}
   const disabled = options.disabled ?? false

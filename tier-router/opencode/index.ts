@@ -5,6 +5,7 @@ import fs from "fs"
 import os from "os"
 import { safeSpawn, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -405,6 +406,7 @@ function buildLeanRewrite(result: {
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("tier-router")
   const logger = createLogger(client, "tier-router")
   logger.info("plugin active — 3 tools + prompt-annotation hook (chat.message)")
   // Prepare the isolated classification data home once at load (mkdir + README).

@@ -5,6 +5,7 @@ import { $ } from "bun"
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 
@@ -19,6 +20,7 @@ function skillCount(dir: string): number {
 }
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("latex-toolkit")
   const logger = createLogger(client, "latex-toolkit")
   const count = skillCount(skillsDir)
   logger.info(`plugin active — skill self-registration (${count} skills in ${skillsDir})`)

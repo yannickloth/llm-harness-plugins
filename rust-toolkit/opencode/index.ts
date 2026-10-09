@@ -4,6 +4,7 @@ import { $ } from "bun"
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 function findRoot(startDir: string, needle: string): string | null {
   let dir = startDir
@@ -16,6 +17,7 @@ function findRoot(startDir: string, needle: string): string | null {
 }
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("rust-toolkit")
   const logger = createLogger(client, "rust-toolkit")
   logger.info("plugin active")
 

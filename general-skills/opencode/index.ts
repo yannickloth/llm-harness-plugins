@@ -4,6 +4,7 @@ import { moduleDir } from "../../shared/module-dir"
 import fs from "fs"
 import path from "path"
 import { STE100_MARKER, STE100_RULE } from "./ste100-rule"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 
@@ -18,6 +19,7 @@ function skillCount(dir: string): number {
 }
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("general-skills")
   const logger = createLogger(client, "general-skills")
   const count = skillCount(skillsDir)
   logger.info(`plugin active — skill self-registration (${count} skills in ${skillsDir})`)

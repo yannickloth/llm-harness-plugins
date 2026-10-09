@@ -3,8 +3,10 @@ import { parseInstructionsMd } from "../../shared/instructions-md"
 import { createLogger } from "../../shared/plugin-logger"
 import { existsSync } from "fs"
 import path from "path"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("context-includes")
   const logger = createLogger(client, "context-includes")
   const root = worktree ?? directory
   const files = [

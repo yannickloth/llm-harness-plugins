@@ -1,5 +1,6 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 /**
  * Plugin exposing the `local_decide` tool: a bounded "System 1" choice backed
@@ -81,6 +82,7 @@ async function layaPredict(state: unknown, questions: Record<string, unknown>): 
 }
 
 const plugin: Plugin = async ({ client }) => {
+  writeLoadCanary("local-decide")
   const logger = createLogger(client, "local-decide")
   logger.info(`plugin active — bounded decisions via laya (${LAYA_URL})`)
 

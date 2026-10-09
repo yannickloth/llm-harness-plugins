@@ -28,6 +28,7 @@ import {
   type RouteMatch,
   type RouterConfig,
 } from "./helpers"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 /** Disable the plugin when "0". */
 const DISABLED_ENV = "LLMHP_SEMANTIC_ROUTER"
@@ -45,6 +46,7 @@ const FAILURE_COOLDOWN_MS = Number(process.env.LLMHP_SEMANTIC_ROUTER_COOLDOWN_MS
 const QUERY_CACHE_MAX = 256
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("semantic-router")
   const logger = createLogger(client, "semantic-router")
   const root = worktree ?? directory
 

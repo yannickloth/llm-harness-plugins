@@ -6,6 +6,7 @@ import { SectionRegistry } from "../../shared/section-registry"
 import { buildPromptWithBoundary, cachedSection, uncachedSection } from "../../shared/cache-boundary"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -58,6 +59,7 @@ async function injectContext(
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("knowledge-graph")
   const logger = createLogger(client, "knowledge-graph")
   logger.info("plugin active — kg-query tool + auto-injection hooks")
   const root = worktree ?? directory

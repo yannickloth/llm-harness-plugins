@@ -15,6 +15,7 @@ import {
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import { updateSessionTopic, shouldInjectProjectContext, getSessionTopic } from "../../shared/session-topic"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 export type AgentfeedOptions = {
   ledgerDir?: string
@@ -73,6 +74,7 @@ Typical use:
 Full guidance: use the 'coordinate' skill for the complete coordination protocol.`
 
 export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], options: AgentfeedOptions = {}) => {
+  writeLoadCanary("agentfeed")
   const logger: PluginLogger = createLogger(client, "agentfeed")
   const root = worktree ?? directory
   const ledgerDir = options.ledgerDir ?? path.join(root, "agentfeed")

@@ -90,6 +90,31 @@ Hard dependency: `guardrail-chain` → `agentmem`. Rest is soft layering.
 
 Restart OpenCode. Plugins load and register their hooks/tools/events.
 
+### Load canary — fail closed when a plugin silently drops
+
+A plugin that fails to load (typo'd path, TS import error, opencode plugin-API
+change) disappears **silently**: the session runs without its guardrails and
+nothing fails. Every plugin therefore writes a load marker at init
+(`shared/load-canary.ts`, a no-op unless probe env is set), and
+`shared/canary_preflight.sh` verifies the markers in a free headless probe —
+plugins load before any model call, so the probe uses an unresolvable model id
+and costs nothing:
+
+```bash
+# exit 0 = every plugin in opencode.json loaded; exit 1 = fail closed — do NOT run
+./shared/canary_preflight.sh opencode ./opencode.json
+```
+
+Call it in a pipeline or CI before real runs. The preflight also verifies that
+plugins **initialized in config order** (sub-millisecond monotonic markers,
+ties allowed) — that sequential loading is what makes the load-order table
+above enforceable. Results are cached per (binary version + config content).
+Env: `LLMHP_CANARY_WAIT` (def. 60s), `LLMHP_CANARY_STATE` (stamp cache dir),
+`LLMHP_CANARY_ORDER=0` (skip the order check), `LLMHP_CANARY_OFF=1` (skip).
+`shared/canary_preflight.test.sh` pins the behavior with a fake `opencode`, including
+the negative paths: opencode silently skips a broken plugin path, and an
+init-order violation fails closed.
+
 > **Note:** As of opencode v1.x, the docs only document npm packages in `plugin[]`. However, the source
 > code (`packages/opencode/src/config/plugin.ts`, `resolvePluginSpec`) explicitly supports relative
 > and absolute paths — resolved relative to the config file's directory. This is confirmed working.

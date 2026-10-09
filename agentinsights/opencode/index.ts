@@ -3,6 +3,7 @@ import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { safeSpawn } from "../../shared/safe-spawn"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const agentinsightsDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(agentinsightsDir, "build", "classes")
@@ -20,6 +21,7 @@ function insightsDir(context: { worktree?: string; directory: string }): string 
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("agentinsights")
   const logger = createLogger(client, "agentinsights")
   logger.info("plugin active — 2 tools")
 

@@ -3,6 +3,7 @@ import fs from "fs"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 const agentsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "agents")
@@ -26,6 +27,7 @@ function agentFiles(dir: string): { name: string; file: string }[] {
 }
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("context-toolkit")
   const logger = createLogger(client, "context-toolkit")
   const count = skillCount(skillsDir)
   const agents = agentFiles(agentsDir)

@@ -2,8 +2,10 @@ import { type Plugin, tool } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
 import { $ } from "bun"
 import path from "path"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("c-toolkit")
   const logger = createLogger(client, "c-toolkit")
   logger.info("plugin active")
 

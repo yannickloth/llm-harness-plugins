@@ -9,6 +9,7 @@ import {
 } from "./helpers"
 import { createLogger } from "../../shared/plugin-logger"
 import { shouldInjectProjectContext, updateSessionTopic, getSessionTopic } from "../../shared/session-topic"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 type InjectOptions = {
   flags?: Partial<Flags>
@@ -35,6 +36,7 @@ export default async (
   { client, worktree, directory }: Parameters<Plugin>[0],
   options: InjectOptions = {},
 ) => {
+  writeLoadCanary("datetime-inject")
   const logger = createLogger(client, "datetime-inject")
   const root = worktree ?? directory
   const flags = resolvedFlags(options)

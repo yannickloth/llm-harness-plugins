@@ -3,6 +3,7 @@ import { $ } from "bun"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
@@ -14,6 +15,7 @@ function registryDir(context: { worktree?: string; directory: string }): string 
 }
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("prompt-registry")
   const logger = createLogger(client, "prompt-registry")
   const rdir = registryDir({ worktree, directory })
   logger.info("plugin active — 5 tools (prompt-commit, prompt-pull, prompt-list, prompt-diff, prompt-test)")

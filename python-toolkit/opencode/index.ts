@@ -4,8 +4,10 @@ import { $ } from "bun"
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("python-toolkit")
   const logger = createLogger(client, "python-toolkit")
   logger.info("plugin active")
 

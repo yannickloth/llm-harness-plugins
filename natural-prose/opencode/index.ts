@@ -3,6 +3,7 @@ import fs from "fs"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 
@@ -22,6 +23,7 @@ function skillCount(dir: string): number {
 }
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("natural-prose")
   const logger = createLogger(client, "natural-prose")
   const count = skillCount(skillsDir)
   logger.info(`plugin active — natural prose skill self-registration (${count} skills in ${skillsDir})`)

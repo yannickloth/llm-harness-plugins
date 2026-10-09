@@ -188,6 +188,12 @@ else
   echo "scientific-writing agent registration: FAILED (agents dir missing)"
 fi
 
+echo "--- Running shared load-canary TS tests ---"
+bun test "$SCRIPT_DIR/shared/load-canary.test.ts" || echo "shared load-canary TS tests: FAILED (bun not available?)"
+
+echo "--- Running canary preflight integration test (fake opencode) ---"
+bash "$SCRIPT_DIR/shared/canary_preflight.test.sh" || echo "canary preflight: FAILED"
+
 echo "--- Running agentfeed CLI feed validity check ---"
 CLI_DIR="${XDG_RUNTIME_DIR:-/tmp/opencode}/agentfeed-cli"
 rm -rf "$CLI_DIR"

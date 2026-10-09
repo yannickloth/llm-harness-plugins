@@ -3,8 +3,10 @@ import { $ } from "bun"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("permission-modes")
   const logger = createLogger(client, "permission-modes")
   const root = worktree ?? directory
   const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")

@@ -4,6 +4,7 @@ import { moduleDir } from "../../shared/module-dir"
 import { $ } from "bun"
 import fs from "fs"
 import path from "path"
+import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
 
@@ -35,6 +36,7 @@ async function runJava(toolClass: string, args: string[]): Promise<string> {
 }
 
 export default async ({ client }: Parameters<Plugin>[0]) => {
+  writeLoadCanary("graphics-toolkit")
   const logger = createLogger(client, "graphics-toolkit")
   const count = skillCount(skillsDir)
   logger.info(`plugin active — skill self-registration (${count} skills in ${skillsDir})`)
