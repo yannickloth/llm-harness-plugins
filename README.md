@@ -21,6 +21,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`laya`](./laya) | Skill-only (no backend): teaches the agent to use Laya, the local System 1 decision engine, via its `laya_*` MCP tools — calibrated choice/score/noul judgments with probabilities in a single forward pass (triage, email, guardrails, moderation, model routing) |
 | [`clm`](./clm) | Skill-only (no backend): teaches the agent to use CLM (Contrastive Language Models), the local System 1 decision engine served by `clm-serve` — typed noul/choice/score questions and best-of-N ranking over a closed candidate set via loopback HTTP |
 | [`local-decide`](./local-decide) | Plugin exposing the `local_decide` tool: a bounded System 1 choice (routing/triage/escalate-or-not) via **laya**, the local decision engine, returning the action plus laya's calibrated `confidence`/`confident`. **Dormant** until `laya-mcp` is enabled |
+| [`codify-first`](./codify-first) | Meta-prompt plugin — injects a short intake directive (recurrence/stability/leverage gate) into the system prompt and ships the `codify-first` skill: check existing skills/agents, author the missing artifact into the project's `.opencode/`, then execute the task through it |
 
 `local-decide` is currently dormant: its backend is laya, whose `laya-mcp` service is installed but
 not auto-started, so the plugin is registered nowhere. Register `local-decide/opencode/index.ts`
@@ -84,6 +85,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 | 11e | `clm` | — | Skill self-registration (CLM decision engine via `skills.paths`); independent of other plugins |
 | 11b | `premium-read-offload` | — | Premium-session read/generation offload; independent of other plugins |
 | 11c | `semantic-router` | — | Local intent→directive routing; independent of other plugins (TS-only) |
+| 11f | `codify-first` | `system-message-merge` | Intake directive + `codify-first` skill self-registration; load before the merge coalesces system messages |
 | 12 | `sdlc-guardrails` | — | Enforcement layer; reads plan.md/spec.md/intent.md, load after skills |
 
 Hard dependency: `guardrail-chain` → `agentmem`. Rest is soft layering.
@@ -121,7 +123,8 @@ init-order violation fails closed.
 
 ### Topic gate (context injection)
 
-`datetime-inject`, `agentfeed`, `semantic-cache`, `offpeak-nudge`, and `agentmem`
+`datetime-inject`, `agentfeed`, `semantic-cache`, `offpeak-nudge`, `agentmem`,
+and `codify-first`
 inject project context into prompts (datetime, coordination digests, cached
 answers, pricing nudges, persistent memory). This is useful for coding sessions
 but intrusive in personal, non-coding conversations.

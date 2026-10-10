@@ -19,6 +19,7 @@
     "./general-skills/opencode/index.ts",
     "./natural-prose/opencode/index.ts",
     "./permission-modes/opencode/index.ts",
+    "./codify-first/opencode/index.ts",
     "./system-message-merge/opencode/index.ts",
     "./semantic-router/opencode/index.ts",
     "./premium-read-offload/opencode/index.ts",

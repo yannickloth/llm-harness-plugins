@@ -8,6 +8,7 @@
     "./scientific-writing/opencode/index.ts",
     "./clm/opencode/index.ts",
     "./context-toolkit/opencode/index.ts",
+    "./codify-first/opencode/index.ts",
     "./system-message-merge/opencode/index.ts"
   ],
   "agent": {
