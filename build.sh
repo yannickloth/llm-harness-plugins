@@ -189,6 +189,10 @@ else
   echo "scientific-writing agent registration: FAILED (agents dir missing)"
 fi
 
+echo "--- Running context-editing TS tests ---"
+bun test "$SCRIPT_DIR/context-editing/opencode/helpers.test.ts" || echo "context-editing helpers tests: FAILED (bun not available?)"
+bun test "$SCRIPT_DIR/context-editing/opencode/index.test.ts" || echo "context-editing index tests: FAILED (bun not available?)"
+
 echo "--- Running shared load-canary TS tests ---"
 bun test "$SCRIPT_DIR/shared/load-canary.test.ts" || echo "shared load-canary TS tests: FAILED (bun not available?)"
 

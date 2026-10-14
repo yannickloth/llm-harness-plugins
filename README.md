@@ -22,6 +22,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`laya`](./laya) | Skill-only (no backend): teaches the agent to use Laya, the local System 1 decision engine, via its `laya_*` MCP tools — calibrated choice/score/noul judgments with probabilities in a single forward pass (triage, email, guardrails, moderation, model routing) |
 | [`clm`](./clm) | Skill-only (no backend): teaches the agent to use CLM (Contrastive Language Models), the local System 1 decision engine served by `clm-serve` — typed noul/choice/score questions and best-of-N ranking over a closed candidate set via loopback HTTP |
 | [`local-decide`](./local-decide) | Plugin exposing the `local_decide` tool: a bounded System 1 choice (routing/triage/escalate-or-not) via **laya**, the local decision engine, returning the action plus laya's calibrated `confidence`/`confident`. **Dormant** until `laya-mcp` is enabled |
+| [`context-editing`](./context-editing) | Model-managed context — projects the conversation into an editable `context.md` (mirror) over an append-only trace, so long sessions stay relevant instead of rotting. Cache-aware, wire-format-safe, fail-open budget. Phase 0 (`notices-only`) by default |
 | [`codify-first`](./codify-first) | Meta-prompt plugin — injects a short intake directive (recurrence/stability/leverage gate) into the system prompt and ships the `codify-first` skill: check existing skills/agents, author the missing artifact into the project's `.opencode/`, then execute the task through it |
 
 `local-decide` is currently dormant: its backend is laya, whose `laya-mcp` service is installed but
@@ -61,6 +62,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
     "./llm-harness-plugins/general-skills/opencode/index.ts",
     "./llm-harness-plugins/laya/opencode/index.ts",
     "./llm-harness-plugins/clm/opencode/index.ts",
+    "./llm-harness-plugins/context-editing/opencode/index.ts",
     "./llm-harness-plugins/premium-read-offload/opencode/index.ts",
     "./llm-harness-plugins/sdlc-guardrails/opencode/index.ts"
   ]
@@ -84,6 +86,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 | 11 | `general-skills` | — | Generic audit agents, load last |
 | 11d | `laya` | — | Skill self-registration (Laya decision engine via `skills.paths`); independent of other plugins |
 | 11e | `clm` | — | Skill self-registration (CLM decision engine via `skills.paths`); independent of other plugins |
+| 11g | `context-editing` | `session-lifecycle`, `datetime-inject` | Context management; reuses `session-lifecycle` for trace retention; edits the message array after `datetime-inject` has added its per-message context |
 | 11b | `premium-read-offload` | — | Premium-session read/generation offload; independent of other plugins |
 | 11c | `semantic-router` | — | Local intent→directive routing; independent of other plugins (TS-only) |
 | 11f | `codify-first` | `system-message-merge` | Intake directive + `codify-first` skill self-registration; load before the merge coalesces system messages |

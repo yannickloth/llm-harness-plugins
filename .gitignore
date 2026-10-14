@@ -1,4 +1,5 @@
 .agentmem/
+.context-editing/
 .history/
 .ai/
 .direnv/

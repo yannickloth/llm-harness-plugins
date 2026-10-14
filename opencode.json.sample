@@ -21,6 +21,7 @@
     "./permission-modes/opencode/index.ts",
     "./codify-first/opencode/index.ts",
     "./system-message-merge/opencode/index.ts",
+    "./context-editing/opencode/index.ts",
     "./semantic-router/opencode/index.ts",
     "./premium-read-offload/opencode/index.ts",
     "./sdlc-guardrails/opencode/index.ts"
