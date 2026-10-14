@@ -58,6 +58,19 @@ Rule: real temp scratch → tmpfs, always via `$XDG_RUNTIME_DIR`. Durable artifa
 | ✗ No unused code | Remove code that is defined but never referenced or invoked |
 | Exception | If user explicitly permits dead/unused code for a specific case, honor that |
 
+# Root-Cause Fix Rule
+
+When a failure has a fixable cause, fix the cause. A workaround is a last resort, not the default.
+
+| Condition | Action |
+|-----------|--------|
+| Cause is identifiable and removable | Remove it — upgrade the dependency, correct the config, fix the defect |
+| Fix needs a larger change | Make the larger change if it is the cause; do not patch the symptom |
+| True fix is out of reach | State the real fix and why it is blocked; then, and only then, use a workaround |
+| Workaround forced temporarily | Label it a workaround, name the cause, record the real fix as follow-up |
+
+✗ Never present a workaround as the fix. ✗ Never silence a symptom (suppress the error, disable the check) instead of removing its cause.
+
 # Opportunistic Fix Rule (Review Contexts)
 
 When reviewing content (chapter review, audit, quality pass, proofreading):
