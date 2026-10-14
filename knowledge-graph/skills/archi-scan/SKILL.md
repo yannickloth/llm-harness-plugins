@@ -14,16 +14,31 @@ start.
 
 ## Workflow
 
-1. **Ensure a graph.** If `graph.json` is missing in the project root and the
-   project has a parser config (Typst label conventions), build it:
+1. **Ensure a graph.**
+   - `graph.json` exists → proceed.
+   - No graph but a parser config applies (Typst label conventions) → build it:
 
-       java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli parse . <plugin-dir>/config/project-config-<project>.yaml
+         java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli parse . <plugin-dir>/config/project-config-<project>.yaml
 
-   If no parser applies, stop and tell the user archi-scan needs a parse config for
-   this project.
+   - No parser for this language (e.g. a code repo) → extract the graph yourself
+     as an **overlay**. Read the code, infer nodes (modules, classes, endpoints,
+     keys, flows) and edges (imports, calls, reads, writes, owns), and write
+     `overlay.json` with `nodes` and `edges` (optional top-level `origin`,
+     default `llm`). Then:
 
-2. **Get the lay of the land.** `kg-query overview`, and `kg-query rate <task>`
-   when the user gave a focus area.
+         java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli validate-overlay overlay.json
+         java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli merge-overlay graph.json overlay.json
+
+     `merge-overlay` stamps `origin` provenance and auto-creates nodes for
+     relation endpoints you did not declare. This is the LLM-extraction path:
+     non-deterministic, so re-run it when the code changes. Where a deterministic
+     parser does exist, prefer merging a base graph and keeping this overlay
+     separable so derived vs inferred stays traceable.
+
+2. **Get the lay of the land.** The project `overview` is injected at session
+   start. For relevance ranking, run the CLI:
+
+       java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli rate graph.json "<task>" [top-k]
 
 3. **Export the skeleton:**
 
@@ -32,6 +47,10 @@ start.
    Writes `overall-architecture/` (description.md, diagram.mmd, context.md) and
    `elements/<label>/` (description.md with frontmatter, diagram.mmd, context.md).
    Elements are the highest-degree nodes; raise max-elements for wider coverage.
+
+   Re-running `perspectives` never overwrites an existing element
+   `description.md` (your enrichment survives); only the derived `diagram.mmd`
+   and `context.md` are refreshed. New elements are added.
 
 4. **Enrich.** For each element dir: read its `context.md`, `diagram.mmd`, and
    the anchored source files (frontmatter `files:`), then fill `description.md`:

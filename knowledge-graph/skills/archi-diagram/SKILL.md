@@ -10,8 +10,8 @@ compatibility: Requires the knowledge-graph plugin (its kg-query tool or compile
 session start.
 
 1. **Pick the target.** A node label (`thm:knowledge-theorem`) or a source file
-   path. If unsure, use `kg-query overview` / `kg-query community-summary <label>`
-   to find it.
+   path. If unsure, locate it with the `overview` CLI command or
+   `kg-query community-summary <label>`.
 
 2. **Extract.**
    - tool path: `kg-query` with query `diagram <label> [depth]`

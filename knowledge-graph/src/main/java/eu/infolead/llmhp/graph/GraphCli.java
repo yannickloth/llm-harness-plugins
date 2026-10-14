@@ -36,6 +36,8 @@ public class GraphCli {
             case "perspectives" -> handlePerspectives(args);
             case "merge-annotations" -> handleMergeAnnotations(args);
             case "audit-tree" -> handleAuditTree(args);
+            case "merge-overlay" -> handleMergeOverlay(args);
+            case "validate-overlay" -> handleValidateOverlay(args);
             default -> { System.err.println("Unknown: " + cmd); usage(); }
         }
     }
@@ -57,6 +59,8 @@ public class GraphCli {
               perspectives <graph-file> <out-dir> [max-elements]
               merge-annotations <graph-file> <tree-dir>
               audit-tree <graph-file> <tree-dir> [project-root]
+              merge-overlay <graph-file> <overlay-file> [output-file]
+              validate-overlay <overlay-file>
             """);
     }
 
@@ -91,6 +95,7 @@ public class GraphCli {
     }
 
     static void handleQuery(String[] args) throws IOException {
+        if (args.length < 3) { usage(); return; }
         var graphFile = Path.of(args[1]);
         var graph = GraphQueryEngine.load(graphFile);
         var query = args[2];
@@ -109,8 +114,7 @@ public class GraphCli {
                     try {
                         depth = Integer.parseInt(args[4]);
                     } catch (NumberFormatException e) {
-                        System.out.println("Invalid depth: " + args[4] + " (must be an integer)");
-                        yield null;
+                        yield "Invalid depth: " + args[4] + " (must be an integer)";
                     }
                 }
                 yield PerspectiveExporter.exportDiagram(graph, scope, depth);
@@ -121,6 +125,7 @@ public class GraphCli {
     }
 
     static void handleContext(String[] args) throws IOException {
+        if (args.length < 3) { usage(); return; }
         var graphFile = Path.of(args[1]);
         var label = args[2];
 
@@ -130,6 +135,7 @@ public class GraphCli {
     }
 
     static void handleImpact(String[] args) throws IOException {
+        if (args.length < 3) { usage(); return; }
         var graphFile = Path.of(args[1]);
         var label = args[2];
 
@@ -139,9 +145,18 @@ public class GraphCli {
     }
 
     static void handleSubgraph(String[] args) throws IOException {
+        if (args.length < 3) { usage(); return; }
         var graphFile = Path.of(args[1]);
         var label = args[2];
-        var depth = args.length > 3 ? Integer.parseInt(args[3]) : 1;
+        int depth = 1;
+        if (args.length > 3) {
+            try {
+                depth = Integer.parseInt(args[3]);
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid depth: " + args[3] + " (must be an integer)");
+                return;
+            }
+        }
 
         var graph = GraphQueryEngine.load(graphFile);
         var result = GraphQueryEngine.querySubgraph(graph, label, depth);
@@ -149,9 +164,18 @@ public class GraphCli {
     }
 
     static void handleRate(String[] args) throws IOException {
+        if (args.length < 3) { usage(); return; }
         var graphFile = Path.of(args[1]);
         var task = args[2];
-        var topK = args.length > 3 ? Integer.parseInt(args[3]) : 5;
+        int topK = 5;
+        if (args.length > 3) {
+            try {
+                topK = Integer.parseInt(args[3]);
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid top-k: " + args[3] + " (must be an integer)");
+                return;
+            }
+        }
 
         var graph = GraphQueryEngine.load(graphFile);
         var result = GraphRater.rateRelevance(graph, task, topK);
@@ -160,6 +184,7 @@ public class GraphCli {
     }
 
     static void handleOverview(String[] args) throws IOException {
+        if (args.length < 2) { usage(); return; }
         var graphFile = Path.of(args[1]);
         var graph = GraphQueryEngine.load(graphFile);
         var overview = GraphContextBuilder.buildProjectOverview(graph);
@@ -167,6 +192,7 @@ public class GraphCli {
     }
 
     static void handleQuality(String[] args) throws IOException {
+        if (args.length < 2) { usage(); return; }
         var graphFile = Path.of(args[1]);
         var graph = GraphQueryEngine.load(graphFile);
         var quality = GraphQueryEngine.computeQualityMetrics(graph);
@@ -174,6 +200,7 @@ public class GraphCli {
     }
 
     static void handleValidate(String[] args) throws IOException {
+        if (args.length < 2) { usage(); return; }
         var graphFile = Path.of(args[1]);
         var graph = GraphQueryEngine.load(graphFile);
         var issues = GraphQueryEngine.validateSchema(graph);
@@ -188,7 +215,15 @@ public class GraphCli {
     static void handleDiagram(String[] args) throws IOException {
         if (args.length < 3) { usage(); return; }
         var graph = GraphQueryEngine.load(Path.of(args[1]));
-        var depth = args.length > 3 ? Integer.parseInt(args[3]) : 1;
+        int depth = 1;
+        if (args.length > 3) {
+            try {
+                depth = Integer.parseInt(args[3]);
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid depth: " + args[3] + " (must be an integer)");
+                return;
+            }
+        }
         System.out.println(PerspectiveExporter.exportDiagram(graph, args[2], depth));
     }
 
@@ -204,6 +239,10 @@ public class GraphCli {
                 System.err.println("Invalid max-elements: " + args[3] + " (must be an integer)");
                 return;
             }
+        }
+        if (maxElements < 1) {
+            System.err.println("Invalid max-elements: " + maxElements + " (must be >= 1)");
+            return;
         }
         System.out.println(PerspectiveExporter.exportPerspectives(graph, outDir, maxElements));
     }
@@ -239,6 +278,55 @@ public class GraphCli {
             System.out.println("Tree audit: PASSED — all element dirs anchored and current.");
         } else {
             System.out.println("Tree audit: " + issues.size() + " issue(s) found:\n");
+            issues.forEach(System.out::println);
+        }
+    }
+
+    static void handleMergeOverlay(String[] args) throws IOException {
+        if (args.length < 3) { usage(); return; }
+        var graphFile = Path.of(args[1]);
+        var overlayFile = Path.of(args[2]);
+        Graph graph;
+        if (Files.exists(graphFile)) {
+            graph = GraphQueryEngine.load(graphFile);
+        } else {
+            var abs = graphFile.toAbsolutePath();
+            var project = abs.getParent() != null ? abs.getParent().getFileName().toString() : "graph";
+            graph = new Graph(project, Map.of(), List.of(), Map.of(), Map.of(),
+                Map.of(), Map.of(), Map.of());
+        }
+        var overlay = GraphOverlay.load(overlayFile);
+        var result = GraphOverlay.merge(graph, overlay, null);
+        var outputFile = args.length > 3 ? Path.of(args[3]) : graphFile;
+        GraphQueryEngine.save(result.graph(), outputFile);
+        System.out.printf("Overlay merged: +%d nodes, ~%d nodes updated, +%d edges → %s%n",
+            result.nodesAdded(), result.nodesMerged(), result.edgesAdded(), outputFile);
+        System.out.print("Origin counts: ");
+        var entries = new ArrayList<>(result.origins().entrySet());
+        for (int i = 0; i < entries.size(); i++) {
+            var e = entries.get(i);
+            System.out.print((e.getKey().isEmpty() ? "(none)" : e.getKey()) + "=" + e.getValue());
+            if (i < entries.size() - 1) System.out.print(", ");
+        }
+        System.out.println();
+        if (!result.warnings().isEmpty()) {
+            System.out.println("Warnings (" + result.warnings().size() + "):");
+            result.warnings().stream().limit(20).forEach(w -> System.out.println("  " + w));
+            if (result.warnings().size() > 20) {
+                System.out.println("  ... and " + (result.warnings().size() - 20) + " more");
+            }
+        }
+    }
+
+    static void handleValidateOverlay(String[] args) throws IOException {
+        if (args.length < 2) { usage(); return; }
+        var overlay = GraphOverlay.load(Path.of(args[1]));
+        var issues = GraphOverlay.validate(overlay);
+        if (issues.isEmpty()) {
+            System.out.printf("Overlay validation: PASSED — %d node(s), %d edge(s), origin=%s%n",
+                overlay.nodes().size(), overlay.edges().size(), overlay.origin());
+        } else {
+            System.out.println("Overlay validation: " + issues.size() + " issue(s) found:\n");
             issues.forEach(System.out::println);
         }
     }

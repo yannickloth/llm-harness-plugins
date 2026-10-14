@@ -64,12 +64,11 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
   const logger = createLogger(client, "knowledge-graph")
   logger.info("plugin active — kg-query tool + auto-injection hooks")
   const root = worktree ?? directory
-  const registry = new SectionRegistry(logger)
 
-  registry.section("kg-header", async () => {
+  const buildHeader = async () => {
     const raw = await $`cat ${path.join(pluginDir, "prompts", "agent-prompt.md")}`.nothrow().text()
     return raw.replace("<plugin-dir>", pluginDir)
-  })
+  }
 
   return {
     config: async (input: Config) => {
@@ -88,21 +87,24 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       if (!sessionId) return
       injectedSessionId = sessionId
 
+      const registry = new SectionRegistry(logger)
+      registry.section("kg-header", buildHeader)
+
       const gf = graphFile(root)
-      if (!existsSync(gf)) {
-        logger.info("no graph.json found, skipping context injection")
-        return
+      if (existsSync(gf)) {
+        try {
+          const ctxText = await $`java --class-path ${classesDir} ${mainClass} overview ${gf}`.nothrow().text()
+          if (ctxText.trim()) registry.section("kg-overview", () => ctxText)
+        } catch (e) {
+          logger.error(`graph overview failed: ${(e as Error).message}`)
+        }
+      } else {
+        logger.info("no graph.json — injecting agent prompt only")
       }
 
       try {
-        const ctxText = await $`java --class-path ${classesDir} ${mainClass} overview ${gf}`.nothrow().text()
-        if (!ctxText.trim()) return
-
-        registry.section("kg-overview", () => ctxText)
-
         const prompt = await registry.buildPrompt()
         logger.info(registry.report())
-
         await injectContext(logger, client, sessionId, prompt)
         logger.info(`injected graph context into session ${sessionId}`)
       } catch (e) {
@@ -111,7 +113,6 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     },
 
     "session.deleted": () => {
-      registry.clear()
       injectedSessionId = null
       injectedFiles.clear()
     },
@@ -183,15 +184,18 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
     tool: {
       "kg-query": tool({
-        description: "Query the knowledge graph: transitive-closure, topo-sort, cycles, community-summary, contradictions, impact, diagram (mermaid export), rate",
+        description: "Query the knowledge graph: transitive-closure, topo-sort, cycles, community-summary, contradictions, impact, diagram (mermaid export)",
         args: {
-          query: tool.schema.string().describe("e.g. 'topo-sort ch:06', 'transitive-closure thm:knowledge-theorem', 'community-summary ch55:methylation', 'cycles', 'diagram thm:knowledge-theorem 2', 'rate review all theorems in section 3'"),
+          query: tool.schema.string().describe("e.g. 'topo-sort ch:06', 'transitive-closure thm:knowledge-theorem', 'community-summary ch55:methylation', 'cycles', 'diagram thm:knowledge-theorem 2'"),
         },
         async execute(args, context) {
           const gf = graphFile(worktree ?? context.directory ?? root)
           if (!existsSync(gf)) return "No graph.json found. Run parse first."
 
-          const result = await $`java --class-path ${classesDir} ${mainClass} query ${gf} ${args.query}`.nothrow().text()
+          const parts = args.query.trim().split(/\s+/).filter(Boolean)
+          if (parts.length === 0) return "Provide a query, e.g. 'cycles' or 'impact ch:06'."
+
+          const result = await $`java --class-path ${classesDir} ${mainClass} query ${gf} ${parts}`.nothrow().text()
           return result.trim()
         },
       }),

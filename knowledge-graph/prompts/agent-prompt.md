@@ -1,7 +1,9 @@
 # Knowledge Graph
 
-A build-time knowledge graph at `graph.json` is available.
-File-scope context auto-injected on reads/edits — no action needed.
+The knowledge-graph plugin is active. When a build-time graph exists at
+`graph.json`, file-scope context is auto-injected on reads/edits and the project
+overview is injected at session start. When there is no `graph.json` yet, create
+one first: a deterministic `parse`, or an LLM-authored `overlay.json` (see below).
 
 ## Querying the graph
 
@@ -14,9 +16,10 @@ If `kg-query` is in your tool list, call it directly with one of:
 - `impact <label>` — what depends on this, and what does this depend on
 - `diagram <label> [depth]` — Mermaid flowchart of the N-hop neighborhood
 
-If `kg-query` is NOT a tool, fall back to:
+If `kg-query` is NOT a tool, fall back to the CLI (one token per argument):
 
-    java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli query graph.json "<query> [scope]"
+    java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli query graph.json <query> [scope]
+    # e.g.  ... query graph.json topo-sort ch:06
 
 ## Architecture doc-tree (archi-scan / archi-diagram skills)
 
@@ -28,6 +31,21 @@ If `kg-query` is NOT a tool, fall back to:
 
 CLI commands these wrap: `perspectives <graph> <out-dir>`, `merge-annotations <graph> <tree-dir>`,
 `audit-tree <graph> <tree-dir>`, `diagram <graph> <label> [depth]`.
+
+## LLM-authored graph overlay
+
+When no deterministic parser covers the sources (e.g. a code repo with no parse
+config), you may extract the graph yourself as `overlay.json` — a JSON file with
+`nodes` and `edges` (same shape as graph.json, optional top-level `origin`,
+default `llm`):
+
+    java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli validate-overlay overlay.json
+    java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli merge-overlay graph.json overlay.json
+
+`merge-overlay` merges the overlay over the base graph (both optional; a missing
+base starts empty), stamps `origin` provenance, and auto-creates nodes for
+relation endpoints that were not declared. Re-run after a deterministic `parse`
+if the base changed.
 
 ## Diagnostic commands (via Bash)
 

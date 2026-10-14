@@ -8,6 +8,7 @@ import eu.infolead.llmhp.graph.types.*;
 public final class PerspectiveExporter {
 
     private static final int MAX_DIAGRAM_NODES = 40;
+    private static final int MAX_COMMUNITY_NODES = 40;
     private static final int MAX_COMMUNITY_EDGES = 30;
     private static final List<String> NODE_ANNOTATION_KEYS =
         List.of("constraint", "concern", "todo", "note");
@@ -28,7 +29,8 @@ public final class PerspectiveExporter {
         if (label == null || label.isEmpty()) return "Error: label required for diagram";
         var ids = collectNeighborhood(graph, label, depth);
         if (ids.isEmpty()) return "No nodes found for: " + label;
-        return mermaid(graph, ids, "knowledge-graph diagram: " + label + " (depth " + depth + ")");
+        return mermaid(graph, ids, focusNode(graph, label),
+            "knowledge-graph diagram: " + label + " (depth " + depth + ")");
     }
 
     public static String exportPerspectives(Graph graph, Path outDir, int maxElements) throws IOException {
@@ -37,28 +39,38 @@ public final class PerspectiveExporter {
 
         var overall = outDir.resolve("overall-architecture");
         Files.createDirectories(overall);
-        writeDescription(overall.resolve("description.md"),
-            List.of(
-                "perspective: overall-architecture",
-                "project: " + graph.project(),
-                "generated: build-artifact"
-            ),
-            "# Overall Architecture\n\n"
-                + "Coarse view: communities and the edges between them.\n"
-                + "Element-level perspectives live in `elements/`.\n");
+        if (!Files.exists(overall.resolve("description.md"))) {
+            writeDescription(overall.resolve("description.md"),
+                List.of(
+                    "perspective: overall-architecture",
+                    "project: " + fmValue(graph.project()),
+                    "generated: build-artifact"
+                ),
+                "# Overall Architecture\n\n"
+                    + "Coarse view: communities and the edges between them.\n"
+                    + "Element-level perspectives live in `elements/`.\n");
+        }
         Files.writeString(overall.resolve("diagram.mmd"), communityMermaid(graph));
         Files.writeString(overall.resolve("context.md"), communityContext(graph));
 
         var selected = selectElements(graph, maxElements);
+        var used = new LinkedHashMap<String, String>();
         int written = 0;
+        int preserved = 0;
         for (var id : selected) {
-            var dir = elementsDir.resolve(dirName(id));
+            var dir = elementsDir.resolve(uniqueDirName(dirName(id), used, id));
             Files.createDirectories(dir);
-            writeElementDir(graph, dir, id);
-            written++;
+            if (isOwnedBy(dir, id)) {
+                preserved++;
+                writeDerived(graph, dir, id);
+            } else {
+                writeElementDir(graph, dir, id);
+                written++;
+            }
         }
         return "Perspectives written to " + outDir
-            + ": overall-architecture + " + written + " element dirs";
+            + ": overall-architecture + " + written + " new element dirs, "
+            + preserved + " preserved";
     }
 
     public static AnnotationMerge mergeAnnotations(Graph graph, Path treeDir) throws IOException {
@@ -109,13 +121,11 @@ public final class PerspectiveExporter {
                             warnings.add("dangling " + k + " target for " + label + ": " + target);
                             continue;
                         }
-                        var edge = new Edge(label, target, k,
-                            new LinkedHashMap<>(Map.of("origin", "archi-scan")));
-                        if (!edges.contains(edge)) {
-                            edges.add(edge);
-                            edgesAdded++;
-                            changed = true;
-                        }
+                        if (hasEdge(edges, label, k, target)) continue;
+                        edges.add(new Edge(label, target, k,
+                            new LinkedHashMap<>(Map.of("origin", "archi-scan"))));
+                        edgesAdded++;
+                        changed = true;
                     }
                 }
             }
@@ -198,11 +208,18 @@ public final class PerspectiveExporter {
         return labels;
     }
 
-    static String mermaid(Graph graph, Set<String> ids, String title) {
+    static String mermaid(Graph graph, Set<String> ids, String focusId, String title) {
         var ordered = new ArrayList<String>(ids);
         ordered.sort(Comparator.naturalOrder());
         boolean truncated = ordered.size() > MAX_DIAGRAM_NODES;
-        if (truncated) ordered = new ArrayList<>(ordered.subList(0, MAX_DIAGRAM_NODES));
+        if (truncated) {
+            if (focusId != null && ordered.remove(focusId)) {
+                ordered = new ArrayList<>(ordered.subList(0, MAX_DIAGRAM_NODES - 1));
+                ordered.add(0, focusId);
+            } else {
+                ordered = new ArrayList<>(ordered.subList(0, MAX_DIAGRAM_NODES));
+            }
+        }
         var index = new LinkedHashMap<String, String>();
         for (int i = 0; i < ordered.size(); i++) index.put(ordered.get(i), "n" + i);
 
@@ -224,14 +241,37 @@ public final class PerspectiveExporter {
         }
         if (truncated) {
             sb.append("  %% truncated: ").append(ids.size()).append(" nodes total, showing ")
-                .append(MAX_DIAGRAM_NODES).append("\n");
+                .append(MAX_DIAGRAM_NODES)
+                .append(focusId != null ? " (focus node retained)" : "").append("\n");
         }
         return sb.toString();
     }
 
+    private static boolean isOwnedBy(Path dir, String id) throws IOException {
+        var desc = dir.resolve("description.md");
+        if (!Files.exists(desc)) return false;
+        return id.equals(parseFrontmatter(Files.readString(desc)).getOrDefault("label", "").trim());
+    }
+
+    private static String focusNode(Graph graph, String label) {
+        if (graph.nodes().containsKey(label)) return label;
+        for (var n : graph.nodes().values()) {
+            if (label.equals(n.file()) || label.endsWith("/" + n.file())) return n.id();
+        }
+        return null;
+    }
+
     static String communityMermaid(Graph graph) {
-        var comIds = new ArrayList<>(graph.communities().keySet());
+        var bySize = new ArrayList<>(graph.communities().keySet());
+        bySize.sort(Comparator
+            .comparingInt((String c) -> graph.communities().get(c).size()).reversed()
+            .thenComparing(Comparator.naturalOrder()));
+        boolean truncated = bySize.size() > MAX_COMMUNITY_NODES;
+        var comIds = truncated
+            ? new ArrayList<>(bySize.subList(0, MAX_COMMUNITY_NODES))
+            : bySize;
         comIds.sort(Comparator.naturalOrder());
+        var shown = new HashSet<>(comIds);
         var idx = new LinkedHashMap<String, String>();
         for (int i = 0; i < comIds.size(); i++) idx.put(comIds.get(i), "c" + i);
 
@@ -251,6 +291,7 @@ public final class PerspectiveExporter {
             var sc = memberCommunity.get(ed.source());
             var tc = memberCommunity.get(ed.target());
             if (sc == null || tc == null || sc.equals(tc)) continue;
+            if (!shown.contains(sc) || !shown.contains(tc)) continue;
             edgeCounts.merge(sc + "\u0000" + tc, 1, Integer::sum);
         }
         edgeCounts.entrySet().stream()
@@ -261,6 +302,10 @@ public final class PerspectiveExporter {
                 sb.append("  ").append(idx.get(parts[0])).append(" -->|")
                     .append(en.getValue()).append("| ").append(idx.get(parts[1])).append("\n");
             });
+        if (truncated) {
+            sb.append("  %% truncated: ").append(bySize.size())
+                .append(" communities total, showing ").append(MAX_COMMUNITY_NODES).append("\n");
+        }
         return sb.toString();
     }
 
@@ -294,11 +339,11 @@ public final class PerspectiveExporter {
         var node = graph.nodes().get(id);
         var community = GraphQueryEngine.findCommunity(graph, id);
         var fm = new ArrayList<String>();
-        fm.add("label: " + id);
-        fm.add("type: " + node.type());
-        fm.add("name: " + node.name());
-        if (community != null) fm.add("community: " + community);
-        fm.add("files: " + fileAnchors(node));
+        fm.add("label: " + fmValue(id));
+        fm.add("type: " + fmValue(node.type()));
+        fm.add("name: " + fmValue(node.name()));
+        if (community != null) fm.add("community: " + fmValue(community));
+        fm.add("files: " + fmValue(fileAnchors(node)));
         for (var k : NODE_ANNOTATION_KEYS) fm.add(k + ": ");
         writeDescription(dir.resolve("description.md"), fm,
             "# " + id + "\n\n"
@@ -306,8 +351,12 @@ public final class PerspectiveExporter {
                 + "Keep frontmatter values single-line; prose here is free-form.\n"
                 + "Relation lines `contradicts:` / `generalizes:` / `consistent_with:` take\n"
                 + "comma-separated labels. Run `merge-annotations` to persist into graph.json.\n");
+        writeDerived(graph, dir, id);
+    }
+
+    private static void writeDerived(Graph graph, Path dir, String id) throws IOException {
         Files.writeString(dir.resolve("diagram.mmd"),
-            mermaid(graph, collectNeighborhood(graph, id, 1),
+            mermaid(graph, collectNeighborhood(graph, id, 1), id,
                 "knowledge-graph diagram: " + id + " (depth 1)"));
         Files.writeString(dir.resolve("context.md"),
             GraphContextBuilder.buildTier1(graph, id, graph.project()));
@@ -360,6 +409,15 @@ public final class PerspectiveExporter {
         return map;
     }
 
+    private static boolean hasEdge(List<Edge> edges, String source, String type, String target) {
+        for (var e : edges) {
+            if (e.source().equals(source) && e.type().equals(type) && e.target().equals(target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static List<String> splitList(String value) {
         var out = new ArrayList<String>();
         if (value == null) return out;
@@ -372,6 +430,25 @@ public final class PerspectiveExporter {
 
     private static String dirName(String id) {
         return id.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private static String uniqueDirName(String base, Map<String, String> used, String id) {
+        var name = base.isEmpty() ? "element" : base;
+        if (!used.containsKey(name)) {
+            used.put(name, id);
+            return name;
+        }
+        for (int i = 2; ; i++) {
+            var candidate = name + "-" + i;
+            if (!used.containsKey(candidate)) {
+                used.put(candidate, id);
+                return candidate;
+            }
+        }
+    }
+
+    private static String fmValue(String s) {
+        return s == null ? "" : s.replace("\r", " ").replace("\n", " ").trim();
     }
 
     private static String mermaidEsc(String s) {

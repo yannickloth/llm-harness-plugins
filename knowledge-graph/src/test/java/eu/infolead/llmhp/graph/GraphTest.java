@@ -571,6 +571,19 @@ public class GraphTest {
         test_merge_annotations_no_change();
         test_merge_annotations_stale_label();
         test_audit_tree();
+        test_overlay_parse_and_merge();
+        test_overlay_property_precedence();
+        test_overlay_edge_dedup();
+        test_overlay_auto_create_endpoint();
+        test_overlay_validate();
+        test_overlay_preserves_origin();
+        test_overlay_skips_malformed();
+        test_perspectives_preserves_edits();
+        test_perspectives_reclaims_mismatched_dir();
+        test_perspectives_dir_collision();
+        test_diagram_truncation_keeps_focus();
+        test_community_mermaid_edges();
+        test_cli_usage_guards();
 
         System.out.printf("Results: %d passed, %d failed%n", passed, failed);
         if (failed > 0) {
@@ -705,5 +718,228 @@ public class GraphTest {
         Files.writeString(Path.of("build", "test-tmp", "gone.typ"), "x");
         var issues2 = PerspectiveExporter.auditTree(graph, treeDir, Path.of("build", "test-tmp"));
         assert_true("audit clean when anchor exists", issues2.stream().noneMatch(i -> i.contains("missing file anchor")));
+    }
+
+    // --- Overlay tests ---
+
+    static void test_overlay_parse_and_merge() {
+        var base = smallGraph();
+        var overlay = GraphOverlay.parse("""
+            {
+              "origin": "llm:test-model",
+              "nodes": [
+                {"id":"concept:d","type":"concept","name":"D","properties":{}}
+              ],
+              "edges": [
+                {"source":"a","target":"concept:d","type":"generalizes","properties":{"note":"x"}}
+              ]
+            }
+            """);
+        assert_equals("overlay origin", "llm:test-model", overlay.origin());
+        assert_equals("overlay nodes", 1, overlay.nodes().size());
+        var result = GraphOverlay.merge(base, overlay, null);
+        assert_equals("overlay nodes added", 1, result.nodesAdded());
+        assert_equals("overlay edges added", 1, result.edgesAdded());
+        var d = result.graph().nodes().get("concept:d");
+        assert_equals("overlay node origin", "llm:test-model", d.property("origin"));
+        assert_equals("overlay node type", "concept", d.type());
+        assert_equals("overlay edge origin", "llm:test-model",
+            result.graph().edges().stream().filter(e -> e.type().equals("generalizes"))
+                .findFirst().orElseThrow().property("origin"));
+        assert_equals("overlay origin count", Integer.valueOf(2), result.origins().get("llm:test-model"));
+    }
+
+    static void test_overlay_property_precedence() {
+        var base = smallGraph();
+        var overlay = GraphOverlay.parse("""
+            {"nodes":[{"id":"b","type":"","name":"","file":"overlay.typ","line":"42","properties":{"constraint":"keep"}}]}
+            """);
+        var result = GraphOverlay.merge(base, overlay, "llm:test");
+        assert_equals("precedence nodes merged", 1, result.nodesMerged());
+        var b = result.graph().nodes().get("b");
+        assert_equals("precedence constraint", "keep", b.property("constraint"));
+        assert_equals("precedence file override", "overlay.typ", b.file());
+        assert_equals("precedence line override", "42", b.line());
+        assert_equals("precedence type kept", "test", b.type());
+        assert_equals("precedence origin", "llm:test", b.property("origin"));
+    }
+
+    static void test_overlay_edge_dedup() {
+        var base = smallGraph();
+        var overlay = GraphOverlay.parse("""
+            {"nodes":[],"edges":[{"source":"a","target":"b","type":"depends_on","properties":{"note":"dup"}}]}
+            """);
+        var result = GraphOverlay.merge(base, overlay, "llm:test");
+        assert_equals("dedup edges added", 0, result.edgesAdded());
+        assert_equals("dedup edge count", 2, result.graph().edges().size());
+        var e = result.graph().edges().stream()
+            .filter(x -> x.type().equals("depends_on") && x.source().equals("a")).findFirst().orElseThrow();
+        assert_equals("dedup merged prop", "dup", e.property("note"));
+    }
+
+    static void test_overlay_auto_create_endpoint() {
+        var base = smallGraph();
+        var overlay = GraphOverlay.parse("""
+            {"nodes":[],"edges":[{"source":"a","target":"concept:ghost","type":"relates","properties":{}}]}
+            """);
+        var result = GraphOverlay.merge(base, overlay, "llm:test");
+        assert_true("auto-create node", result.graph().nodes().containsKey("concept:ghost"));
+        assert_equals("auto-create type", "concept", result.graph().nodes().get("concept:ghost").type());
+        assert_equals("auto-create flagged", "true",
+            result.graph().nodes().get("concept:ghost").property("auto-created"));
+        assert_true("auto-create warning",
+            result.warnings().stream().anyMatch(w -> w.contains("auto-created")));
+    }
+
+    static void test_overlay_validate() {
+        var overlay = GraphOverlay.parse("""
+            {
+              "nodes":[
+                {"id":"","type":"concept","properties":{}},
+                {"id":"x","type":"","properties":{}}
+              ],
+              "edges":[
+                {"source":"x","target":"x","type":"loop","properties":{}},
+                {"source":"","target":"y","type":"z","properties":{}}
+              ]
+            }
+            """);
+        var issues = GraphOverlay.validate(overlay);
+        assert_true("validate empty id", issues.stream().anyMatch(i -> i.contains("Empty node ID")));
+        assert_true("validate empty type", issues.stream().anyMatch(i -> i.contains("Empty type for node: x")));
+        assert_true("validate self-loop", issues.stream().anyMatch(i -> i.contains("Self-loop edge: x")));
+        assert_true("validate blank endpoint", issues.stream().anyMatch(i -> i.contains("blank endpoint")));
+    }
+
+    static void test_overlay_preserves_origin() {
+        var nodes = new LinkedHashMap<String, Node>();
+        nodes.put("a", new Node("a", "thm", "A", "", "0",
+            new LinkedHashMap<>(Map.of("origin", "deterministic"))));
+        var graph = new Graph("t", nodes, new ArrayList<>(), Map.of(), Map.of(),
+            Map.of(), Map.of(), Map.of());
+        var overlay = GraphOverlay.parse(
+            "{\"nodes\":[{\"id\":\"a\",\"type\":\"\",\"properties\":{\"note\":\"n\"}}]}");
+        var result = GraphOverlay.merge(graph, overlay, "llm:test");
+        assert_equals("origin preserved", "deterministic",
+            result.graph().nodes().get("a").property("origin"));
+        assert_equals("note added", "n", result.graph().nodes().get("a").property("note"));
+    }
+
+    static void test_overlay_skips_malformed() {
+        var base = smallGraph();
+        var overlay = GraphOverlay.parse("""
+            {"nodes":[{"id":"","type":"concept","properties":{}}],
+             "edges":[{"source":"","target":"a","type":"x","properties":{}}]}
+            """);
+        var result = GraphOverlay.merge(base, overlay, "llm:test");
+        assert_equals("skips blank node", 3, result.graph().nodes().size());
+        assert_equals("skips blank edge", 2, result.graph().edges().size());
+        assert_true("skip warnings", result.warnings().stream().anyMatch(w -> w.contains("blank")));
+    }
+
+    static void test_perspectives_preserves_edits() throws IOException {
+        var graph = smallGraph();
+        var outDir = Path.of("build", "test-tmp", "persp-preserve");
+        PerspectiveExporter.exportPerspectives(graph, outDir, 10);
+        var desc = outDir.resolve("elements/a/description.md");
+        Files.writeString(desc, "---\nlabel: a\nconstraint: handcrafted\n---\n\nedited body\n");
+        var summary = PerspectiveExporter.exportPerspectives(graph, outDir, 10);
+        assert_true("preserved reported", summary.contains("preserved"));
+        assert_true("edit preserved", Files.readString(desc).contains("handcrafted"));
+        assert_true("diagram refreshed", Files.exists(outDir.resolve("elements/a/diagram.mmd")));
+    }
+
+    static void test_perspectives_reclaims_mismatched_dir() throws IOException {
+        var graph = smallGraph();
+        var outDir = Path.of("build", "test-tmp", "persp-mismatch");
+        var dir = outDir.resolve("elements/a");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("description.md"),
+            "---\nlabel: someone-else\nconstraint: old\n---\n");
+        PerspectiveExporter.exportPerspectives(graph, outDir, 10);
+        assert_true("mismatched dir reclaimed",
+            Files.readString(dir.resolve("description.md")).contains("label: a"));
+    }
+
+    static void test_perspectives_dir_collision() throws IOException {
+        var nodes = new LinkedHashMap<String, Node>();
+        nodes.put("a:b", new Node("a:b", "t", "x", "", "0", Map.of()));
+        nodes.put("a_b", new Node("a_b", "t", "y", "", "0", Map.of()));
+        var edges = new ArrayList<Edge>();
+        edges.add(new Edge("a:b", "a_b", "depends_on", Map.of()));
+        var graph = new Graph("t", nodes, edges, Map.of("a:b", List.of("a_b")),
+            Map.of("a_b", List.of("a:b")), Map.of(), Map.of(), Map.of());
+        var outDir = Path.of("build", "test-tmp", "persp-collide");
+        PerspectiveExporter.exportPerspectives(graph, outDir, 10);
+        List<String> dirs;
+        try (var s = Files.list(outDir.resolve("elements"))) {
+            dirs = s.map(p -> p.getFileName().toString()).sorted().toList();
+        }
+        assert_equals("collision dirs count", 2, dirs.size());
+        assert_true("collision disambiguated", dirs.contains("a_b") && dirs.contains("a_b-2"));
+    }
+
+    static void test_diagram_truncation_keeps_focus() {
+        var nodes = new LinkedHashMap<String, Node>();
+        nodes.put("z:center", new Node("z:center", "center", "Center", "", "0", Map.of()));
+        var neigh = new ArrayList<String>();
+        var edges = new ArrayList<Edge>();
+        for (int i = 0; i < 44; i++) {
+            var id = "n:" + String.format("%02d", i);
+            nodes.put(id, new Node(id, "n", id, "", "0", Map.of()));
+            edges.add(new Edge("z:center", id, "depends_on", Map.of()));
+            neigh.add(id);
+        }
+        var rev = new LinkedHashMap<String, List<String>>();
+        for (var id : neigh) rev.put(id, List.of("z:center"));
+        var graph = new Graph("t", nodes, edges, Map.of("z:center", neigh), rev,
+            Map.of(), Map.of(), Map.of());
+        var diagram = PerspectiveExporter.exportDiagram(graph, "z:center", 1);
+        assert_true("focus retained under truncation", diagram.contains("\"z:center\""));
+        assert_true("truncation comment", diagram.contains("focus node retained"));
+        assert_true("far node dropped", !diagram.contains("\"n:43\""));
+    }
+
+    static void test_community_mermaid_edges() {
+        var nodes = new LinkedHashMap<String, Node>();
+        nodes.put("a", new Node("a", "t", "a", "", "0", Map.of()));
+        nodes.put("b", new Node("b", "t", "b", "", "0", Map.of()));
+        var edges = new ArrayList<Edge>();
+        edges.add(new Edge("a", "b", "depends_on", Map.of()));
+        var communities = new LinkedHashMap<String, List<String>>();
+        communities.put("community-0", List.of("a"));
+        communities.put("community-1", List.of("b"));
+        var graph = new Graph("t", nodes, edges, Map.of("a", List.of("b")),
+            Map.of("b", List.of("a")), communities, Map.of(), Map.of());
+        var mermaid = PerspectiveExporter.communityMermaid(graph);
+        assert_true("community nodes present",
+            mermaid.contains("community-0 (1)") && mermaid.contains("community-1 (1)"));
+        assert_true("community cross edge", mermaid.contains("-->|1|"));
+    }
+
+    static void test_cli_usage_guards() throws IOException {
+        var out = System.out;
+        var err = System.err;
+        var sink = new java.io.PrintStream(java.io.OutputStream.nullOutputStream());
+        System.setOut(sink);
+        System.setErr(sink);
+        try {
+            GraphCli.dispatch(new String[]{"impact", "graph.json"});
+            GraphCli.dispatch(new String[]{"context", "graph.json"});
+            GraphCli.dispatch(new String[]{"subgraph", "graph.json"});
+            GraphCli.dispatch(new String[]{"query", "graph.json"});
+            GraphCli.dispatch(new String[]{"rate", "graph.json"});
+            GraphCli.dispatch(new String[]{"overview"});
+            GraphCli.dispatch(new String[]{"quality"});
+            GraphCli.dispatch(new String[]{"validate"});
+            GraphCli.dispatch(new String[]{"diagram", "graph.json"});
+            GraphCli.dispatch(new String[]{"validate-overlay"});
+            assert_true("usage guards: no exception", true);
+        } catch (RuntimeException e) {
+            assert_true("usage guards: unexpected " + e, false);
+        } finally {
+            System.setOut(out);
+            System.setErr(err);
+        }
     }
 }

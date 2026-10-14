@@ -125,13 +125,17 @@ project-specific (regex patterns from config). The rest are shared.
 ## 3. Plugin Automation Architecture
 
 The graph is never invoked manually. Three invisible automation layers fire from
-the OpenCode plugin system:
+the OpenCode plugin system. The `session.created` handler builds a **fresh**
+`SectionRegistry` each session (header always; overview only when a graph exists),
+so a prior `session.deleted` cannot drop the header and a graph-less project still
+receives the agent prompt — which is what lets the `archi-scan` overlay path
+bootstrap without a parsed graph.
 
 ### 3.1 Automation Layers
 
 | Layer | Trigger | Action | User sees? |
 |--------|---------|--------|-----------|
-| **session.created** / **SessionStart** | Every new agent session | Inject `agent-prompt.md` (with concrete plugin path) + graph overview | No — `client.session.prompt({ noReply: true })` |
+| **session.created** / **SessionStart** | Every new agent session | Inject `agent-prompt.md` (with concrete plugin path) always; append graph `overview` when `graph.json` exists | No — `client.session.prompt({ noReply: true })` |
 | **file.edited** + **tool.execute.after** | Any file read/edited/written | Inject 1-hop dependency subgraph for the affected entities | No — scoped injection with deduplication |
 | **Agent tool call / slash command** | Agent calls `kg-query` or `/kg-query` | Full graph traversal (topo-sort, transitive-closure, community-summary, contradictions, impact) | Only the tool result |
 
@@ -270,8 +274,10 @@ is placed in the plugin; the platform substitutes `<plugin-dir>` with its concre
 ```markdown
 # Knowledge Graph
 
-A build-time knowledge graph at `graph.json` is available.
-File-scope context auto-injected on reads/edits — no action needed.
+The knowledge-graph plugin is active. When a build-time graph exists at
+`graph.json`, file-scope context is auto-injected on reads/edits and the project
+overview is injected at session start. When there is no `graph.json` yet, create
+one first: a deterministic `parse`, or an LLM-authored `overlay.json` (see §16).
 
 ## Querying the graph
 
@@ -284,7 +290,7 @@ If `kg-query` is in your tool list, call it directly with one of:
 - impact <label>
 
 If `kg-query` is NOT a tool, fall back to:
-    java --class-path <plugin-dir>/build/classes ... query graph.json "<query> [scope]"
+    java --class-path <plugin-dir>/build/classes ... query graph.json <query> [scope]
 
 ## Diagnostic commands (via Bash)
     java ... quality graph.json
@@ -565,6 +571,12 @@ Elements are the highest-degree nodes (default cap 32, `max-elements` arg). The
 tree is git-trackable and is the **durable source** of annotations; `graph.json`
 remains a rebuildable artifact.
 
+`perspectives` is idempotent for author-owned content: an existing element
+`description.md` is **preserved** (never clobbered), while the derived
+`diagram.mmd` / `context.md` are refreshed and new elements are created. Directory
+names that collide after sanitization are disambiguated with a numeric suffix
+(`a_b`, `a_b-2`).
+
 ### 15.3 Merge and Staleness Model
 
 - `merge-annotations <graph.json> <tree-dir>` walks the tree recursively, reads
@@ -611,3 +623,72 @@ Both skills self-register through the plugin's `config` hook (same pattern as
 `archi-scan` skill encodes the full workflow (ensure graph → export → enrich →
 merge → audit → optional redraw) so the user never invokes the Java CLI
 directly; `kg-query` and the injected agent-prompt carry the rest.
+
+---
+
+## 16. Two Extraction Paths: Deterministic Base + LLM Overlay
+
+Status: Implemented (2026-10-14).
+
+### 16.1 The Seam
+
+Everything above ingestion is extraction-agnostic: `GraphQueryEngine`, communities,
+closure/impact, context injection, the doc-tree, and diagram export read
+`graph.json` and nothing else. `parseJson`/`save` and the node/edge schema are the
+boundary. A graph can therefore be produced either way:
+
+| | Deterministic (`parse`) | LLM (`overlay`) |
+|---|---|---|
+| reproducible / cheap | yes (~seconds, build artifact) | no (per-run cost, drifts) |
+| precision | exact for what it sees | fuzzy, can invent edges |
+| coverage | needs an adapter per language | any language |
+| semantic edges | can't obtain them | its strength |
+
+### 16.2 Overlay Format
+
+`overlay.json` reuses the graph schema (`origin` optional, default `llm`):
+
+```json
+{
+  "origin": "llm:deepseek-flash",
+  "nodes": [
+    {"id": "module:auth", "type": "module", "name": "Auth", "file": "", "line": "", "properties": {}}
+  ],
+  "edges": [
+    {"source": "api:gateway", "target": "module:auth", "type": "calls", "properties": {"note": "..."}}
+  ]
+}
+```
+
+### 16.3 Merge Semantics
+
+`merge-overlay <graph.json> <overlay.json> [output-file]`:
+
+- Base is optional — a missing `graph.json` starts from empty.
+- New node IDs are added; existing IDs merge (overlay `properties` win, overlay
+  non-empty `type`/`name`/`file`/`line` override, empty fields keep the base).
+- Edges dedup on `(source, type, target)`; matching edges merge properties.
+- Endpoints that were not declared are auto-created (type = id prefix or
+  `concept`, `auto-created: true`) with a warning.
+- Every contributed node/edge gets `properties.origin` (entry-level value, else
+  the overlay default), and the command prints origin counts. An existing
+  `origin` is **preserved** — a deterministic node is not relabeled LLM merely
+  because the overlay enriched it; the overlay's contribution is the extra
+  properties it writes.
+
+`validate-overlay <overlay.json>` checks empty IDs/types, malformed IDs, blank
+endpoints/types, and self-loops.
+
+### 16.4 Keeping the Paths Separable
+
+A blended, untracked graph would forfeit design §1 (deterministic derivative).
+The intended pattern is **base + labeled overlay**:
+
+- `parse` produces the deterministic base (where an adapter exists).
+- The LLM contributes an `overlay.json` with `origin` tags.
+- `origin` on every node/edge preserves derived-vs-inferred provenance; the
+  overlay file is the durable, re-appliable artifact.
+
+For languages with no adapter (today: everything but the Typst configs), the
+overlay *is* the graph — the `archi-scan` skill documents this path so the doc-tree
+and diagram features work on arbitrary repos without a parser.
