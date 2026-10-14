@@ -147,18 +147,25 @@ llm-harness-plugins/knowledge-graph/
 │   └── agent-prompt.md                # Agent-facing usage guide (injected at session start)
 ├── opencode/
 │   └── index.ts                       # OpenCode plugin: tool registration + context injection
+├── skills/
+│   ├── archi-scan/SKILL.md            # Architecture doc-tree workflow
+│   └── archi-diagram/SKILL.md         # One-element Mermaid extraction + optional redraw
 ├── config/
 │   ├── project-config-ivp.yaml        # IVP label regexes, node/edge rules
 │   └── project-config-mecfs.yaml      # ME/CFS label regexes, node/edge rules
 ├── src/
 │   ├── main/java/eu/infolead/llmhp/graph/
 │   │   ├── GraphCli.java              # Command dispatcher (parse, query, context, impact,
-│   │   │                              #   subgraph, rate, overview, quality, validate)
+│   │   │                              #   subgraph, rate, overview, quality, validate,
+│   │   │                              #   diagram, perspectives, merge-annotations, audit-tree,
+│   │   │                              #   merge-overlay, validate-overlay)
 │   │   ├── GraphPreprocessor.java     # 7-phase parser pipeline + entity resolution
 │   │   ├── GraphQueryEngine.java      # JSON IO, query engine, quality metrics, validation
 │   │   ├── CommunityDetector.java     # Leiden clustering (configurable γ) + summary generation
 │   │   ├── GraphContextBuilder.java   # Tier-1/2 prompt context, project overview
 │   │   ├── GraphRater.java            # Community relevance scoring (token overlap)
+│   │   ├── PerspectiveExporter.java   # Mermaid export, doc-tree export/merge/audit
+│   │   ├── GraphOverlay.java          # LLM overlay parse/merge/validate
 │   │   └── types/
 │   │       ├── Node.java              # Node record (id, type, name, file, line, properties)
 │   │       ├── Edge.java              # Edge record (source, target, type, properties)
@@ -166,8 +173,9 @@ llm-harness-plugins/knowledge-graph/
 │   │       │                          #   topological sort
 │   │       └── ProjectConfig.java     # YAML config records
 │   └── test/java/eu/infolead/llmhp/graph/
-│       └── GraphTests.java            # 82 tests: JSON roundtrip, queries, TC depth, cycles,
-│                                      #   topo-sort, entity resolution, quality, validation
+│       └── GraphTest.java             # 154 tests: JSON roundtrip, queries, TC depth, cycles,
+│                                      #   topo-sort, entity resolution, quality, validation,
+│                                      #   doc-tree, overlay
 └── build/classes/                     # Pre-compiled Java .class files
     └── eu/infolead/llmhp/graph/
 ```
@@ -246,12 +254,14 @@ Commands:
   perspectives <graph-file> <out-dir> [max-elements]
   merge-annotations <graph-file> <tree-dir>
   audit-tree <graph-file> <tree-dir> [project-root]
+  merge-overlay <graph-file> <overlay-file> [output-file]
+  validate-overlay <overlay-file>
 ```
 
 | Command | Description |
 |---------|-------------|
 | `parse` | Parse `.typ` files → `graph.json`. Optional `resolution` (default 1.0) controls Leiden community granularity |
-| `query` | Run graph queries: `transitive-closure`, `topo-sort`, `cycles`, `community-summary`, `contradictions`, `impact` |
+| `query` | Run graph queries: `transitive-closure`, `topo-sort`, `cycles`, `community-summary`, `contradictions`, `impact`, `diagram` |
 | `context` | Build Tier-1 prompt context for a label (community, dependencies, dependents) |
 | `impact` | What depends on this label, and what does this label depend on |
 | `subgraph` | N-hop subgraph around a label or file path |
@@ -263,6 +273,8 @@ Commands:
 | `perspectives` | Export an omm-style doc-tree skeleton to a directory (overall-architecture + per-element dirs) |
 | `merge-annotations` | Merge tree annotations (constraint/concern/todo/note + relation edges) back into `graph.json` |
 | `audit-tree` | Report stale labels, missing file anchors, dangling relation targets in a doc-tree |
+| `merge-overlay` | Merge an LLM-authored `overlay.json` over the base graph (`origin` provenance, auto-created endpoints) |
+| `validate-overlay` | Schema-validate an overlay: empty/malformed IDs, empty types, blank endpoints, self-loops |
 
 ---
 
@@ -516,13 +528,14 @@ llm-harness-plugins/knowledge-graph/
 │   │   ├── GraphContextBuilder.java     # Tier-1/2 context, overview
 │   │   ├── GraphRater.java              # Community relevance scoring
 │   │   ├── PerspectiveExporter.java     # Mermaid export, doc-tree export/merge/audit
+│   │   ├── GraphOverlay.java            # LLM overlay parse/merge/validate
 │   │   └── types/
 │   │       ├── Node.java                # Record (id, type, name, file, line, properties)
 │   │       ├── Edge.java                # Record (source, target, type, properties)
 │   │       ├── Graph.java               # Container: TC (bounded), cycles (dedup), topo-sort
 │   │       └── ProjectConfig.java       # Config records
 │   └── test/java/eu/infolead/llmhp/graph/
-│       └── GraphTest.java               # 112 tests
+│       └── GraphTest.java               # 154 tests
 └── build/classes/eu/infolead/llmhp/graph/  # Pre-compiled Java .class files
 ```
 
