@@ -238,6 +238,10 @@ Commands:
   overview <graph-file>
   quality <graph-file>
   validate <graph-file>
+  diagram <graph-file> <label> [depth]
+  perspectives <graph-file> <out-dir> [max-elements]
+  merge-annotations <graph-file> <tree-dir>
+  audit-tree <graph-file> <tree-dir> [project-root]
 ```
 
 | Command | Description |
@@ -251,6 +255,10 @@ Commands:
 | `overview` | Project-level overview (node/edge counts, type distributions) |
 | `quality` | Graph quality metrics: entity coverage, relationship density, modularity, community distribution, summary quality |
 | `validate` | Schema validation: dangling edges, blank IDs/types |
+| `diagram` | Mermaid `flowchart LR` of the N-hop neighborhood around a label or file path (≤40 nodes) |
+| `perspectives` | Export an omm-style doc-tree skeleton to a directory (overall-architecture + per-element dirs) |
+| `merge-annotations` | Merge tree annotations (constraint/concern/todo/note + relation edges) back into `graph.json` |
+| `audit-tree` | Report stale labels, missing file anchors, dangling relation targets in a doc-tree |
 
 ---
 
@@ -486,24 +494,120 @@ appears_in       any_label → vol,part,ch,sec,subsec,file
 ```
 llm-harness-plugins/knowledge-graph/
 ├── prompts/agent-prompt.md              # Agent-facing usage guide (injected at session start)
-├── opencode/index.ts                    # OpenCode plugin shim (~153 LOC)
+├── opencode/index.ts                    # OpenCode plugin shim + skill self-registration
+├── skills/
+│   ├── archi-scan/SKILL.md              # Architecture doc-tree workflow (omm-inspired)
+│   └── archi-diagram/SKILL.md           # One-element Mermaid extraction + optional redraw
 ├── config/
 │   ├── project-config-ivp.yaml          # IVP label regexes, node/edge rules
 │   └── project-config-mecfs.yaml        # ME/CFS label regexes, node/edge rules
 ├── src/
 │   ├── main/java/eu/infolead/llmhp/graph/
-│   │   ├── GraphCli.java                # Command dispatcher (~170 LOC)
-│   │   ├── GraphPreprocessor.java       # 7-phase parser + entity resolution (~745 LOC)
-│   │   ├── GraphQueryEngine.java        # JSON IO, queries, quality, validation (~720 LOC)
-│   │   ├── CommunityDetector.java       # Leiden clustering + summaries (~200 LOC)
-│   │   ├── GraphContextBuilder.java     # Tier-1/2 context, overview (~168 LOC)
-│   │   ├── GraphRater.java              # Community relevance scoring (~104 LOC)
+│   │   ├── GraphCli.java                # Command dispatcher
+│   │   ├── GraphPreprocessor.java       # 7-phase parser + entity resolution
+│   │   ├── GraphQueryEngine.java        # JSON IO, queries, quality, validation
+│   │   ├── CommunityDetector.java       # Leiden clustering + summaries
+│   │   ├── GraphContextBuilder.java     # Tier-1/2 context, overview
+│   │   ├── GraphRater.java              # Community relevance scoring
+│   │   ├── PerspectiveExporter.java     # Mermaid export, doc-tree export/merge/audit
 │   │   └── types/
 │   │       ├── Node.java                # Record (id, type, name, file, line, properties)
 │   │       ├── Edge.java                # Record (source, target, type, properties)
 │   │       ├── Graph.java               # Container: TC (bounded), cycles (dedup), topo-sort
 │   │       └── ProjectConfig.java       # Config records
 │   └── test/java/eu/infolead/llmhp/graph/
-│       └── GraphTests.java              # 82 tests (~600 LOC)
-└── build/classes/eu/infolead/llmhp/graph/  # Pre-compiled .class files
+│       └── GraphTest.java               # 112 tests
+└── build/classes/eu/infolead/llmhp/graph/  # Pre-compiled Java .class files
 ```
+
+---
+
+## 15. Perspective Doc-Tree (omm-inspired)
+
+Status: Implemented (2026-10-14). Inspired by [oh-my-mermaid](https://github.com/oh-my-mermaid/oh-my-mermaid).
+
+### 15.1 Motivation
+
+The graph engine already computed communities, subgraphs, and impact closure, but
+had no durable place for *agent-authored* interpretation and no visual output:
+
+| Gap | What was missing |
+|-----|------------------|
+| Annotation persistence | Design §11/§12 list agent-populated edges (`contradicts`, `generalizes`) but nothing wrote them anywhere |
+| Visual output | Queries produced text only; no Mermaid, no diagram hand-off |
+| Doc artifact | No human-readable architecture tree; the graph was machine-only |
+| Generic ingestion | Parser was Typst-label-only; no way to scan an arbitrary codebase |
+
+The doc-tree closes the first three; the fourth is deferred (a generic
+code-structure parser is a separate effort — the tree works from whatever the
+configured parser produces).
+
+### 15.2 Artifacts
+
+`perspectives` writes an omm-style tree (default `.kg/perspectives/`):
+
+```
+.kg/perspectives/
+├── overall-architecture/
+│   ├── description.md      # frontmatter: perspective, project, generated
+│   ├── diagram.mmd         # Mermaid: communities + inter-community edges
+│   └── context.md          # community summaries
+└── elements/
+    ├── thm_knowledge-theorem/
+    │   ├── description.md  # frontmatter (label, type, name, community, files,
+    │   │                   #   constraint, concern, todo, note) + prose body
+    │   ├── diagram.mmd     # depth-1 Mermaid neighborhood
+    │   └── context.md      # Tier-1 context (deps, dependents)
+    └── ...
+```
+
+Elements are the highest-degree nodes (default cap 32, `max-elements` arg). The
+tree is git-trackable and is the **durable source** of annotations; `graph.json`
+remains a rebuildable artifact.
+
+### 15.3 Merge and Staleness Model
+
+- `merge-annotations <graph.json> <tree-dir>` walks the tree recursively, reads
+  each `description.md` frontmatter `label:`, and writes:
+  - `constraint` / `concern` / `todo` / `note` → node properties
+  - `contradicts:` / `generalizes:` / `consistent_with:` (comma-separated labels)
+    → edges with `origin: archi-scan`
+  Warnings report stale labels and dangling relation targets.
+- **Rebuild drift:** `parse` regenerates `graph.json` without annotations, so
+  merge-annotations must be re-run after every rebuild. The tree survives;
+  annotations are recoverable — this is the deliberate trade for keeping the
+  graph a pure build artifact (design §1).
+- `audit-tree <graph.json> <tree-dir> [project-root]` reports stale labels (node
+  gone from the graph), missing `files:` anchors on disk, and dangling relation
+  targets.
+
+### 15.4 Diagram Export
+
+`diagram <graph-file> <label> [depth]` and the `kg-query` verb `diagram <label>
+[depth]` emit a Mermaid `flowchart LR` of the N-hop bidirectional neighborhood,
+capped at 40 nodes with a truncation comment. Also exposed as the `archi-diagram`
+skill. Raw Mermaid is the interchange format; the `diagram-design` skill
+(graphics-toolkit) can redraw it as branded HTML/SVG/PNG — an **optional**
+hand-off, not a dependency (see 15.5).
+
+### 15.5 Dependency Direction
+
+The doc-tree adds **no new inter-plugin dependencies**:
+
+```
+graphrag        → knowledge-graph   (Java classpath, unchanged)
+knowledge-graph → skills (archi-scan, archi-diagram)   (self-registered via config hook)
+archi-*         ⇢ graphics-toolkit  (optional runtime hand-off: .mmd files only)
+```
+
+`archi-scan` / `archi-diagram` mention `diagram-design` by name as an optional
+polish step; if graphics-toolkit is absent the step is skipped. graphics-toolkit
+imports nothing from knowledge-graph, and no build/load-order changes result.
+
+### 15.6 Skills
+
+Both skills self-register through the plugin's `config` hook (same pattern as
+`laya`/`clm`), appending `knowledge-graph/skills` to `skills.paths`. The
+`archi-scan` skill encodes the full workflow (ensure graph → export → enrich →
+merge → audit → optional redraw) so the user never invokes the Java CLI
+directly; `kg-query` and the injected agent-prompt carry the rest.

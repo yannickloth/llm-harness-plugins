@@ -14,6 +14,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`agentmem`](./agentmem) | Persistent file-based memory system — ADD-only, multi-signal retrieval, hierarchical scoping |
 | [`agentinsights`](./agentinsights) | Session analytics + AI-generated narrative reports — scan transcripts, extract facets via LLM, generate HTML insights |
 | [`graphrag`](./graphrag) | MS GraphRAG semantic layer — LLM-extracted entities/relationships, community summaries, vector-backed local/global/drift search |
+| [`knowledge-graph`](./knowledge-graph) | Build-artifact knowledge graph over parsed sources — auto-injected file-scope subgraph context, `kg-query` tool, and the `archi-scan`/`archi-diagram` skills for an omm-style architecture doc-tree with Mermaid export |
 | [`datetime-inject`](./datetime-inject) | Injects current datetime, platform, and repo toolchain context into every LLM prompt |
 | [`sdlc-guardrails`](./sdlc-guardrails) | SDLC artifact-contract enforcement — plan/diff sync (R1), protected-path blocks (R2), test-protection during fixes (R3), bash write gating, verification-before-done commit gate (R6), incident→intent loop, audit log |
 | [`premium-read-offload`](./premium-read-offload) | Offload bulk file reads and boilerplate generation from premium subscription sessions (Kimi K3, GLM-5.3) to a cheap persistent DeepSeek worker — hard gate with escapes, cache-aware worker sessions |
@@ -75,7 +76,7 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 | 5 | `tier-router` | — | Reads `agentmem`'s `MEMORY.md` for routing signals |
 | 5b | `datetime-inject` | — | Adds datetime/platform/toolchain context to every prompt; loads with the other chat-message consumers |
 | 6 | `agentinsights` | — | Writes reports to `.agentmem/insights/` |
-| 7 | `knowledge-graph` | — | Typst-derived graph; conceptually downstream of `typst-toolkit` |
+| 7 | `knowledge-graph` | — | Typst-derived graph; conceptually downstream of `typst-toolkit`; self-registers `archi-scan`/`archi-diagram` skills |
 | 7b | `graphrag` | — | Semantic index; conceptually downstream of `knowledge-graph` (classpath reuse) |
 | 8 | `prompt-registry` | — | Manages prompt templates across all plugins |
 | 9 | `typst-toolkit` | — | Format-bound skills |

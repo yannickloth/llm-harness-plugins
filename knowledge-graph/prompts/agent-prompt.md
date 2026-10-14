@@ -12,10 +12,22 @@ If `kg-query` is in your tool list, call it directly with one of:
 - `community-summary <label>` — Leiden community containing the label + summary
 - `contradictions <scope>` — explicit contradiction edges in scope
 - `impact <label>` — what depends on this, and what does this depend on
+- `diagram <label> [depth]` — Mermaid flowchart of the N-hop neighborhood
 
 If `kg-query` is NOT a tool, fall back to:
 
     java --class-path <plugin-dir>/build/classes eu.infolead.llmhp.graph.GraphCli query graph.json "<query> [scope]"
+
+## Architecture doc-tree (archi-scan / archi-diagram skills)
+
+- `archi-scan` — build/enrich/audit a `.kg/perspectives/` doc-tree and persist your
+  annotations (constraint/concern/todo/note, contradicts/generalizes/consistent_with)
+  into graph.json. Use for architecture docs and impact maps.
+- `archi-diagram` — extract a Mermaid diagram for one element, optionally redraw via
+  the diagram-design skill (graphics-toolkit).
+
+CLI commands these wrap: `perspectives <graph> <out-dir>`, `merge-annotations <graph> <tree-dir>`,
+`audit-tree <graph> <tree-dir>`, `diagram <graph> <label> [depth]`.
 
 ## Diagnostic commands (via Bash)
 

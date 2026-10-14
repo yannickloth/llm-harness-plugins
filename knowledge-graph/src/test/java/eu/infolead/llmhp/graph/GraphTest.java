@@ -5,7 +5,7 @@ import java.nio.file.*;
 import java.util.*;
 import eu.infolead.llmhp.graph.types.*;
 
-public class GraphTests {
+public class GraphTest {
 
     static int passed = 0;
     static int failed = 0;
@@ -563,6 +563,14 @@ public class GraphTests {
         test_entity_resolution_no_self_loops();
         test_quality_metrics_empty_graph();
         test_quality_metrics_no_communities();
+        test_diagram_export();
+        test_diagram_null_and_missing();
+        test_diagram_file_label();
+        test_perspectives_tree();
+        test_merge_annotations();
+        test_merge_annotations_no_change();
+        test_merge_annotations_stale_label();
+        test_audit_tree();
 
         System.out.printf("Results: %d passed, %d failed%n", passed, failed);
         if (failed > 0) {
@@ -571,5 +579,131 @@ public class GraphTests {
         }
 
         cleanup();
+    }
+
+    // --- Perspective doc-tree tests ---
+
+    static Graph smallGraph() {
+        var nodes = new LinkedHashMap<String, Node>();
+        nodes.put("a", new Node("a", "test", "a", "", "0", Map.of()));
+        nodes.put("b", new Node("b", "test", "b", "", "0", Map.of()));
+        nodes.put("c", new Node("c", "test", "c", "", "0", Map.of()));
+        var edges = new ArrayList<Edge>();
+        edges.add(new Edge("a", "b", "depends_on", Map.of()));
+        edges.add(new Edge("b", "c", "depends_on", Map.of()));
+        var adj = Map.of("a", List.of("b"), "b", List.of("c"));
+        var rev = Map.of("b", List.of("a"), "c", List.of("b"));
+        return new Graph("test", nodes, edges, adj, rev, Map.of(), Map.of(), Map.of());
+    }
+
+    static void test_diagram_export() {
+        var graph = smallGraph();
+        var diagram = PerspectiveExporter.exportDiagram(graph, "a", 1);
+        assert_true("diagram flowchart header", diagram.contains("flowchart LR"));
+        assert_true("diagram node a", diagram.contains("\"a\""));
+        assert_true("diagram edge label", diagram.contains("-->|depends_on|"));
+        assert_true("diagram excludes c at depth 1", !diagram.contains("\"c\""));
+        var deep = PerspectiveExporter.exportDiagram(graph, "a", 2);
+        assert_true("diagram depth 2 includes c", deep.contains("\"c\""));
+    }
+
+    static void test_diagram_null_and_missing() {
+        assert_true("diagram null error", PerspectiveExporter.exportDiagram(smallGraph(), null, 1).startsWith("Error"));
+        assert_true("diagram empty error", PerspectiveExporter.exportDiagram(smallGraph(), "", 1).startsWith("Error"));
+        assert_true("diagram missing", PerspectiveExporter.exportDiagram(smallGraph(), "zzz", 1).startsWith("No nodes"));
+    }
+
+    static void test_diagram_file_label() {
+        var nodes = new LinkedHashMap<String, Node>();
+        nodes.put("a", new Node("a", "def", "a", "src/x.typ", "3", Map.of()));
+        var graph = new Graph("test", nodes, new ArrayList<>(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+        var diagram = PerspectiveExporter.exportDiagram(graph, "src/x.typ", 1);
+        assert_true("diagram resolves file label", diagram.contains("\"a\""));
+    }
+
+    static void test_perspectives_tree() throws IOException {
+        var graph = smallGraph();
+        var outDir = Path.of("build", "test-tmp", "persp");
+        var summary = PerspectiveExporter.exportPerspectives(graph, outDir, 10);
+        assert_true("perspectives summary mentions elements", summary.contains("element dirs"));
+        assert_true("overall description exists", Files.exists(outDir.resolve("overall-architecture/description.md")));
+        assert_true("overall diagram exists", Files.exists(outDir.resolve("overall-architecture/diagram.mmd")));
+        assert_true("overall diagram flowchart", Files.readString(outDir.resolve("overall-architecture/diagram.mmd")).contains("flowchart LR"));
+        var elementDir = outDir.resolve("elements/a");
+        assert_true("element dir exists", Files.isDirectory(elementDir));
+        var desc = Files.readString(elementDir.resolve("description.md"));
+        assert_true("element frontmatter label", desc.contains("label: a"));
+        assert_true("element frontmatter constraint", desc.contains("constraint:"));
+        assert_true("element diagram exists", Files.exists(elementDir.resolve("diagram.mmd")));
+        assert_true("element context exists", Files.exists(elementDir.resolve("context.md")));
+    }
+
+    static void test_merge_annotations() throws IOException {
+        var graph = smallGraph();
+        var treeDir = Path.of("build", "test-tmp", "merge-tree");
+        var el = treeDir.resolve("elements/a");
+        Files.createDirectories(el);
+        Files.writeString(el.resolve("description.md"), """
+            ---
+            label: a
+            type: test
+            constraint: single owner
+            todo: verify claim
+            contradicts: c, missing
+            ---
+
+            body
+            """);
+        var result = PerspectiveExporter.mergeAnnotations(graph, treeDir);
+        assert_equals("merge property updates", 2, result.properties());
+        assert_equals("merge edges added", 1, result.edges());
+        assert_equals("merge warnings", 1, result.warnings().size());
+        assert_true("merge dangling warning", result.warnings().getFirst().contains("dangling contradicts"));
+        var merged = result.graph().nodes().get("a");
+        assert_equals("merged constraint property", "single owner", merged.property("constraint"));
+        assert_equals("merged todo property", "verify claim", merged.property("todo"));
+        var edge = result.graph().edges().stream()
+            .filter(e -> e.type().equals("contradicts")).findFirst().orElseThrow();
+        assert_equals("merge edge source", "a", edge.source());
+        assert_equals("merge edge target", "c", edge.target());
+        assert_equals("merge edge origin", "archi-scan", edge.property("origin"));
+    }
+
+    static void test_merge_annotations_no_change() throws IOException {
+        var graph = smallGraph();
+        var treeDir = Path.of("build", "test-tmp", "merge-empty");
+        var el = treeDir.resolve("elements/a");
+        Files.createDirectories(el);
+        Files.writeString(el.resolve("description.md"), "---\nlabel: a\nconstraint: \n---\n\nbody\n");
+        var result = PerspectiveExporter.mergeAnnotations(graph, treeDir);
+        assert_equals("no-change properties", 0, result.properties());
+        assert_true("no-change returns same graph", result.graph() == graph);
+    }
+
+    static void test_merge_annotations_stale_label() throws IOException {
+        var graph = smallGraph();
+        var treeDir = Path.of("build", "test-tmp", "merge-stale");
+        var el = treeDir.resolve("elements/ghost");
+        Files.createDirectories(el);
+        Files.writeString(el.resolve("description.md"), "---\nlabel: ghost\nconstraint: x\n---\n");
+        var result = PerspectiveExporter.mergeAnnotations(graph, treeDir);
+        assert_true("stale warning", result.warnings().stream().anyMatch(w -> w.contains("stale label")));
+    }
+
+    static void test_audit_tree() throws IOException {
+        var graph = smallGraph();
+        var treeDir = Path.of("build", "test-tmp", "audit-tree");
+        var el = treeDir.resolve("elements/b");
+        Files.createDirectories(el);
+        Files.writeString(el.resolve("description.md"),
+            "---\nlabel: b\nfiles: gone.typ:4\ncontradicts: zzz\n---\n");
+        var issues = PerspectiveExporter.auditTree(graph, treeDir, Path.of("build", "test-tmp"));
+        assert_true("audit missing file anchor", issues.stream().anyMatch(i -> i.contains("missing file anchor")));
+        assert_true("audit dangling edge target", issues.stream().anyMatch(i -> i.contains("dangling contradicts")));
+
+        Files.createDirectories(Path.of("build", "test-tmp"));
+        Files.writeString(Path.of("build", "test-tmp", "gone.typ"), "x");
+        var issues2 = PerspectiveExporter.auditTree(graph, treeDir, Path.of("build", "test-tmp"));
+        assert_true("audit clean when anchor exists", issues2.stream().noneMatch(i -> i.contains("missing file anchor")));
     }
 }

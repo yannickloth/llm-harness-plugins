@@ -1,4 +1,4 @@
-import { type Plugin, tool } from "@opencode-ai/plugin"
+import { type Plugin, type Config, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
 import { existsSync } from "fs"
@@ -11,6 +11,7 @@ import { writeLoadCanary } from "../../shared/load-canary"
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
 const mainClass = "eu.infolead.llmhp.graph.GraphCli"
+const skillsDir = path.join(pluginDir, "skills")
 
 const MAX_INJECT = 6000
 const FILE_TOOLS = new Set(["read", "grep", "glob", "edit", "write", "find", "ls"])
@@ -71,6 +72,17 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
   })
 
   return {
+    config: async (input: Config) => {
+      if (!existsSync(skillsDir)) return
+      const skills = (input as Record<string, unknown>).skills as
+        | { paths?: string[] }
+        | undefined
+      const paths = Array.isArray(skills?.paths) ? [...skills!.paths] : []
+      if (!paths.includes(skillsDir)) paths.push(skillsDir)
+      ;(input as Record<string, unknown>).skills = { ...skills, paths }
+      logger.info(`registered skills dir: ${skillsDir}`)
+    },
+
     "session.created": async (input: { properties?: { session?: { id?: string } } }) => {
       const sessionId = input?.properties?.session?.id
       if (!sessionId) return
@@ -171,9 +183,9 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
 
     tool: {
       "kg-query": tool({
-        description: "Query the knowledge graph: transitive-closure, topo-sort, cycles, community-summary, contradictions, impact, diff, rate",
+        description: "Query the knowledge graph: transitive-closure, topo-sort, cycles, community-summary, contradictions, impact, diagram (mermaid export), rate",
         args: {
-          query: tool.schema.string().describe("e.g. 'topo-sort ch:06', 'transitive-closure thm:knowledge-theorem', 'community-summary ch55:methylation', 'cycles', 'rate review all theorems in section 3'"),
+          query: tool.schema.string().describe("e.g. 'topo-sort ch:06', 'transitive-closure thm:knowledge-theorem', 'community-summary ch55:methylation', 'cycles', 'diagram thm:knowledge-theorem 2', 'rate review all theorems in section 3'"),
         },
         async execute(args, context) {
           const gf = graphFile(worktree ?? context.directory ?? root)

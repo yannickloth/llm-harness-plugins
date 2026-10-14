@@ -8,6 +8,10 @@ public record Edge(
     String type,
     Map<String, String> properties
 ) {
+    public String property(String key) {
+        return properties.getOrDefault(key, "");
+    }
+
     public Map<String, Object> toMap() {
         var map = new LinkedHashMap<String, Object>();
         map.put("source", source);
