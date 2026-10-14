@@ -119,12 +119,13 @@ run_preflight c7 FAKE_PLUGINS="datetime-inject"
 check $? "nested path resolves to the plugin id"
 
 echo "8. every plugin in this repo wires the canary under its own dir name"
-wired=0; unwired=""
+total=0; wired=0; unwired=""
 for f in "$ROOT"/*/opencode/index.ts; do
+  total=$((total + 1))
   id="$(basename "$(dirname "$(dirname "$f")")")"
   if grep -q "writeLoadCanary(\"$id\")" "$f"; then wired=$((wired + 1)); else unwired="$unwired $id"; fi
 done
-check_eq "$wired" 35 "35/35 wired"
+check_eq "$wired" "$total" "$wired/$total wired"
 check_eq "${unwired:-none}" "none" "no unwired plugin"
 grep -q 'export function writeLoadCanary' "$ROOT/shared/load-canary.ts"; check $? "primitive exists in shared/"
 
