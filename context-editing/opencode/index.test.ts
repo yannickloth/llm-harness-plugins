@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import type { Plugin } from "@opencode-ai/plugin"
@@ -21,6 +21,11 @@ async function load(opts: Record<string, unknown> = {}): Promise<Handlers> {
   const mod = await import("./index.ts")
   const client = { app: { log: async () => {} } }
   return (mod.default as any)({ client, directory: root, worktree: root }, opts)
+}
+
+function stripBlock(md: string, id: string): string {
+  const re = new RegExp(`<!-- ce:b [^\\n]* id=${id} [^\\n]* -->\\n[\\s\\S]*?<!-- /ce:b -->\\n?`, "g")
+  return md.replace(re, "")
 }
 
 function msgs(sid: string, text: string): OcMessage[] {
@@ -84,7 +89,7 @@ describe("context-editing plugin", () => {
     expect(existsSync(path.join(sessionPaths(root, "s2").edits, "r0001.json"))).toBe(true)
   })
 
-  test("a rejected edit (empty protected region) leaves the message array unchanged", async () => {
+  test("an emptied protected region is healed, not left broken", async () => {
     const hooks = await load({ mode: "edit", budget: "window" })
     await hooks["chat.message"]({ sessionID: "s3" }, { parts: [{ type: "text", text: "please fix the bug" }] })
 
@@ -99,8 +104,9 @@ describe("context-editing plugin", () => {
 
     const second = { messages: msgs("s3", "ORIGINAL") } as { messages: OcMessage[] }
     await hooks["experimental.chat.messages.transform"]({}, second)
+    // The message array is unaffected, and the mirror is repaired on disk.
     expect(second.messages[0].parts[0].text).toBe("ORIGINAL")
-    expect(existsSync(path.join(sessionPaths(root, "s3").edits, "r0001.json"))).toBe(false)
+    expect(readFileSync(mirrorPath, "utf-8")).toContain("please fix the bug")
   })
 
   test("status reports mode, budget and paths", async () => {
@@ -115,6 +121,7 @@ describe("context-editing plugin", () => {
   test("recall fails closed, then allows with matches when all conditions hold", async () => {
     const hooks = await load({ mode: "notices-only" })
     await hooks["chat.message"]({ sessionID: "s5" }, { parts: [{ type: "text", text: "the deploy key rotates on fridays" }] })
+    await hooks["experimental.chat.messages.transform"]({}, { messages: msgs("s5", "the deploy key rotates on fridays") } as any)
 
     const denied = JSON.parse(String(await hooks.tool["context-editing-recall"].execute(
       { query: "deploy key", missingInMirror: false, inTrace: true, reDerivable: false, canProceed: false, justification: "x" },
@@ -146,6 +153,66 @@ describe("context-editing plugin", () => {
     await hooks["session.deleted"]({ properties: { session: { id: "s6" } } })
     const after = JSON.parse(String(await hooks.tool["context-editing-status"].execute({}, { sessionID: "s6" })))
     expect(after.revision).toBe(0)
+  })
+
+  test("reconciliation: a new turn survives; a deleted block stays deleted", async () => {
+    const hooks = await load({ mode: "edit", budget: "window" })
+    await hooks["chat.message"]({ sessionID: "t1" }, { parts: [{ type: "text", text: "goal one" }] })
+
+    // Turn 1: only the user message exists.
+    await hooks["experimental.chat.messages.transform"]({}, { messages: [msgs("t1", "USER_ONE")[0]] } as any)
+
+    // Turn 2: the assistant text and tool pair appear for the first time.
+    const t2 = { messages: msgs("t1", "USER_ONE") } as { messages: OcMessage[] }
+    await hooks["experimental.chat.messages.transform"]({}, t2)
+    expect(t2.messages.some((m) => m.parts.some((p) => p.id === "p2"))).toBe(true)
+
+    // The model deletes the assistant block from the mirror.
+    const mirrorPath = sessionPaths(root, "t1").mirror
+    writeFileSync(mirrorPath, stripBlock(readFileSync(mirrorPath, "utf-8"), "p2"))
+
+    // It stays dropped on this and the next request.
+    const t3 = { messages: msgs("t1", "USER_ONE") } as { messages: OcMessage[] }
+    await hooks["experimental.chat.messages.transform"]({}, t3)
+    expect(t3.messages.some((m) => m.parts.some((p) => p.id === "p2"))).toBe(false)
+
+    const t4 = { messages: msgs("t1", "USER_ONE") } as { messages: OcMessage[] }
+    await hooks["experimental.chat.messages.transform"]({}, t4)
+    expect(t4.messages.some((m) => m.parts.some((p) => p.id === "p2"))).toBe(false)
+
+    // A persistent drop must not mint a new revision on every request.
+    const revs = readdirSync(sessionPaths(root, "t1").edits).sort()
+    expect(revs).toEqual(["r0001.json", "r0002.json"])
+  })
+
+  test("invalid mode env falls back to notices-only", async () => {
+    const prev = process.env.LLMHP_CONTEXT_EDITING_MODE
+    process.env.LLMHP_CONTEXT_EDITING_MODE = "banana"
+    try {
+      const hooks = await load()
+      const status = JSON.parse(String(await hooks.tool["context-editing-status"].execute({}, { sessionID: "t2" })))
+      expect(status.mode).toBe("notices-only")
+    } finally {
+      if (prev === undefined) delete process.env.LLMHP_CONTEXT_EDITING_MODE
+      else process.env.LLMHP_CONTEXT_EDITING_MODE = prev
+    }
+  })
+
+  test("config hook applies context_editing settings", async () => {
+    const hooks = await load()
+    await hooks.config({ context_editing: { mode: "edit", budget: "64k", windowTokens: 128_000 } } as any)
+    const status = JSON.parse(String(await hooks.tool["context-editing-status"].execute({}, { sessionID: "cfg1" })))
+    expect(status.mode).toBe("edit")
+    expect(status.budget).toBe("64k")
+    expect(status.windowTokens).toBe(128_000)
+  })
+
+  test("the trace records user and assistant text", async () => {
+    const hooks = await load({ mode: "notices-only" })
+    await hooks["experimental.chat.messages.transform"]({}, { messages: msgs("t3", "USER_ONE") } as any)
+    const trace = readFileSync(sessionPaths(root, "t3").trace, "utf-8")
+    expect(trace).toContain("USER_ONE")
+    expect(trace).toContain("assistant reply")
   })
 
   test("compaction coordination disables autocontinue only in edit mode", async () => {

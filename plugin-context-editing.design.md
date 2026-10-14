@@ -254,9 +254,10 @@ observes or coordinates.
 
 | Hook | Use here |
 |---|---|
-| `experimental.chat.messages.transform` | **The projection.** Receives `output.messages: {info, parts}[]`; replaces it with the mirror projection (§8.2) |
-| `chat.message` | Observe the incoming user turn; flush it to the trace; update the session→mirror binding |
-| `experimental.chat.system.transform` | Inject the edit protocol + budget notice (Phase 0) into the system prompt |
+| `experimental.chat.messages.transform` | **The projection.** Receives `output.messages: {info, parts}[]`; traces new textual parts, injects a transient budget notice (both modes), and in edit mode replaces the array with the mirror projection (§8.2) |
+| `chat.message` | Observe the incoming user turn; update the session→mirror binding and seed the protected region (the trace is written from `messages.transform`, covering user + assistant + tool text) |
+| `experimental.chat.system.transform` | Inject the edit protocol (edit mode), including the mirror path so the model can find and edit the file |
+| `config` | Read a `context_editing` config block (`mode`/`budget`/`windowTokens`) — env and constructor options take precedence |
 | `chat.params` | Token accounting inputs (model window) per request |
 | `tool.execute.before` / `tool.execute.after` | Optional early validation of edits to `context.md`; trace tool I/O |
 | `experimental.session.compacting` | Coordinate with native compaction (§8.3) |
@@ -409,8 +410,9 @@ its budget, the model makes fewer tool calls"** — not from the edits
 themselves. So do the cheap thing first and keep the unproven part behind it.
 
 - **Phase 0 (no editing):** inject the budget notice + overflow guard only. No
-  mirror, no protocol, no edits; history is raw. Measures the behavioural effect
-  in isolation.
+  mirror, no protocol, no edits; history is otherwise raw (one transient notice
+  part is prepended when a reminder fires, and stripped before the next
+  request). Measures the behavioural effect in isolation.
 - **Phase 1 (editing):** add the mirror projection, edit vocabulary, and the
   cache-aware policy — **only if** Phase 0 does not get us there.
 
@@ -493,6 +495,10 @@ result could try to induce a destructive mirror edit or exfiltrate.
 | D18 | Recovery always rebuilds from the trace | The trace is the universal backstop (§11) |
 | D19 | Phase 0 is notices-only; editing only if it earns its place | Most of the source gain was behavioural (§12) |
 | D20 | Telemetry distinguishes estimated vs confirmed size | Provider usage is post-hoc (§12) |
+| D21 | Reconcile new turns into the mirror before projecting; `renderedIds` stays cumulative | Parts the model never saw must not be mistaken for deletions; a deleted block stays deleted (§8.2) |
+| D22 | A revision is a change to the mirror file, not a re-projection | A persistent edit/drop must not mint a revision every request (§9) |
+| D23 | Support a `context_editing` config block; precedence env → constructor options → config | Path-loaded plugins may not receive constructor options (§8.1) |
+| D24 | The edit protocol carries the mirror path | The model cannot edit a file it cannot locate (§8.1) |
 
 ## 17. Relationship to existing plugins (reuse, do not reinvent)
 

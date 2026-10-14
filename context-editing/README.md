@@ -32,8 +32,9 @@ No build step, no Java backend.
 ## Modes
 
 - `notices-only` (**default**, Phase 0) — injects a budget notice and an overflow
-  guard; history is raw. No mirror, no editing. Use this to measure whether
-  budget pressure alone changes behaviour.
+  guard; history is otherwise raw (the transient notice is stripped before the
+  next request). No mirror, no editing. Use this to measure whether budget
+  pressure alone changes behaviour.
 - `edit` (Phase 1) — adds the mirror projection, the edit vocabulary, and the
   cache-aware application of edits.
 - `off` — inert.
@@ -51,6 +52,16 @@ No build step, no Java backend.
 | `mode` | `"notices-only"` | `off` \| `notices-only` \| `edit` |
 | `budget` | `"50%"` | `"50%"` \| `"64k"` \| `"window"` \| a literal token count |
 | `windowTokens` | `200000` | model window used to resolve `%` and `window` |
+
+The same keys can be set on a `context_editing` block in `opencode.json` (useful
+when a path-loaded plugin does not receive constructor options); env, then
+constructor options, take precedence over it:
+
+```json
+{
+  "context_editing": { "mode": "edit", "budget": "64k", "windowTokens": 128000 }
+}
+```
 
 Env overrides: `LLMHP_CONTEXT_EDITING=0` disables; `LLMHP_CONTEXT_EDITING_MODE`,
 `LLMHP_CONTEXT_EDITING_BUDGET`, `LLMHP_CONTEXT_EDITING_WINDOW`.

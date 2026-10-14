@@ -5,10 +5,11 @@ import { createLogger } from "../../shared/plugin-logger"
 import { writeLoadCanary } from "../../shared/load-canary"
 import {
   DEFAULT_BUDGET,
-  EDIT_PROTOCOL,
   NOTICE_COOLDOWN_MS,
   applyMirrorEdits,
   budgetNotice,
+  editableIds,
+  editProtocol,
   evaluateRecall,
   isOverBudget,
   messagesTokens,
@@ -16,7 +17,9 @@ import {
   parseBudget,
   parseMirror,
   pickReminder,
+  reconcileBlocks,
   renderMirror,
+  renderParsed,
   sessionFromMessages,
   sessionPaths,
   type CeMessage,
@@ -30,6 +33,17 @@ const BUDGET_ENV = "LLMHP_CONTEXT_EDITING_BUDGET"
 const WINDOW_ENV = "LLMHP_CONTEXT_EDITING_WINDOW"
 
 type Mode = "off" | "notices-only" | "edit"
+
+const MODES: readonly Mode[] = ["off", "notices-only", "edit"]
+
+/** Validate a mode from env/config; anything unknown falls back to the default
+ * rather than silently behaving as edit. */
+function resolveMode(...candidates: (string | undefined)[]): Mode {
+  for (const c of candidates) {
+    if (c && (MODES as readonly string[]).includes(c)) return c as Mode
+  }
+  return "notices-only"
+}
 
 export interface Options {
   /** "off" | "notices-only" (default, Phase 0) | "edit" (Phase 1). */
@@ -49,6 +63,13 @@ interface SessionState {
   firedReminders: Set<number>
   lastNoticeAt: number
   rebuildMirror: boolean
+  /** Every editable part id ever shown in the mirror; a part in this set that
+   * is absent from the file was deleted by the model and stays deleted. */
+  renderedIds: Set<string>
+  /** Every trace-recorded part id, so assistant/tool text is appended once. */
+  tracedIds: Set<string>
+  /** Last persisted mirror text; a change here is a mirror revision. */
+  lastMirrorText: string | null
   metrics: { edited: number; dropped: number; added: number; rejected: number; forced: number }
 }
 
@@ -65,9 +86,17 @@ export default async (
     return {}
   }
 
-  const mode: Mode = (process.env[MODE_ENV] as Mode) ?? options.mode ?? "notices-only"
-  const defaultBudget = process.env[BUDGET_ENV] ?? options.budget ?? DEFAULT_BUDGET
-  const defaultWindow = Number(process.env[WINDOW_ENV] ?? options.windowTokens ?? 200_000)
+  const envMode = process.env[MODE_ENV]
+  const envBudget = process.env[BUDGET_ENV]
+  const envWindowRaw = Number(process.env[WINDOW_ENV])
+  const envWindow = Number.isFinite(envWindowRaw) && envWindowRaw > 0 ? envWindowRaw : undefined
+  if (envMode && !(MODES as readonly string[]).includes(envMode)) {
+    logger.warn(`ignoring invalid ${MODE_ENV}="${envMode}" — using "notices-only"`)
+  }
+
+  let mode = resolveMode(envMode, options.mode)
+  let defaultBudget = envBudget ?? options.budget ?? DEFAULT_BUDGET
+  let defaultWindow = envWindow ?? options.windowTokens ?? 200_000
   const cooldownMs = NOTICE_COOLDOWN_MS
 
   logger.info(`plugin active — mode=${mode} budget=${defaultBudget} window=${defaultWindow}`)
@@ -86,6 +115,9 @@ export default async (
         firedReminders: new Set(),
         lastNoticeAt: 0,
         rebuildMirror: true,
+        renderedIds: new Set(),
+        tracedIds: new Set(),
+        lastMirrorText: null,
         metrics: { edited: 0, dropped: 0, added: 0, rejected: 0, forced: 0 },
       }
       states.set(sid, s)
@@ -170,7 +202,11 @@ export default async (
   function injectNotice(messages: OcMessage[], text: string): void {
     const target = messages[0]
     if (!target) return
-    const template = messages.flatMap((m) => m.parts).find((p) => p.type === "text")
+    // Clone a text part from the target message when possible, so fields like
+    // messageID stay consistent with the message the part is attached to.
+    const template =
+      (target.parts ?? []).find((p) => p.type === "text") ??
+      messages.flatMap((m) => m.parts).find((p) => p.type === "text")
     const part = template
       ? { ...template, id: `${NOTICE_PREFIX}${Date.now()}`, text }
       : { id: `${NOTICE_PREFIX}${Date.now()}`, type: "text", text }
@@ -181,9 +217,37 @@ export default async (
     appendJsonl(sessionPaths(root, s.id).metrics, { ts: Date.now(), sessionID: s.id, event, ...extra })
   }
 
+  /** Append every textual part (user, assistant, tool output) to the trace
+   * once, so the log is a complete-enough forensic record in all modes. */
+  function traceParts(s: SessionState, messages: OcMessage[]): void {
+    const file = sessionPaths(root, s.id).trace
+    for (const m of messages) {
+      for (const p of m.parts ?? []) {
+        if (typeof p.text !== "string" || !p.text.trim()) continue
+        if (s.tracedIds.has(p.id)) continue
+        s.tracedIds.add(p.id)
+        appendJsonl(file, { ts: Date.now(), type: "part", role: String(m.info?.role ?? ""), partId: p.id, text: p.text.slice(0, 4000) })
+      }
+    }
+  }
+
   // ── hooks ──────────────────────────────────────────────────────────────────
 
   return {
+    config: async (input: Record<string, unknown>) => {
+      const cfg = (input?.context_editing ?? input?.contextEditing) as Record<string, unknown> | undefined
+      if (!cfg || typeof cfg !== "object") return
+      if (!envMode && typeof cfg.mode === "string") {
+        if ((MODES as readonly string[]).includes(cfg.mode)) mode = cfg.mode as Mode
+        else logger.warn(`ignoring invalid context_editing.mode="${cfg.mode}"`)
+      }
+      if (!envBudget && typeof cfg.budget === "string") defaultBudget = cfg.budget
+      if (envWindow === undefined && typeof cfg.windowTokens === "number" && cfg.windowTokens > 0) {
+        defaultWindow = cfg.windowTokens
+      }
+      logger.info(`config context_editing applied — mode=${mode} budget=${defaultBudget} window=${defaultWindow}`)
+    },
+
     "chat.message": async (
       input: { sessionID: string },
       output: { parts?: Array<{ type: string; text?: string }> },
@@ -194,12 +258,6 @@ export default async (
       const s = stateFor(sid)
       const text = (output?.parts ?? []).find((p) => p.type === "text" && p.text)?.text ?? ""
       if (!text.trim()) return
-      appendJsonl(sessionPaths(root, sid).trace, {
-        ts: Date.now(),
-        type: "message",
-        role: "user",
-        text: text.slice(0, 4000),
-      })
       seedProtected(s, text)
     },
 
@@ -208,7 +266,9 @@ export default async (
       output: { system: string[] },
     ) => {
       if (mode !== "edit") return
-      const block = EDIT_PROTOCOL
+      const sid = input?.sessionID
+      const mirrorPath = sid ? `.context-editing/${sid}/context.md` : "context.md"
+      const block = editProtocol(mirrorPath)
       output.system = Array.isArray(output.system) ? [block, ...output.system] : [block]
     },
 
@@ -225,6 +285,7 @@ export default async (
 
       // Notices are transient: drop the previous one, re-add only if due.
       stripNotices(messages)
+      traceParts(s, messages)
 
       const size = messagesTokens(messages)
       const budget = parseBudget(s.budget, s.windowTokens)
@@ -250,14 +311,42 @@ export default async (
       // edit mode
       seedProtected(s, firstUserText(messages))
       const paths = sessionPaths(root, sid)
+      const ce = toCe(messages)
       let mirrorText = s.rebuildMirror ? null : readSafe(paths.mirror)
       if (mirrorText == null) {
-        mirrorText = renderMirror(toCe(messages), s.protectedRegion)
+        mirrorText = renderMirror(ce, s.protectedRegion)
         writeAtomic(paths.mirror, mirrorText)
         s.rebuildMirror = false
+        s.renderedIds = new Set()
+        s.lastMirrorText = mirrorText
       }
 
-      const parsed = parseMirror(mirrorText)
+      // Reconcile: append blocks for parts the model has never seen (new turns)
+      // so they are not mistaken for deletions. `renderedIds` stays cumulative,
+      // so a block the model deleted is not re-appended on the next request.
+      let parsed = parseMirror(mirrorText)
+      const fresh = reconcileBlocks(parsed, ce, s.renderedIds)
+      if (fresh.length > 0) {
+        parsed = { protected: parsed.protected, blocks: [...parsed.blocks, ...fresh] }
+        mirrorText = renderParsed(parsed)
+        writeAtomic(paths.mirror, mirrorText)
+      }
+      for (const id of editableIds(ce)) s.renderedIds.add(id)
+
+      // Heal an emptied protected region from the state copy rather than
+      // rejecting every subsequent request (otherwise the file stays broken).
+      if (!parsed.protected.trim() && s.protectedRegion.trim()) {
+        parsed = { ...parsed, protected: s.protectedRegion }
+        mirrorText = renderParsed(parsed)
+        writeAtomic(paths.mirror, mirrorText)
+        recordMetric(s, "protected-restored", {})
+      }
+
+      // A mirror revision is a change to the file, not a re-projection: a
+      // persistent edit/drop stays applied every request and must not bump the
+      // revision (or rewrite the diff) each time.
+      const mirrorChanged = mirrorText !== s.lastMirrorText
+
       const applied = applyMirrorEdits(messages, parsed)
 
       if (applied.issues.length > 0) {
@@ -268,20 +357,22 @@ export default async (
         return
       }
 
-      const changed = applied.edited + applied.dropped + applied.added > 0
-      recordMetric(s, "request", { size, budget, edited: applied.edited, dropped: applied.dropped, added: applied.added, rejected: 0 })
-      if (changed) {
+      if (mirrorChanged) {
+        s.lastMirrorText = mirrorText
         s.revision++
         s.metrics.edited += applied.edited
         s.metrics.dropped += applied.dropped
         s.metrics.added += applied.added
-        output.messages = applied.messages
         ensureDir(paths.edits)
         writeAtomic(
           `${paths.edits}/r${String(s.revision).padStart(4, "0")}.json`,
           JSON.stringify({ ts: now, revision: s.revision, edited: applied.edited, dropped: applied.dropped, added: applied.added, blocks: parsed.blocks }, null, 2),
         )
       }
+
+      const changed = applied.edited + applied.dropped + applied.added > 0
+      recordMetric(s, "request", { size, budget, edited: applied.edited, dropped: applied.dropped, added: applied.added, rejected: 0 })
+      if (changed) output.messages = applied.messages
       if (notice) injectNotice(output.messages, notice)
     },
 
@@ -329,6 +420,7 @@ export default async (
       if (!sid) return
       const s = stateFor(sid)
       s.rebuildMirror = true
+      s.renderedIds = new Set()
       s.revision++
       logger.info(`session ${sid} compacted — mirror will be rebuilt`)
     },
@@ -411,8 +503,12 @@ export default async (
             recordMetric(stateFor(context.sessionID), "recall-denied", { query: args.query, reason: decision.reason })
             return JSON.stringify({ allow: false, reason: decision.reason })
           }
-          const trace = readSafe(sessionPaths(root, context.sessionID).trace) ?? ""
           const needle = args.query.toLowerCase().trim()
+          if (!needle) {
+            recordMetric(stateFor(context.sessionID), "recall-denied", { reason: "empty query" })
+            return JSON.stringify({ allow: false, reason: "empty query" })
+          }
+          const trace = readSafe(sessionPaths(root, context.sessionID).trace) ?? ""
           const matches = trace
             .split("\n")
             .filter((l) => l.toLowerCase().includes(needle))

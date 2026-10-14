@@ -99,24 +99,31 @@ export function overflowWarning(size: number, budget: number): string {
   )
 }
 
-export const EDIT_PROTOCOL = [
-  "## Context editing",
-  "Your context is the file `context.md` shown to you in this request. Edit it",
-  "with ordinary file tools to keep it relevant; the edited file becomes your",
-  "next input.",
-  "Allowed operations: KEEP (verbatim), COMPRESS, DROP, ADD, FIX, MERGE.",
-  "Rules:",
-  "- Prefer ADD over DROP when unsure. Only drop a span if its information is",
-  "  still carried by what you keep, or is cheaply re-derivable from the",
-  "  environment (files, git, a test rerun).",
-  "- Ground every ADD/FIX in something observed — never invent facts.",
-  "- The head region (goal, constraints, open questions) is append-mostly: add,",
-  "  do not drop.",
-  "- Machine-generated block markers and any `pinned` block are not yours to",
-  "  edit; leave them intact.",
-  "- Budget is a constraint: if you cannot meet it truthfully, exceed it and say",
-  "  so. Never fabricate to hit a number.",
-].join("\n")
+/**
+ * The edit protocol injected into the system prompt in edit mode. The mirror
+ * path is included so the model knows which file to read and edit.
+ */
+export function editProtocol(mirrorPath: string): string {
+  return [
+    "## Context editing",
+    `Your context is the file \`${mirrorPath}\` (its content is what you see as the`,
+    "conversation). Edit that file with ordinary file tools to keep it relevant;",
+    "the edited file becomes your next input. Read it first if you need its exact",
+    "current text.",
+    "Allowed operations: KEEP (verbatim), COMPRESS, DROP, ADD, FIX, MERGE.",
+    "Rules:",
+    "- Prefer ADD over DROP when unsure. Only drop a span if its information is",
+    "  still carried by what you keep, or is cheaply re-derivable from the",
+    "  environment (files, git, a test rerun).",
+    "- Ground every ADD/FIX in something observed — never invent facts.",
+    "- The head region (goal, constraints, open questions) is append-mostly: add,",
+    "  do not drop.",
+    "- Machine-generated block markers and any `pinned` block are not yours to",
+    "  edit; leave them intact.",
+    "- Budget is a constraint: if you cannot meet it truthfully, exceed it and say",
+    "  so. Never fabricate to hit a number.",
+  ].join("\n")
+}
 
 /// ── message/mirror model ────────────────────────────────────────────────────
 
@@ -159,19 +166,29 @@ function marker(block: MirrorBlock): string {
   return OPEN(block.msgId, block.partId, block.role, extra)
 }
 
-const UNEDITABLE = new Set(["tool", "tool_use", "tool_result", "reasoning", "image", "file", "step-start", "step-finish", "snapshot", "patch"])
-
 export function isEditablePart(part: CePart): boolean {
   if (part.type !== "text") return false
   return typeof part.text === "string" && part.text.length > 0
 }
 
+/** One block per message part, in order: editable text, or a pinned marker. */
+export function blocksFromMessages(messages: CeMessage[]): MirrorBlock[] {
+  const blocks: MirrorBlock[] = []
+  for (const m of messages) {
+    for (const p of m.parts) {
+      if (isEditablePart(p)) blocks.push({ msgId: m.id, partId: p.id, role: m.role, kind: "text", text: p.text ?? "" })
+      else blocks.push({ msgId: m.id, partId: p.id, role: m.role, kind: "pinned", pinnedType: p.type, text: "" })
+    }
+  }
+  return blocks
+}
+
 /**
- * Render the mirror. The protected region is prepended verbatim; each editable
- * text part becomes a body block; every other part becomes a bodyless pinned
- * marker re-spliced from the trace at projection time (§8.2).
+ * Render a mirror from a protected region and an ordered block list. Editable
+ * text blocks carry a body; pinned blocks are bodyless markers re-spliced from
+ * the trace at projection time (§8.2).
  */
-export function renderMirror(messages: CeMessage[], protectedRegion: string): string {
+export function renderBlocks(protectedRegion: string, blocks: MirrorBlock[]): string {
   const out: string[] = [`<!-- context-editing:mirror v${MIRROR_VERSION} -->`, ""]
   out.push("# Head (append-mostly — add, do not drop)")
   out.push("")
@@ -179,21 +196,55 @@ export function renderMirror(messages: CeMessage[], protectedRegion: string): st
   out.push("")
   out.push("# Context (editable — KEEP / COMPRESS / DROP / ADD / FIX / MERGE)")
   out.push("")
-  for (const m of messages) {
-    for (const p of m.parts) {
-      if (isEditablePart(p)) {
-        const b: MirrorBlock = { msgId: m.id, partId: p.id, role: m.role, kind: "text", text: p.text ?? "" }
-        out.push(marker(b))
-        out.push(b.text)
-        out.push(CLOSE)
-      } else {
-        const b: MirrorBlock = { msgId: m.id, partId: p.id, role: m.role, kind: "pinned", pinnedType: p.type, text: "" }
-        out.push(marker(b))
-      }
-      out.push("")
+  for (const b of blocks) {
+    out.push(marker(b))
+    if (b.kind === "text") {
+      out.push(b.text)
+      out.push(CLOSE)
     }
+    out.push("")
   }
   return out.join("\n")
+}
+
+/** Re-render a parsed mirror (used after reconciliation appends new blocks). */
+export function renderParsed(parsed: ParsedMirror): string {
+  return renderBlocks(parsed.protected, parsed.blocks)
+}
+
+/** Render the mirror from a message array. */
+export function renderMirror(messages: CeMessage[], protectedRegion: string): string {
+  return renderBlocks(protectedRegion, blocksFromMessages(messages))
+}
+
+/** Editable part ids currently present in a message array. */
+export function editableIds(messages: CeMessage[]): string[] {
+  const ids: string[] = []
+  for (const m of messages) for (const p of m.parts) if (isEditablePart(p)) ids.push(p.id)
+  return ids
+}
+
+/**
+ * Append blocks for editable parts the model has never seen (new turns), so
+ * they are not mistaken for deletions. Returns the blocks to append; the
+ * caller re-renders the mirror and keeps `renderedIds` cumulative.
+ */
+export function reconcileBlocks(
+  parsed: ParsedMirror,
+  messages: CeMessage[],
+  renderedIds: ReadonlySet<string>,
+): MirrorBlock[] {
+  const existing = new Set(parsed.blocks.filter((b) => b.kind === "text").map((b) => b.partId))
+  const added: MirrorBlock[] = []
+  for (const m of messages) {
+    for (const p of m.parts) {
+      if (!isEditablePart(p)) continue
+      if (renderedIds.has(p.id) || existing.has(p.id)) continue
+      added.push({ msgId: m.id, partId: p.id, role: m.role, kind: "text", text: p.text ?? "" })
+      existing.add(p.id)
+    }
+  }
+  return added
 }
 
 const HEAD_RE = /^#\s+Head\b/m
@@ -392,7 +443,8 @@ export function applyMirrorEdits(messages: OcMessage[], parsed: ParsedMirror): A
   const additions = parsed.blocks.filter((b) => b.kind === "text" && !seen.has(b.partId))
   let added = 0
   if (additions.length > 0) {
-    const target = out[out.length - 1]
+    const conversational = [...out].reverse().find((m) => m.info?.role === "user" || m.info?.role === "assistant")
+    const target = conversational ?? out[out.length - 1]
     const template = messages.flatMap((m) => m.parts).find((p) => p.type === "text")
     if (target) {
       for (const b of additions) {

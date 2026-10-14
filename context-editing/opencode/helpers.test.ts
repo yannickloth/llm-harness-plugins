@@ -13,7 +13,9 @@ import {
   parseMirror,
   pickReminder,
   project,
+  reconcileBlocks,
   renderMirror,
+  renderParsed,
   sessionFromMessages,
   sessionPaths,
   validateParts,
@@ -228,19 +230,44 @@ describe("applyMirrorEdits", () => {
     ])).toEqual([])
   })
 
-  test("an added text block is appended to the last message", () => {
+  test("an added text block is appended to the last conversational message", () => {
     const parsed = parseMirror(renderMirror(SOURCE, "goal"))
     parsed.blocks.push({ msgId: "m3", partId: "new1", role: "assistant", kind: "text", text: "note: see changelog" })
     const res = applyMirrorEdits(oc(), parsed)
     expect(res.added).toBe(1)
     expect(res.issues).toEqual([])
-    expect(res.messages[res.messages.length - 1].parts.some((p) => p.id === "new1")).toBe(true)
+    const host = res.messages.find((m) => m.parts.some((p) => p.id === "new1"))
+    expect(host!.info.role).toBe("assistant")
   })
 
   test("an emptied protected region is rejected", () => {
     const parsed = parseMirror(renderMirror(SOURCE, "goal"))
     parsed.protected = ""
     expect(applyMirrorEdits(oc(), parsed).issues).toContain("protected region is empty")
+  })
+})
+
+describe("reconcile + renderParsed", () => {
+  test("reconcileBlocks appends only unseen editable parts", () => {
+    const ce: CeMessage[] = [
+      { id: "m1", role: "user", parts: [{ id: "p1", type: "text", text: "a" }] },
+      { id: "m2", role: "assistant", parts: [{ id: "p2", type: "text", text: "b" }, { id: "p3", type: "tool", callID: "c1" }] },
+    ]
+    const parsed = parseMirror(renderMirror([ce[0]], "goal"))
+    const fresh = reconcileBlocks(parsed, ce, new Set(["p1"]))
+    expect(fresh.map((b) => b.partId)).toEqual(["p2"])
+  })
+
+  test("reconcileBlocks does not re-add a part the model deleted", () => {
+    const ce: CeMessage[] = [{ id: "m1", role: "user", parts: [{ id: "p1", type: "text", text: "a" }] }]
+    const parsed = parseMirror(renderMirror(ce, "goal"))
+    parsed.blocks = []
+    expect(reconcileBlocks(parsed, ce, new Set(["p1"]))).toEqual([])
+  })
+
+  test("renderParsed round-trips a parsed mirror", () => {
+    const parsed = parseMirror(renderMirror(SOURCE, "## Goal\nfix"))
+    expect(parseMirror(renderParsed(parsed))).toEqual(parsed)
   })
 })
 
