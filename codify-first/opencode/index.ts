@@ -1,7 +1,20 @@
+// codify-first — injects the "codify first" directive and self-registers the
+// codify-first skill pack.
+//
+// Dual-version entrypoint (harness idiom): `server(input)` is the v1 path,
+// `setup(ctx)` the v2 path. Mapping of the v1 hooks onto v2:
+//   - `config`               → skills replayed into `ctx.skill.transform`; the
+//                              `codify_first` settings block arrives as
+//                              `ctx.options` (v2 passes plugin options there);
+//   - `chat.message`         → `ctx.session.hook("prompt")` (records the topic);
+//   - `experimental.chat.system.transform` → `ctx.session.hook("context")`
+//     (v2 hands the system prompt as `event.system` — same shape
+//     datetime-inject's v2 port uses).
 import type { Config, Plugin } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
 import { writeLoadCanary } from "../../shared/load-canary"
+import { registerSkillDir } from "../../shared/v2-skills"
 import { updateSessionTopic, getSessionTopic } from "../../shared/session-topic"
 import fs from "fs"
 import path from "path"
@@ -32,7 +45,10 @@ function skillCount(dir: string): number {
     }).length
 }
 
-export default async (
+// ---------------------------------------------------------------------------
+// v1 entrypoint.
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async (
   { client }: Parameters<Plugin>[0],
   options: CodifyFirstOptions = {},
 ) => {
@@ -85,4 +101,42 @@ export default async (
       output.system = [...output.system, CODIFY_FIRST_DIRECTIVE]
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint.
+// ---------------------------------------------------------------------------
+export default {
+  id: "codify-first",
+
+  async setup(ctx: any) {
+    writeLoadCanary("codify-first")
+    const options = (ctx.options ?? {}) as CodifyFirstOptions
+    const settings: CodifyFirstSettings = {
+      enabled: options.enabled ?? true,
+      topicGate: options.topicGate ?? true,
+    }
+
+    await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+
+    await ctx.session.hook("prompt", (event: any) => {
+      if (!settings.topicGate) return
+      const text: string | undefined = event?.prompt?.text
+      if (!text || !text.trim()) return
+      updateSessionTopic(event.sessionID, text)
+    })
+
+    await ctx.session.hook("context", (event: any) => {
+      if (!settings.enabled) return
+      const sid: string | undefined = event?.sessionID
+      if (settings.topicGate && sid && getSessionTopic(sid) === "personal") return
+      const parts: Array<{ type: string; text: string }> = Array.isArray(event.system) ? event.system : []
+      if (parts.some(p => (p.text ?? "").includes(CODIFY_FIRST_MARKER))) return
+      event.system = [...parts, { type: "text", text: CODIFY_FIRST_DIRECTIVE }]
+    })
+  },
+
+  async server(input: any) {
+    return v1Factory(input)
+  },
 }

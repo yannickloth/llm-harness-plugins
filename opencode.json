@@ -1,16 +1,16 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "./datetime-inject/opencode/index.ts",
-    "./offpeak-nudge/opencode/index.ts",
-    "./ivp/opencode/index.ts",
-    "./graphics-toolkit/opencode/index.ts",
-    "./scientific-writing/opencode/index.ts",
-    "./clm/opencode/index.ts",
-    "./context-toolkit/opencode/index.ts",
-    "./codify-first/opencode/index.ts",
-    "./context-editing/opencode/index.ts",
-    "./system-message-merge/opencode/index.ts"
+    "./datetime-inject/opencode",
+    "./offpeak-nudge/opencode",
+    "./ivp/opencode",
+    "./graphics-toolkit/opencode",
+    "./scientific-writing/opencode",
+    "./clm/opencode",
+    "./context-toolkit/opencode",
+    "./codify-first/opencode",
+    "./context-editing/opencode",
+    "./system-message-merge/opencode"
   ],
   "agent": {
     "driver-identifier": {

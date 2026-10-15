@@ -415,7 +415,10 @@ type AgentmemOptions = {
   topicGate?: boolean
 }
 
-export default async ({ client, directory, worktree }: Parameters<Plugin>[0], options: AgentmemOptions = {}) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint.
+// ---------------------------------------------------------------------------
+const v1Factory = async ({ client, directory, worktree }: Parameters<Plugin>[0], options: AgentmemOptions = {}) => {
   writeLoadCanary("agentmem")
   logger = createLogger(client, "agentmem")
   const topicGate = options.topicGate ?? true
@@ -658,4 +661,303 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
       }),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint. Ported per https://opencode.ai/v2/docs/build/plugins/migrate-v1:
+//   config                 → not needed. The agents this plugin spawns are
+//                            declared as files in ~/.config/opencode/agent/, a
+//                            directory both V1 and V2 discover, and the plugin
+//                            registers no skills. (V2 has no plugin-side agent
+//                            creation: ctx.agent has update/remove but no add.)
+//   client.session.prompt  → ctx.session.synthetic({ sessionID, text })
+//   client.session.delete  → ctx.session.remove({ sessionID })
+//   client.session.list    → no V2 equivalent in the plugin context; the
+//                            leftover-session sweep therefore pages nothing and
+//                            is a no-op under V2 (per-session cleanup via
+//                            `remove` still works for spawned child sessions).
+//   chat.message           → ctx.session.hook("prompt", …)
+//   tool.execute.after     → ctx.tool.hook("execute.after", …)
+//   event                  → ctx.event.subscribe(…), aborted by the cleanup
+//                            function; V2 has no `file.edited` event, so scoped
+//                            injection runs from the tool hook instead (the same
+//                            substitution guardrail-chain documents).
+//   tool map               → ctx.tool.transform(editor) with JSON Schema inputs
+//                            and structured `{ content }` results.
+// The helpers above are unchanged: they speak the V1 client surface, so a small
+// adapter maps the three methods they use onto the V2 context.
+// ---------------------------------------------------------------------------
+function v2Client(ctx: any) {
+  return {
+    session: {
+      prompt: async ({ path: { id }, body }: any) => {
+        const text = (body?.parts ?? []).map((p: any) => p?.text ?? "").join("")
+        if (!text) return
+        await ctx.session.synthetic({ sessionID: id, text })
+      },
+      delete: async ({ path: { id } }: any) => {
+        await ctx.session.remove({ sessionID: id })
+      },
+      // No V2 list endpoint on the plugin context — see the header note.
+      list: async () => ({ data: [] as any[] }),
+    },
+  } as any
+}
+
+function consoleLogger(service: string) {
+  return {
+    debug: (_m: string) => {},
+    info: (m: string) => console.error(`[${service}] ${m}`),
+    warn: (m: string) => console.error(`[${service}] WARN ${m}`),
+    error: (m: string) => console.error(`[${service}] ERROR ${m}`),
+  }
+}
+
+const str = (description: string) => ({ type: "string", description })
+const schema = (properties: Record<string, unknown>, required: string[] = []) => ({
+  type: "object",
+  properties,
+  required,
+  additionalProperties: false,
+})
+
+export default {
+  id: "agentmem",
+
+  async setup(ctx: any) {
+    writeLoadCanary("agentmem")
+    logger = consoleLogger("agentmem")
+    const client = v2Client(ctx)
+    const topicGate = (ctx.options?.topicGate ?? true) as boolean
+    logger.info(`plugin active — 9 tools + classifier + auto-injection hooks; topic gate: ${topicGate}`)
+    const root: string = ctx.location?.project?.canonical ?? ctx.location?.directory
+    const mdir = path.join(root, ".agentmem")
+
+    sweepMaintenanceSessions(client, root).catch(e => logger.warn(`maintenance sweep failed: ${(e as Error).message}`))
+
+    await ctx.session.hook("prompt", async (event: any) => {
+      const text: string = event?.prompt?.text ?? ""
+      if (!text || text.length < 10) return
+      const sessionID: string | undefined = event?.sessionID
+      if (!sessionID) return
+      updateSessionTopic(sessionID, text)
+      const projectSession = topicGate ? shouldInjectProjectContext(sessionID) : true
+      if (projectSession && !startupInjectedForSession.has(sessionID)) {
+        startupInjectedForSession.add(sessionID)
+        injectMemoryAtStartup(client, sessionID, root)
+          .then(() => logger.info(`injected memory into session ${sessionID}`))
+          .catch(e => logger.error(`startup injection failed: ${(e as Error).message}`))
+      }
+      if (!projectSession) return
+      const allow = await shouldClassifyNow(mdir)
+      if (!allow) return
+      pendingClassifications++
+      const gen = classificationGeneration
+      classifyMessage(client, text).then(interesting => {
+        if (gen !== classificationGeneration) return
+        pendingClassifications--
+        if (interesting) flaggedTurnCount++
+      }).catch(() => {
+        if (gen !== classificationGeneration) return
+        pendingClassifications--
+      })
+    })
+
+    await ctx.tool.hook("execute.after", (event: any) => {
+      const tool = event?.tool ?? event?.name
+      if (!FILE_TOOLS.has(tool)) return
+      const filePath = extractFilePathFromToolInput(event?.input ?? event?.args ?? {})
+      if (!filePath) return
+      const sessionID = event?.sessionID ?? event?.session?.id
+      if (sessionID) injectedSessionId = sessionID
+      handleScopedInject(client, root, filePath, topicGate)
+    })
+
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        for await (const input of ctx.event.subscribe({ signal: controller.signal })) {
+          if (controller.signal.aborted) break
+          const type = input?.type
+          const data = input?.data ?? input?.properties
+          if (type === "session.created") {
+            const sid = data?.sessionID ?? data?.info?.id
+            if (!sid) continue
+            flushFlaggedTurns(client, root, false)
+            injectedScopes.clear()
+            injectedSessionId = sid
+          } else if (type === "session.idle") {
+            flushFlaggedTurns(client, root)
+            trySpawnDreamer(client, mdir)
+          } else if (type === "session.deleted") {
+            flushFlaggedTurns(client, root, false)
+            const dsid = data?.sessionID ?? data?.info?.id
+            if (dsid) startupInjectedForSession.delete(dsid)
+          }
+        }
+      } catch {
+        // the event stream is best-effort bookkeeping
+      }
+    })()
+
+    await ctx.tool.transform((editor: any) => {
+      const sid = (context: any) => injectedSessionId ?? context?.sessionID ?? (context as any)?.sessionID
+
+      editor.add({
+        name: "save-memory",
+        description: "Save a project learning to persistent memory. Two-step protocol: write topic file with frontmatter, then add index pointer to MEMORY.md.",
+        input: schema({
+          name: str("Filename stem, [a-zA-Z0-9_-]+"),
+          description: str("One-line relevance summary"),
+          type: { type: "string", enum: ["user", "feedback", "project", "reference"] },
+          subtype: str("failure | serendipity | anomaly | digest | question | episode"),
+          who: str("Human | Agent (user-requested) | Agent (autonomous)"),
+          context: str("What problem was being solved"),
+          confidence: { type: "string", enum: ["high", "medium", "low", "speculative"], default: "medium" },
+          content: str("Body. For feedback/project: What/Why/How-to-apply/Who/Context"),
+          hook: str("One-line MEMORY.md pointer, <=150 chars"),
+          contradicts: str("Memory this one contradicts, if any"),
+          guard_trigger: str("Condition that should re-surface this memory"),
+        }, ["name", "description", "type", "who", "context", "content", "hook"]),
+        async execute(args: any, context: any) {
+          const cmd = [
+            "java", "--class-path", classesDir,
+            mainClass, "save", mdir,
+            args.name, args.description, args.type,
+            args.subtype ?? "--",
+            args.who, args.context, args.confidence ?? "medium",
+            args.content, args.hook,
+            args.contradicts ?? "--",
+            args.guard_trigger ?? "--",
+          ]
+          const proc = await safeSpawn(cmd)
+          const result = proc.stdout.trim()
+          if (proc.exitCode === 0) {
+            const sessionId = sid(context)
+            if (sessionId) await reinjectMemory(client, sessionId, root)
+          }
+          return { content: result }
+        },
+      })
+
+      editor.add({
+        name: "forget-memory",
+        description: "Explicitly delete a memory. Moves file to .cold/ and removes from MEMORY.md index.",
+        input: schema({ name: str("Memory file name (with or without .md extension)") }, ["name"]),
+        async execute(args: any, context: any) {
+          const proc = await safeSpawn(["java", "--class-path", classesDir, mainClass, "delete", mdir, args.name])
+          const result = proc.stdout.trim()
+          if (proc.exitCode === 0) {
+            const sessionId = sid(context)
+            if (sessionId) await reinjectMemory(client, sessionId, root)
+          }
+          return { content: result }
+        },
+      })
+
+      editor.add({
+        name: "check-memory-health",
+        description: "Check memory directory health: dangling pointers, orphans, index size.",
+        input: schema({}),
+        async execute() {
+          const result = await $`java --class-path ${classesDir} ${mainClass} quality-health ${mdir}`.nothrow().text()
+          return { content: result.trim() }
+        },
+      })
+
+      editor.add({
+        name: "init-memory",
+        description: "Bootstrap memory from git history. Scans commits for patterns: frequent fixes, reverted refactors, config breaks.",
+        input: schema({ repo_path: str("Repository path (defaults to the project root)") }),
+        async execute(args: any) {
+          const repoPath = args.repo_path ?? root
+          const result = await $`java --class-path ${classesDir} ${mainClass} bootstrap ${mdir} ${repoPath}`.nothrow().text()
+          return { content: result.trim() }
+        },
+      })
+
+      editor.add({
+        name: "prune-memories",
+        description: "List memory files eligible for pruning based on decay curves. Returns prune candidates.",
+        input: schema({ type: str("Filter by memory type (user|feedback|project|reference)") }),
+        async execute() {
+          const result = await $`java --class-path ${classesDir} ${mainClass} lifecycle-prune ${mdir}`.nothrow().text()
+          return { content: result.trim() }
+        },
+      })
+
+      editor.add({
+        name: "dream",
+        description: "Run memory consolidation. Merges, deduplicates, prunes, and links memories.",
+        input: schema({}),
+        async execute() {
+          if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Dream disabled in subprocess." }
+          const lockResult = safeSpawnSync(["java", "--class-path", classesDir, mainClass, "lock-acquire-pid", mdir, String(process.pid)])
+          if (lockResult.exitCode !== 0) return { content: "Dream already in progress (lock busy)." }
+          try {
+            const dreamer = spawnDetached(
+              ["opencode", "run", "--format", "json", "--agent", "memory-dreamer",
+                "--model", process.env.OPENCODE_MEMORY_MODEL ?? "auto",
+                "--title", "Memory maintenance (dreamer)",
+                "Consolidate, deduplicate, prune, and link memories in .agentmem/."],
+              { stdout: "pipe", stderr: "pipe" }
+            )
+            const kill = setTimeout(() => { try { killProcessTree(dreamer) } catch {} }, 300_000)
+            try {
+              const CAP_MS = 320_000
+              const out = await Promise.race([
+                new Response(dreamer.stdout).text(),
+                new Promise<string | null>(resolve => setTimeout(() => resolve(null), CAP_MS)),
+              ])
+              if (out != null) await deleteMaintenanceSession(client, extractOpencodeSessionId(out), "dreamer")
+              return { content: out == null ? "Dream timed out after 320s." : (out.trim() || "Dream complete.") }
+            } finally { clearTimeout(kill) }
+          } finally {
+            await safeSpawn(["java", "--class-path", classesDir, mainClass, "lock-release", mdir]).catch(() => {})
+          }
+        },
+      })
+
+      editor.add({
+        name: "verify-memory-files",
+        description: "Cross-reference file paths in memories against current project state. Returns STALE markers for paths that no longer exist.",
+        input: schema({}),
+        async execute() {
+          const proc = await safeSpawn(["java", "--class-path", classesDir, mainClass, "verify", mdir, root])
+          const text = proc.stdout.trim()
+          if (proc.exitCode !== 0) return { content: text || "Verification failed." }
+          return { content: text || "No file references found in memories." }
+        },
+      })
+
+      editor.add({
+        name: "verify-memory-report",
+        description: "Generate a full memory file-reference verification report with table of OK/STALE paths.",
+        input: schema({}),
+        async execute() {
+          const proc = await safeSpawn(["java", "--class-path", classesDir, mainClass, "verify-report", mdir, root])
+          const text = proc.stdout.trim()
+          if (proc.exitCode !== 0) return { content: text || "Verification report failed." }
+          return { content: text || "No file references found in memories." }
+        },
+      })
+
+      editor.add({
+        name: "memory-budget-status",
+        description: "Check per-session memory injection token budget status (12,000 token ceiling).",
+        input: schema({}),
+        async execute(_args: any, context: any) {
+          const sessionId = sid(context) ?? "default"
+          const result = await $`java --class-path ${classesDir} ${mainClass} budget-status ${mdir} ${sessionId}`.nothrow().text()
+          return { content: result.trim() || "No budget data." }
+        },
+      })
+    })
+
+    return () => controller.abort()
+  },
+
+  async server(input: any) {
+    return v1Factory(input)
+  },
 }

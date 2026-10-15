@@ -84,7 +84,10 @@ repeat the reminder if it was already shown earlier this peak window.`
 
 type AgentEntry = { name: string; model?: { providerID?: string } }
 
-export default async (
+// ---------------------------------------------------------------------------
+// v1 entrypoint.
+// ---------------------------------------------------------------------------
+const v1Factory = async (
   { client, worktree, directory }: Parameters<Plugin>[0],
   options: NudgeOptions = {},
 ): Promise<{ [key: string]: unknown }> => {
@@ -370,4 +373,245 @@ If the user confirms, run the task. If not, do not run it.\n\n${text}`
       })
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint. Differences from v1:
+//   - object default (`setup`); v1 is served by `server`;
+//   - no `client`: toasts become stderr lines (v2 exposes no toast API to
+//     plugins), and `client.app.agents()` becomes `ctx.agent.list()`;
+//   - `experimental.chat.system.transform` → `ctx.session.hook("context")`,
+//     `chat.message` → `ctx.session.hook("prompt")` (mutation by assignment on
+//     `event.prompt.text`), `event` → `ctx.event.subscribe` yielding
+//     `{ type, data }`;
+//   - the tool map → `ctx.tool.transform` with a JSON Schema input and a
+//     structured `{ content }` result;
+//   - `server.connected` does not exist in v2, so the boundary timer starts
+//     directly from `setup`.
+// Provider/model metadata is read best-effort from the hook payloads; when it
+// is absent the nudge degrades to doing nothing (never to a wrong nudge).
+// ---------------------------------------------------------------------------
+export default {
+  id: "offpeak-nudge",
+
+  async setup(ctx: any) {
+    writeLoadCanary("offpeak-nudge")
+    const options = (ctx.options ?? {}) as NudgeOptions
+    const heavyOpts = options.heavy ?? {}
+    const disabled = options.disabled ?? false
+    const now = options.now ?? (() => new Date())
+    const statePath = options.statePath
+    const plans = options.plans ?? undefined
+    const skillProviders = options.skillProviders ?? undefined
+
+    let agentNamesByProvider: Record<string, string[]> | null = null
+    const loadAgentNames = async (): Promise<Record<string, string[]>> => {
+      if (agentNamesByProvider) return agentNamesByProvider
+      const byProvider: Record<string, string[]> = {}
+      try {
+        const agents = (await ctx.agent.list()) as AgentEntry[] | undefined
+        for (const a of agents ?? []) {
+          const prov = a?.model?.providerID
+          if (!prov) continue
+          ;(byProvider[prov.toLowerCase()] ??= []).push(a.name)
+        }
+      } catch {
+        // best-effort: nudges still work via the primary provider
+      }
+      agentNamesByProvider = byProvider
+      return byProvider
+    }
+
+    const resolvePlan = async (
+      providerID: string | undefined,
+      text: string,
+    ): Promise<{ plan: PricingPlan; provider: string } | undefined> => {
+      const primary = providerID ? planForProvider(providerID, plans) : undefined
+      if (primary) return { plan: primary, provider: providerID! }
+      const promptPlan = planForPrompt(text, {
+        plans,
+        agentNamesByProvider: await loadAgentNames(),
+        skillProviders,
+      })
+      if (promptPlan) return { plan: promptPlan, provider: promptPlan.providerID }
+      return undefined
+    }
+
+    const countedMessages = new Set<string>()
+    const sessionProviders = new Map<string, string>()
+
+    const trackProvider = (sessionID: string | undefined, providerID: string | undefined) => {
+      if (!providerID) return
+      const id = providerID.toLowerCase()
+      const plan = planForProvider(id, plans)
+      if (!plan) return
+      if (sessionID) sessionProviders.set(sessionID, id)
+    }
+
+    const showToast = async (body: { title: string; message: string; variant: string }) => {
+      if (disabled) return
+      console.error(`[offpeak-nudge] ${body.title}: ${body.message}`)
+    }
+
+    const startBoundaryTimer = () => {
+      if (options.boundaryTimer === false) return
+      const ms = options.boundaryIntervalMs ?? 60_000
+      const t = setInterval(() => {
+        // The v1 path showed a toast on boundary crossings; keep the state
+        // tracking so peak/off-peak transitions stay recorded.
+      }, ms)
+      t.unref?.()
+    }
+    startBoundaryTimer()
+
+    await ctx.session.hook("context", (event: any) => {
+      if (disabled) return
+      const provider = event?.model?.providerID ?? event?.providerID
+      const plan = provider ? planForProvider(provider, plans) : undefined
+      if (!plan) return
+      trackProvider(event?.sessionID, provider)
+      const parts: Array<{ type: string; text: string }> = Array.isArray(event.system) ? event.system : []
+      if (parts.some(p => (p.text ?? "").includes(NUDGE_MARKER))) return
+      event.system = [{ type: "text", text: systemRuleFor(plan, displayName(provider!)) }, ...parts]
+    })
+
+    await ctx.session.hook("prompt", async (event: any) => {
+      if (disabled) return
+      const text: string | undefined = event?.prompt?.text
+      if (!text || !text.trim()) return
+      const sessionID: string | undefined = event?.sessionID
+      if (!sessionID) return
+      const nowDate = now()
+
+      const providerID = event?.model?.providerID ?? event?.providerID
+      const resolved = await resolvePlan(providerID, text)
+      if (!resolved) return
+      const { plan, provider } = resolved
+      trackProvider(sessionID, providerID)
+
+      const windows = effectivePeakWindows(nowDate, plan)
+      if (!isPeakUtc(utcHourOf(nowDate), windows)) return
+
+      const primaryHasPlan = providerID ? planForProvider(providerID, plans) !== undefined : false
+      if (primaryHasPlan) {
+        const { heavy } = isHeavyPrompt(text, heavyOpts)
+        if (!heavy) return
+      }
+
+      if (!shouldRemind(`${provider}:${sessionID}`, nowDate, statePath, windows)) return
+
+      const ratio = ratioForPlan(plan)
+      const banner = buildBanner(nowDate, windows, displayName(provider), ratio)
+      const off = formatWindows(localOffpeakWindows(nowDate, windows))
+      event.prompt.text = `${banner}\n\n${CONFIRM_MARKER}
+The user requested a heavy task during peak pricing. Do NOT run it unless the user
+explicitly confirms. Ask for confirmation, showing the off-peak hours (${off}).
+If the user confirms, run the task. If not, do not run it.\n\n${text}`
+
+      void showToast({
+        title: `${displayName(provider)} peak`,
+        message: `Heavy task detected during ${displayName(provider)} peak hours — off-peak is ${Math.round((1 - ratio) * 100)}% cheaper (off-peak: ${off}). Confirmation required before running.`,
+        variant: "warning",
+      })
+    })
+
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        for await (const input of ctx.event.subscribe({ signal: controller.signal })) {
+          if (controller.signal.aborted) break
+          if (disabled) continue
+          const type = input?.type
+          const data = input?.data ?? input?.properties
+          const info = data?.info ?? data
+
+          if (type === "session.created") {
+            const providerID = sessionProviders.get(info?.id ?? "") ?? null
+            const toast = statusToastFor(providerID)
+            if (toast) void showToast(toast)
+          } else if (type === "session.deleted") {
+            const id = info?.id
+            if (id) sessionProviders.delete(id)
+          } else if (type === "session.idle") {
+            const sessionID = data?.sessionID ?? info?.sessionID
+            if (!sessionID) continue
+            const summary = summarizeSpend(sessionID, now(), statePath)
+            if (summary) await showToast({ title: "Cost summary", message: summary, variant: "info" })
+          } else if (type === "message.updated") {
+            if (!info || info.role !== "assistant") continue
+            if (typeof info.cost !== "number" || !info.tokens) continue
+            const sessionID = info.sessionID
+            if (!sessionID) continue
+            if (countedMessages.has(info.id)) continue
+            countedMessages.add(info.id)
+            const provider = info.model?.providerID
+            trackProvider(sessionID, provider)
+            const plan = provider ? planForProvider(provider, plans) : undefined
+            recordSpend(
+              sessionID,
+              now(),
+              {
+                cost: info.cost,
+                tokens: {
+                  input: info.tokens.input ?? 0,
+                  output: info.tokens.output ?? 0,
+                  cacheRead: info.tokens.cache?.read ?? 0,
+                },
+              },
+              statePath,
+              plan,
+            )
+          }
+        }
+      } catch {
+        // event stream is best-effort bookkeeping
+      }
+    })()
+
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "peak_price_status",
+        description:
+          "Returns the current time-of-day pricing status (peak or off-peak) for a provider, " +
+          "with the off-peak discount ratio, the local off-peak hours and the local peak hours. " +
+          "Deterministic — call this instead of guessing the pricing when a user asks whether to " +
+          "postpone a heavy task.",
+        input: {
+          type: "object",
+          properties: { provider: { type: "string", description: "provider id (default: deepseek)" } },
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          const provider = (args.provider ?? "deepseek").toLowerCase()
+          const plan = planForProvider(provider, plans)
+          if (!plan) {
+            return { content: `provider "${provider}" has no time-of-day pricing plan; pricing is flat.` }
+          }
+          const windows = effectivePeakWindows(now(), plan)
+          const status = pricingStatus(now(), windows)
+          const ratio = ratioForPlan(plan)
+          const off = formatWindows(localOffpeakWindows(now(), windows))
+          const peak = formatWindows(localPeakWindows(now(), windows))
+          return {
+            content: JSON.stringify(
+              {
+                provider: displayName(provider),
+                status,
+                offPeakRatio: ratio,
+                offPeakPercentCheaper: Math.round((1 - ratio) * 100),
+                offPeakHoursLocal: off,
+                peakHoursLocal: peak,
+              },
+              null,
+              2,
+            ),
+          }
+        },
+      })
+    })
+  },
+
+  async server(input: any) {
+    return v1Factory(input)
+  },
 }

@@ -26,7 +26,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`codify-first`](./codify-first) | Meta-prompt plugin — injects a short intake directive (recurrence/stability/leverage gate) into the system prompt and ships the `codify-first` skill: check existing skills/agents, author the missing artifact into the project's `.opencode/`, then execute the task through it |
 
 `local-decide` is currently dormant: its backend is laya, whose `laya-mcp` service is installed but
-not auto-started, so the plugin is registered nowhere. Register `local-decide/opencode/index.ts`
+not auto-started, so the plugin is registered nowhere. Register `local-decide/opencode`
 (or its absolute path) once `systemctl --user start laya-mcp` is running. The rest of the plugins are
 opt-in per project.
 
@@ -47,27 +47,61 @@ Add to your project's `opencode.json`. **Order matters** — plugins are loaded 
 ```json
 {
   "plugin": [
-    "./llm-harness-plugins/guardrail-chain/opencode/index.ts",
-    "./llm-harness-plugins/session-lifecycle/opencode/index.ts",
-    "./llm-harness-plugins/agentmem/opencode/index.ts",
-    "./llm-harness-plugins/semantic-cache/opencode/index.ts",
-    "./llm-harness-plugins/tier-router/opencode/index.ts",
-    "./llm-harness-plugins/datetime-inject/opencode/index.ts",
-    "./llm-harness-plugins/agentinsights/opencode/index.ts",
-    "./llm-harness-plugins/knowledge-graph/opencode/index.ts",
-    "./llm-harness-plugins/graphrag/opencode/index.ts",
-    "./llm-harness-plugins/prompt-registry/opencode/index.ts",
-    "./llm-harness-plugins/typst-toolkit/opencode/index.ts",
-    "./llm-harness-plugins/latex-toolkit/opencode/index.ts",
-    "./llm-harness-plugins/general-skills/opencode/index.ts",
-    "./llm-harness-plugins/laya/opencode/index.ts",
-    "./llm-harness-plugins/clm/opencode/index.ts",
-    "./llm-harness-plugins/context-editing/opencode/index.ts",
-    "./llm-harness-plugins/premium-read-offload/opencode/index.ts",
-    "./llm-harness-plugins/sdlc-guardrails/opencode/index.ts"
+    "./llm-harness-plugins/guardrail-chain/opencode",
+    "./llm-harness-plugins/session-lifecycle/opencode",
+    "./llm-harness-plugins/agentmem/opencode",
+    "./llm-harness-plugins/semantic-cache/opencode",
+    "./llm-harness-plugins/tier-router/opencode",
+    "./llm-harness-plugins/datetime-inject/opencode",
+    "./llm-harness-plugins/agentinsights/opencode",
+    "./llm-harness-plugins/knowledge-graph/opencode",
+    "./llm-harness-plugins/graphrag/opencode",
+    "./llm-harness-plugins/prompt-registry/opencode",
+    "./llm-harness-plugins/typst-toolkit/opencode",
+    "./llm-harness-plugins/latex-toolkit/opencode",
+    "./llm-harness-plugins/general-skills/opencode",
+    "./llm-harness-plugins/laya/opencode",
+    "./llm-harness-plugins/clm/opencode",
+    "./llm-harness-plugins/context-editing/opencode",
+    "./llm-harness-plugins/premium-read-offload/opencode",
+    "./llm-harness-plugins/sdlc-guardrails/opencode"
   ]
 }
 ```
+
+> **Plugin paths are directories, not entry files.** OpenCode V2 rejects a file
+> path here (`configured plugin path must be a directory`); a directory loads
+> its `index.ts` and is accepted by V1 and V2 alike. Every plugin in this repo
+> keeps a single `opencode/index.ts` that exports `{ id, setup, server }`:
+> V2 calls `setup(ctx)`, V1 calls `server(input)`, so one file serves both.
+
+### Register plugin agents
+
+Agent files under `<plugin>/agents/` are **not** auto-discovered — the plugin
+directory is not a location OpenCode scans for agents, so a plugin that spawns
+`opencode run --agent <name>` (agentmem's `memory-keeper`/`memory-dreamer`, for
+example) fails with `Session.AgentNotFoundError` until the name resolves.
+Symlink them into the global agent directory, which every version in use
+discovers:
+
+```bash
+./install-agents.sh                      # default allowlist: agentmem
+OPENCODE_AGENT_PLUGINS="agentmem ivp" ./install-agents.sh
+./install-agents.sh --dry-run            # preview
+```
+
+Only allowlisted plugins are linked, on purpose: an agent file the oldest client
+in use cannot validate makes that client refuse to start. Linking every plugin
+agent at once broke JetBrains' bundled opencode 1.18.25, which aborted with
+`Configuration is invalid at ~/.config/opencode/agent/typst-syntax-fixer.md` (a
+legacy `tools:` frontmatter file that V2 normalizes but 1.18.x rejects). Add
+plugins one at a time and confirm each client still starts.
+
+The symlinks keep the repo file as the single source of truth, so editing an
+agent's frontmatter (`mode`, `steps`, `permission`) takes effect without
+re-running the script. Re-running is safe and self-pruning: links into this repo
+that the allowlist no longer covers are removed, and a real file in the
+destination is never overwritten.
 
 | # | Plugin | Must load before... | Reason |
 |---|--------|--------------------|--------|
@@ -151,8 +185,8 @@ messages. To force the old always-inject behavior for a code-only project, pass
 ```json
 {
   "plugin": [
-    "./llm-harness-plugins/agentmem/opencode/index.ts",
-    "./llm-harness-plugins/datetime-inject/opencode/index.ts"
+    "./llm-harness-plugins/agentmem/opencode",
+    "./llm-harness-plugins/datetime-inject/opencode"
   ]
 }
 ```
@@ -218,7 +252,7 @@ Plugins without agents: `guardrail-chain`, `semantic-cache`, `semantic-router`, 
 ### Direct copy
 
 ```bash
-cp llm-harness-plugins/agentmem/opencode/index.ts .opencode/plugins/agentmem.ts
+cp llm-harness-plugins/agentmem/opencode .opencode/plugins/agentmem.ts
 ```
 
 Auto-loaded on startup — no `opencode.json` change needed.
@@ -251,6 +285,7 @@ llm-harness-plugins/
 │   └── src/main/java/eu/infolead/llmhp/memory/
 │       └── ...                ← Java core
 ├── build.sh
+├── install-agents.sh            ← links <plugin>/agents/*.md into ~/.config/opencode/agent/
 ├── opencode.json.sample
 └── README.md
 ```

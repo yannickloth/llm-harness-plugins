@@ -405,7 +405,10 @@ function buildLeanRewrite(result: {
   return lines.join("\n")
 }
 
-export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint.
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client, directory, worktree }) => {
   writeLoadCanary("tier-router")
   const logger = createLogger(client, "tier-router")
   logger.info("plugin active — 3 tools + prompt-annotation hook (chat.message)")
@@ -517,4 +520,122 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       }),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint. Differences from v1:
+//   - object default (`setup`) instead of a callable; v1 is served by `server`;
+//   - no `client` — logging goes to stderr (a console logger stands in for
+//     createLogger, which needs the v1 app-log client);
+//   - `chat.message` → `ctx.session.hook("prompt")`, which exposes the user
+//     text as `event.prompt.text` and takes a replacement by assignment (the
+//     same contract datetime-inject's v2 port uses);
+//   - the tool map → `ctx.tool.transform` with JSON Schema inputs and
+//     structured `{ content }` results.
+// The annotation path is opt-in (TIER_ROUTER_ANNOTATE=1) and spawns a child
+// opencode for classification, so the prompt hook is async; if the host does
+// not await hook callbacks the message is simply left unannotated.
+// ---------------------------------------------------------------------------
+function consoleLogger(service: string) {
+  return {
+    debug: (_m: string) => {},
+    info: (m: string) => console.error(`[${service}] ${m}`),
+    warn: (m: string) => console.error(`[${service}] WARN ${m}`),
+    error: (m: string) => console.error(`[${service}] ERROR ${m}`),
+  }
+}
+
+export default {
+  id: "tier-router",
+
+  async setup(ctx: any) {
+    writeLoadCanary("tier-router")
+    const logger = consoleLogger("tier-router")
+    const classifyDataDir = prepareClassifyDataDir(logger)
+
+    // Bounded dedup of already-annotated messages (same intent as v1's Map).
+    const rewritten = new Map<string, true>()
+    const REWRITTEN_MAX = 10_000
+    function markRewritten(key: string): void {
+      if (rewritten.has(key)) return
+      rewritten.set(key, true)
+      if (rewritten.size > REWRITTEN_MAX) {
+        const oldest = rewritten.keys().next().value
+        if (oldest !== undefined) rewritten.delete(oldest)
+      }
+    }
+
+    await ctx.session.hook("prompt", async (event: any) => {
+      if (process.env[NO_SUBSPAWN_ENV] === "1") return
+      const text: string | undefined = event?.prompt?.text
+      if (!text || !text.trim()) return
+      if (process.env[ANNOTATE_ENV] !== "1") return
+
+      const key: string = event?.messageID ?? event?.prompt?.messageID ?? `${event?.sessionID ?? "?"}:${text.slice(0, 64)}`
+      if (rewritten.has(key)) return
+
+      const result = await classifyPrompt(classifyDataDir, text)
+      if (result.failed) return
+      markRewritten(key)
+      logger.info(`annotate ${JSON.stringify({ sessionID: event?.sessionID, tier: result.tier, confidence: result.confidence })}`)
+
+      event.prompt.text = process.env[LEAN_ENV] === "1" ? buildLeanRewrite(result) : buildPromptContext(result)
+    })
+
+    await ctx.tool.transform((editor: any) => {
+      const schema = (properties: Record<string, unknown>, required: string[] = []) => ({
+        type: "object",
+        properties,
+        required,
+        additionalProperties: false,
+      })
+
+      editor.add({
+        name: "classify-prompt",
+        description: "Classify a prompt string into a reasoning tier (fable/haiku/sonnet/opus) with rewritten prompt. Use to test routing without executing.",
+        input: schema({ prompt: { type: "string", description: "The user prompt to classify" } }, ["prompt"]),
+        async execute(args: any) {
+          if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Classification disabled in subprocess." }
+          const result = await classifyPrompt(classifyDataDir, args.prompt)
+          return { content: JSON.stringify(result, null, 2) }
+        },
+      })
+
+      editor.add({
+        name: "rewrite-prompt",
+        description: "Rewrite a prompt for a specific tier with SOTA prompt engineering criteria (conciseness, clarity, uncertainty permission, output format).",
+        input: schema({
+          prompt: { type: "string", description: "The prompt to rewrite" },
+          tier: { type: "string", enum: ["fable", "haiku", "sonnet", "opus"], default: "sonnet", description: "Target reasoning tier" },
+        }, ["prompt"]),
+        async execute(args: any) {
+          if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Rewrite disabled in subprocess." }
+          const result = await safeSpawn(
+            ["java", "--class-path", classpath, mainClass, "rewrite", args.tier ?? "sonnet"],
+            { input: args.prompt, env: routerEnv },
+          )
+          return { content: result.stdout.trim() }
+        },
+      })
+
+      editor.add({
+        name: "check-ambiguity",
+        description: "Check if a prompt is ambiguous and needs user clarification. Returns clarification questions if so.",
+        input: schema({ prompt: { type: "string", description: "The user prompt to check" } }, ["prompt"]),
+        async execute(args: any) {
+          if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Ambiguity check disabled in subprocess." }
+          const questions = await checkAmbiguity(args.prompt)
+          return {
+            content: questions
+              ? `⚠️ Ambiguous request detected. Clarification needed:\n\n${questions}`
+              : "✓ Prompt is unambiguous.",
+          }
+        },
+      })
+    })
+  },
+
+  async server(input: any) {
+    return v1Factory(input)
+  },
 }

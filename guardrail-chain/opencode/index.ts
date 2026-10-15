@@ -15,7 +15,11 @@ function java(args: string[]): Promise<{ stdout: string; stderr: string; exitCod
   return $`${allArgs}`.nothrow().quiet()
 }
 
-export default async ({ project, client, $_, directory, worktree }: Parameters<Plugin>[0]) => {
+// ---------------------------------------------------------------------------
+// OpenCode v1 entrypoint (legacy function form). v1 loaders call this factory
+// with the plugin input and read the returned hook map.
+// ---------------------------------------------------------------------------
+const v1Factory = async ({ project, client, $_, directory, worktree }: Parameters<Plugin>[0]) => {
   writeLoadCanary("guardrail-chain")
   const logger = createLogger(client, "guardrail-chain")
   logger.info("plugin active — 4 tools (scan-secrets, check-injection, check-path, transcript-filter)")
@@ -88,4 +92,95 @@ export default async ({ project, client, $_, directory, worktree }: Parameters<P
       } catch (_) {}
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// OpenCode v2 entrypoint (docs/build/plugins/migrate-v1). v2 loads `id` +
+// `setup(ctx)`; tools move from a `tool` map to ctx.tool.transform with JSON
+// Schema inputs, and execute returns structured content.
+// ---------------------------------------------------------------------------
+const str = (description: string) => ({ type: "string", description })
+
+export default {
+  id: "guardrail-chain",
+  async setup(ctx: any) {
+    writeLoadCanary("guardrail-chain")
+    const root = (ctx.location?.project?.canonical ?? ctx.location?.directory) as string
+
+    const javaText = (args: string[]) =>
+      $`${["java", "--class-path", classesDir, mainClass, ...args]}`.nothrow().text().then((t: string) => t.trim())
+
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "scan-secrets",
+        description:
+          "Scan text for hardcoded secrets before writing to disk. Detects API keys, tokens, PEM headers, AWS keys, GitHub tokens, Slack tokens.",
+        input: { type: "object", properties: { content: str("Content to scan for secrets") }, required: ["content"], additionalProperties: false },
+        async execute(input: { content: string }) {
+          return { content: await javaText(["scan-secrets", input.content]) }
+        },
+      })
+
+      editor.add({
+        name: "check-injection",
+        description:
+          "Check a prompt or text for potential injection patterns (ignore previous instructions, DAN, pretend, system override).",
+        input: { type: "object", properties: { prompt: str("Prompt or text to check for injection patterns") }, required: ["prompt"], additionalProperties: false },
+        async execute(input: { prompt: string }) {
+          return { content: await javaText(["check-injection", input.prompt]) }
+        },
+      })
+
+      editor.add({
+        name: "check-path",
+        description:
+          "Validate that a file path is safe — no symlink traversal, contained within directory, not a protected file.",
+        input: {
+          type: "object",
+          properties: { target: str("Target file path to check"), containment: str("Directory the path must be contained within") },
+          required: ["target", "containment"],
+          additionalProperties: false,
+        },
+        async execute(input: { target: string; containment: string }) {
+          return { content: await javaText(["check-path", input.target, input.containment]) }
+        },
+      })
+
+      editor.add({
+        name: "transcript-filter",
+        description:
+          "Strip assistant-role messages from a transcript JSON array before feeding to a secondary LLM. Prevents prompt injection via assistant-controlled text.",
+        input: { type: "object", properties: { transcript: str("JSON transcript array of messages with role+content fields") }, required: ["transcript"], additionalProperties: false },
+        async execute(input: { transcript: string }) {
+          return { content: await javaText(["transcript-filter", input.transcript]) }
+        },
+      })
+    })
+
+    // v1 also auto-scans files on the `file.edited` hook. v2 has no file.edited
+    // equivalent; the closest is tool.execute.after. Field names vary, so this
+    // is best-effort and only reports (the v1 hook only logged too).
+    await ctx.tool.hook("execute.after", async (event: any) => {
+      const t = event?.tool ?? event?.name
+      if (t !== "write" && t !== "edit") return
+      const file = event?.input?.filePath ?? event?.input?.file_path ?? event?.args?.filePath
+      if (typeof file !== "string") return
+      const absPath = path.isAbsolute(file) ? file : path.resolve(root, file)
+      if (!existsSync(absPath) || !statSync(absPath).isFile()) return
+      if (readFileSync(absPath, "utf-8").length > 100000) return
+      const result = await $`java --class-path ${classesDir} ${mainClass} output-filter --`.nothrow().text()
+      try {
+        const parsed = JSON.parse(result)
+        if (parsed.blocked) {
+          for (const block of parsed.blocks) {
+            // eslint-disable-next-line no-console
+            console.error(`guardrail-chain: SECRET DETECTED in edited file ${file}: ${block.source} - ${block.message}`)
+          }
+        }
+      } catch (_) {}
+    })
+  },
+  async server(input: any) {
+    return v1Factory(input)
+  },
 }

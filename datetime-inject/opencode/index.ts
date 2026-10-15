@@ -32,7 +32,7 @@ function resolvedFlags(opts: InjectOptions): Flags {
   return { ...DEFAULT_FLAGS, ...(opts.flags ?? {}) }
 }
 
-export default async (
+const v1Factory = async (
   { client, worktree, directory }: Parameters<Plugin>[0],
   options: InjectOptions = {},
 ) => {
@@ -89,4 +89,57 @@ export default async (
       output.system = [ctx, ...output.system]
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// OpenCode v2 entrypoint (docs/build/plugins/migrate-v1). Loaders differ: v1
+// calls `server(input)` (the legacy factory above); v2 loads `id` + `setup(ctx)`
+// and registers the same behavior through session hooks. v2 hook shapes were
+// verified against opencode 2.0.29: prompt = {sessionID, prompt:{text,...}} and
+// context = {sessionID, system:[{type,text}], ...}.
+// ---------------------------------------------------------------------------
+export default {
+  id: "datetime-inject",
+  async setup(ctx: any) {
+    writeLoadCanary("datetime-inject")
+    const root: string = ctx.location?.project?.canonical ?? ctx.location?.directory
+    const options: InjectOptions = (ctx.options ?? {}) as InjectOptions
+    const flags = resolvedFlags(options)
+    const injectIntoUserMessage = options.injectIntoUserMessage ?? true
+    const injectIntoSystem = options.injectIntoSystem ?? true
+    const injectDatetimePerMessage = options.injectDatetimePerMessage ?? true
+    const topicGate = options.topicGate ?? true
+    const seenSession = new Set<string>()
+
+    await ctx.session.hook("prompt", (event: any) => {
+      if (!injectIntoUserMessage || !injectDatetimePerMessage) return
+      const text: string | undefined = event.prompt?.text
+      if (!text || !text.trim()) return
+      updateSessionTopic(event.sessionID, text)
+      if (topicGate && !shouldInjectProjectContext(event.sessionID)) return
+      if (!seenSession.has(event.sessionID)) {
+        seenSession.add(event.sessionID)
+        return
+      }
+      const c = buildPerMessageContext(flags)
+      if (!c) return
+      event.prompt.text = `${c}\n\n${text}`
+    })
+
+    await ctx.session.hook("context", (event: any) => {
+      if (!injectIntoSystem) return
+      const sid: string | undefined = event.sessionID
+      if (topicGate && sid && getSessionTopic(sid) === "personal") return
+      const parts: Array<{ type: string; text: string }> = Array.isArray(event.system) ? event.system : []
+      if (hasAnyMarker(parts.map(p => p.text))) return
+      const c = injectDatetimePerMessage
+        ? buildStaticContext(root, flags)
+        : buildSessionContext(root, flags)
+      if (!c) return
+      event.system = [{ type: "text", text: c }, ...parts]
+    })
+  },
+  async server(input: any) {
+    return v1Factory(input)
+  },
 }
