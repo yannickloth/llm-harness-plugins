@@ -14,8 +14,12 @@ import { join } from "path"
  *
  * Returns the number of skills registered. Duplicate ids are ignored by the
  * host; failures on individual entries never abort the others.
+ *
+ * Synchronous on purpose: V2 transforms must edit domain state synchronously in
+ * the callback (the runtime ignores a returned promise), and the draft's `add`
+ * is synchronous, so there is no async work to await here.
  */
-export async function registerSkillDir(editor: any, dir: string): Promise<number> {
+export function registerSkillDir(editor: any, dir: string): number {
   if (!dir || !existsSync(dir)) return 0
   let registered = 0
   for (const entry of readdirSync(dir)) {
@@ -24,7 +28,7 @@ export async function registerSkillDir(editor: any, dir: string): Promise<number
     const raw = readFileSync(skillFile, "utf8")
     const { name, description } = parseFrontmatter(raw)
     try {
-      await editor.add({
+      editor.add({
         id: entry,
         name: name ?? entry,
         description: description ?? "",

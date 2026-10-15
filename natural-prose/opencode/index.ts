@@ -3,6 +3,7 @@ import fs from "fs"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { registerSkillDir } from "../../shared/v2-skills"
 import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
@@ -22,7 +23,10 @@ function skillCount(dir: string): number {
     }).length
 }
 
-export default async ({ client }: Parameters<Plugin>[0]) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint.
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client }) => {
   writeLoadCanary("natural-prose")
   const logger = createLogger(client, "natural-prose")
   const count = skillCount(skillsDir)
@@ -49,4 +53,36 @@ export default async ({ client }: Parameters<Plugin>[0]) => {
       },
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 has no config hook (skills → `ctx.skill.transform`)
+// and the tool map becomes `ctx.tool.transform` with a JSON Schema input.
+// ---------------------------------------------------------------------------
+export default {
+  id: "natural-prose",
+
+  async setup(ctx: any) {
+    writeLoadCanary("natural-prose")
+    await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "naturalize-analyzer-path",
+        description:
+          "Resolve the absolute path to the deterministic prose analyzer (ProsePatternAnalyzer.java). Returns 'NOT FOUND: <path>' if the file is missing. Use this instead of hardcoding or searching for the analyzer path.",
+        input: { type: "object", properties: {}, additionalProperties: false },
+        async execute() {
+          const p = analyzerPath()
+          if (fs.existsSync(p)) return { content: p }
+          return { content: `NOT FOUND: ${p}` }
+        },
+      })
+    })
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
 }

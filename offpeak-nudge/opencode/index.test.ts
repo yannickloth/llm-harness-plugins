@@ -106,7 +106,7 @@ describe("offpeak-nudge weekend policy", () => {
 
   test("peak_price_status reports off-peak during Beijing weekend even in normal peak window", async () => {
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -124,7 +124,7 @@ describe("offpeak-nudge weekend policy", () => {
 
   test("chat.message does not banner during Beijing weekend", async () => {
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -292,7 +292,7 @@ describe("offpeak-nudge banner", () => {
 describe("offpeak-nudge plugin hooks", () => {
   async function loadHooks(opts: Record<string, unknown> = {}) {
     const mod = await import(`./index.ts?${Date.now()}`)
-    return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, opts)
+    return (mod.default as any).server({ directory: REPO_ROOT, worktree: REPO_ROOT }, opts)
   }
 
   test("registers both hooks", async () => {
@@ -328,7 +328,7 @@ describe("offpeak-nudge plugin hooks", () => {
   test("session.created shows pricing toast only for a session already using a plan provider", async () => {
     const shown: unknown[] = []
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -366,7 +366,7 @@ describe("offpeak-nudge plugin hooks", () => {
   test("server.connected shows no neutral toast (nudges are provider-scoped)", async () => {
     const shown: unknown[] = []
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -406,7 +406,7 @@ describe("offpeak-nudge plugin hooks", () => {
     const stateFile = path.join(stateDir, "state.json")
     const shown: unknown[] = []
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -456,7 +456,7 @@ describe("offpeak-nudge plugin hooks", () => {
     // 08:00 UTC Wed → zai peak (06–10 UTC, weekday in UTC+8).
     const mod = await import(`./index.ts?${Date.now()}`)
     const t = { v: new Date("2026-09-09T02:00:00Z") }
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -526,7 +526,7 @@ describe("offpeak-nudge plugin hooks", () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
     const stateFile = path.join(stateDir, "state.json")
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -559,7 +559,7 @@ describe("offpeak-nudge plugin hooks", () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
     const stateFile = path.join(stateDir, "state.json")
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -584,7 +584,7 @@ describe("offpeak-nudge plugin hooks", () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
     const stateFile = path.join(stateDir, "state.json")
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -622,7 +622,7 @@ describe("offpeak-nudge plugin hooks", () => {
   test("non-time-of-day provider gets no banner during peak", async () => {    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-hook-"))
     const stateFile = path.join(stateDir, "state.json")
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -687,7 +687,7 @@ describe("offpeak-nudge plugin hooks", () => {
 
   test("registers peak_price_status tool returning deterministic status", async () => {
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -706,7 +706,7 @@ describe("offpeak-nudge plugin hooks", () => {
   test("peak_price_status returns correct off-peak and peak hours in both states", async () => {
     const mkHooks = (now: Date) =>
       import(`./index.ts?${Date.now()}`).then(mod =>
-        mod.default(
+        (mod.default as any).server(
           {
             directory: REPO_ROOT,
             worktree: REPO_ROOT,
@@ -768,7 +768,7 @@ describe("offpeak-nudge cost tracking", () => {
   test("event message.updated records spend for assistant messages", async () => {
     const stateFile = path.join(stateDir, "state.json")
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -796,7 +796,7 @@ describe("offpeak-nudge cost tracking", () => {
   test("message.updated double-emit for the same message is counted once", async () => {
     const stateFile = path.join(stateDir, "state.json")
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,
@@ -828,7 +828,7 @@ describe("offpeak-nudge cost tracking", () => {
     const stateFile = path.join(stateDir, "state.json")
     const shown: unknown[] = []
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default(
+    const hooks = await (mod.default as any).server(
       {
         directory: REPO_ROOT,
         worktree: REPO_ROOT,

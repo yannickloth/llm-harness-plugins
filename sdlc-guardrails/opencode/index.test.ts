@@ -22,7 +22,7 @@ describe("sdlc-guardrails", () => {
   test("opencode shim registers hooks and tools", async () => {
     const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
     expect(mod.default).toBeDefined()
-    const result = await mod.default({
+    const result = await (mod.default as any).server({
       directory: "/tmp/test",
       worktree: undefined,
     })

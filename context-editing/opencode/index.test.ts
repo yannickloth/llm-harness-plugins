@@ -20,7 +20,7 @@ afterEach(() => {
 async function load(opts: Record<string, unknown> = {}): Promise<Handlers> {
   const mod = await import("./index.ts")
   const client = { app: { log: async () => {} } }
-  return (mod.default as any)({ client, directory: root, worktree: root }, opts)
+  return (mod.default as any).server({ client, directory: root, worktree: root }, opts)
 }
 
 function stripBlock(md: string, id: string): string {

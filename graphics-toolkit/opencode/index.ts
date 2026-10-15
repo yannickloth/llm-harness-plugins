@@ -1,6 +1,7 @@
 import { type Config, type Plugin, tool } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { registerSkillDir } from "../../shared/v2-skills"
 import { $ } from "bun"
 import fs from "fs"
 import path from "path"
@@ -35,7 +36,10 @@ async function runJava(toolClass: string, args: string[]): Promise<string> {
   return result.stdout().trim()
 }
 
-export default async ({ client }: Parameters<Plugin>[0]) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint.
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client }) => {
   writeLoadCanary("graphics-toolkit")
   const logger = createLogger(client, "graphics-toolkit")
   const count = skillCount(skillsDir)
@@ -116,4 +120,134 @@ export default async ({ client }: Parameters<Plugin>[0]) => {
       }),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 has no config hook (skills → `ctx.skill.transform`)
+// and the tool map becomes `ctx.tool.transform` with JSON Schema inputs.
+// ---------------------------------------------------------------------------
+const str = (description: string) => ({ type: "string", description })
+const fileArg = str("Path to the .html or .svg file to verify")
+
+export default {
+  id: "graphics-toolkit",
+
+  async setup(ctx: any) {
+    writeLoadCanary("graphics-toolkit")
+    await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "svg-selfcheck",
+        description:
+          "Deterministic gate on a generated diagram/HTML/SVG artifact: accessible-SVG contract, single-file safety, allowlisted remote URLs, no executable attrs/scripts. Run on any generated SVG/HTML before shipping.",
+        input: {
+          type: "object",
+          properties: { filePath: fileArg },
+          required: ["filePath"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          return { content: await runJava("GraphicsSvgCheck", [args.filePath]) }
+        },
+      })
+
+      editor.add({
+        name: "svg-geometry",
+        description:
+          "Deterministic geometry gate: 4px-grid compliance on rect node boxes and viewBox sanity. Chart/text primitives are exempt. Run on generated SVG/HTML.",
+        input: {
+          type: "object",
+          properties: { filePath: fileArg },
+          required: ["filePath"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          return { content: await runJava("GraphicsGeometryCheck", [args.filePath]) }
+        },
+      })
+
+      editor.add({
+        name: "svg-motion",
+        description:
+          "Deterministic motion-contract gate: motion mode, step budget, reduced-motion + print fallbacks, control/status structure. Run on motion-enabled SVG/HTML.",
+        input: {
+          type: "object",
+          properties: { filePath: fileArg },
+          required: ["filePath"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          return { content: await runJava("GraphicsMotionCheck", [args.filePath]) }
+        },
+      })
+
+      editor.add({
+        name: "graphics-export",
+        description:
+          "Export a diagram HTML to a standalone SVG and compute PNG rasterization sizing from the viewBox x scale. Never hand-author SVG; generate HTML first.",
+        input: {
+          type: "object",
+          properties: {
+            filePath: str("Path to the .html source"),
+            out: str("Optional output .svg path"),
+            scale: { type: "number", description: "PNG device_scale_factor (default 2)" },
+          },
+          required: ["filePath"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          const cli = [args.filePath]
+          if (args.out) cli.push("--out", args.out)
+          if (args.scale) cli.push("--scale", String(args.scale))
+          return { content: await runJava("GraphicsExport", cli) }
+        },
+      })
+
+      editor.add({
+        name: "drawio-extract",
+        description:
+          "Extract a normalized IR digest from a draw.io file (nodes/edges/containers/hubs/budget/type candidates). Untrusted-data safe: never executes or follows source content.",
+        input: {
+          type: "object",
+          properties: {
+            filePath: str("Path to the .drawio file"),
+            page: str("Page index, name, or 'all'"),
+          },
+          required: ["filePath"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          const cli = [args.filePath]
+          if (args.page) cli.push("--page", args.page)
+          return { content: await runJava("DrawioExtract", cli) }
+        },
+      })
+
+      editor.add({
+        name: "mermaid-extract",
+        description:
+          "Extract a normalized IR digest from a Mermaid source (nodes/edges/containers/budget/type candidates). Untrusted-data safe: never evaluates, renders, or executes source.",
+        input: {
+          type: "object",
+          properties: {
+            filePath: str("Path to the .mmd/.mermaid file"),
+            diagram: str("Diagram index, or 'all'"),
+          },
+          required: ["filePath"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          const cli = [args.filePath]
+          if (args.diagram) cli.push("--diagram", args.diagram)
+          return { content: await runJava("MermaidExtract", cli) }
+        },
+      })
+    })
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
 }

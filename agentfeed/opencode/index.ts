@@ -16,6 +16,7 @@ import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import { updateSessionTopic, shouldInjectProjectContext, getSessionTopic } from "../../shared/session-topic"
 import { moduleDir } from "../../shared/module-dir"
 import { writeLoadCanary } from "../../shared/load-canary"
+import { registerSkillDir } from "../../shared/v2-skills"
 
 export type AgentfeedOptions = {
   ledgerDir?: string
@@ -73,10 +74,13 @@ Typical use:
 
 Full guidance: use the 'coordinate' skill for the complete coordination protocol.`
 
-export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], options: AgentfeedOptions = {}) => {
-  writeLoadCanary("agentfeed")
-  const logger: PluginLogger = createLogger(client, "agentfeed")
-  const root = worktree ?? directory
+// ---------------------------------------------------------------------------
+// Engine shared by both entrypoints: paths, ledger I/O, digest injection,
+// auto-resource detection, and every coord tool's logic. The v1 and v2
+// entrypoints differ only in how they expose hooks and tools, so both build one
+// engine and wire their own surface around it.
+// ---------------------------------------------------------------------------
+function createEngine(logger: PluginLogger, root: string, options: AgentfeedOptions) {
   const ledgerDir = options.ledgerDir ?? path.join(root, "agentfeed")
   const ledgerFile = path.join(ledgerDir, "ledger.jsonl")
   const lockFile = path.join(ledgerDir, ".ledger.lock")
@@ -103,6 +107,9 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
   const mainClass = "eu.infolead.llmhp.agentfeed.AtomCli"
   const skillFile = path.join(dir, "..", "skills", "coordinate", "SKILL.md")
   const skillName = skillNameFrom(skillFile)
+  const skillsDir = path.join(dir, "..", "skills")
+  /** First line of the coordination note — its presence marks an injected note. */
+  const noteMarker = SYSTEM_NOTE.split("\n")[0]
 
   logger.info(`plugin active — ledger: ${ledgerFile}; live feeds: ${liveFeeds}; autoGit: ${autoGit}; autoFile: ${autoFile}; topic gate: ${topicGate}`)
 
@@ -205,13 +212,333 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
     await publish(resourceEntry(agent, a))
   }
 
+  /**
+   * Inspect one user prompt: record the session's agent and topic, and when the
+   * ledger has new entries the caller has not seen, return the digest pointer to
+   * prepend to the prompt (null = leave the prompt untouched).
+   */
+  async function onPrompt(sessionID: string, agent: string | undefined, text: string | undefined): Promise<string | null> {
+    try {
+      const agentName = agent ?? "default"
+      agentBySession.set(sessionID, agentName)
+      if (text) updateSessionTopic(sessionID, text)
+      if (topicGate && !shouldInjectProjectContext(sessionID)) return null
+      if (!seenSessions.has(sessionID)) {
+        seenSessions.add(sessionID)
+        return null
+      }
+      if (!text || !text.trim()) return null
+      const wmPath = watermarkPath(ledgerDir, sessionID, agentName)
+      const wm = await wmStore.read(wmPath)
+      const entries = entriesNewerThan(await ledger.read(ledgerFile), wm)
+      if (entries.length === 0) return null
+      const digest = buildDigest(entries, { maxEntries: maxDigestEntries })
+      if (!digest) return null
+      // Keep the chat window lean: persist the full digest to a markdown file
+      // and prepend only a one-line pointer. The model reads the file if it
+      // needs the details (mirrors the lazy-loaded AGENTS.md rule pattern).
+      try {
+        fs.mkdirSync(path.dirname(digestFile), { recursive: true })
+        fs.writeFileSync(digestFile, digest + "\n")
+      } catch (writeErr: any) {
+        logger.warn(`digest write failed: ${writeErr?.message ?? String(writeErr)}`)
+      }
+      const relPath = path.relative(root, digestFile)
+      // Advance watermark to the true last new entry (even if digest truncated)
+      await wmStore.write(wmPath, watermarkAfter(entries))
+      return `## Coordination digest\n${entries.length} new entr${entries.length === 1 ? "y" : "ies"} — details in \`${relPath}\`.\n\n${text}`
+    } catch (e: any) {
+      logger.error(`chat.message failed: ${e?.message ?? String(e)}`)
+      return null
+    }
+  }
+
+  /** True when a system prompt already carries the coordination note. */
+  function notePresent(texts: string[]): boolean {
+    if (!Array.isArray(texts)) return false
+    return texts.some((s) => (s ?? "").includes(noteMarker))
+  }
+
+  /** Auto-publish the shared-resource activity of a completed tool call. */
+  async function onToolAfter(toolName: string, sessionID: string, args?: Record<string, unknown>): Promise<void> {
+    try {
+      const a = detectActivity({ tool: toolName, args })
+      if (!a) return
+      const agent = agentBySession.get(sessionID) ?? "default"
+      await autoPublishActivity(agent, a)
+    } catch (e: any) {
+      logger.error(`tool.execute.after (auto resource) failed: ${e?.message ?? String(e)}`)
+    }
+  }
+
+  // ── coord tools (shared by the v1 tool map and the v2 tool editor) ─────────
+
+  async function coordResource(
+    agent: string,
+    args: { resource: "git" | "file"; name: string; action: "acquire" | "release" },
+  ): Promise<string> {
+    // Explicit acquires get the same default hold TTL as auto-acquires so a
+    // hold is always reclaimable after expiry (no permanent locks on crash).
+    const lease = args.action === "acquire"
+      ? new Date(Date.now() + resourceLeaseMs).toISOString()
+      : undefined
+    const entry = {
+      agent,
+      type: "resource" as const,
+      resource: args.resource,
+      file: args.resource === "file" ? args.name : undefined,
+      ref: args.resource === "git" ? args.name : undefined,
+      action: args.action,
+      lease,
+      task: args.action === "acquire" ? (args.resource === "git" ? "git hold" : "file hold") : undefined,
+    }
+    const e = await publish(entry)
+    return args.action === "acquire"
+      ? `Acquired ${args.resource} "${args.name}" (${e.id}) — release it when done`
+      : `Released ${args.resource} "${args.name}" (${e.id}) — now free`
+  }
+
+  async function coordHandoff(agent: string, task: string, to: string): Promise<string> {
+    const now = Date.now()
+    const lease = new Date(now + 30 * 60_000).toISOString()
+    // Close own claim on the task (if any) and open one for the target.
+    await publish({
+      agent,
+      type: "release",
+      task,
+    })
+    const e = await publish({
+      agent: to,
+      type: "claim",
+      task,
+      status: "open",
+      lease,
+      target: agent,
+    })
+    return `Handed "${task}" to ${to} (${e.id}); they should coord_claim it to accept`
+  }
+
+  async function coordStatus(agent: string, task: string, state: "done" | "failed" | "in-progress"): Promise<string> {
+    const e = await publish({
+      agent,
+      type: "status",
+      task,
+      status: state,
+    })
+    return `Marked "${task}" ${state} (${e.id})`
+  }
+
+  async function coordHeartbeat(
+    agent: string,
+    args: { task?: string; resource?: string; kind?: "git" | "file" },
+  ): Promise<string> {
+    if (!args.task && !args.resource) {
+      return "coord_heartbeat requires 'task' or 'resource'."
+    }
+    const lease = new Date(Date.now() + 30 * 60_000).toISOString()
+    if (args.resource) {
+      // Renew a held resource by re-publishing its acquire with a fresh lease.
+      const kind = args.kind ?? "git"
+      const e = await publish({
+        agent,
+        type: "resource",
+        resource: kind,
+        file: kind === "file" ? args.resource : undefined,
+        ref: kind === "git" ? args.resource : undefined,
+        action: "acquire",
+        lease,
+        task: kind === "file" ? "file hold" : "git hold",
+      })
+      return `Renewed hold on "${args.resource}" until ${lease} (${e.id})`
+    }
+    const e = await publish({
+      agent,
+      type: "claim",
+      task: args.task,
+      status: "in-progress",
+      lease,
+    })
+    return `Renewed lease on "${args.task}" until ${lease} (${e.id})`
+  }
+
+  async function coordLog(agent: string, type: "msg" | "status", text: string): Promise<string> {
+    await publish({
+      agent,
+      type,
+      text,
+    })
+    return `Logged ${type}: ${text}`
+  }
+
+  async function coordClaim(agent: string, task: string, leaseMinutes?: number): Promise<string> {
+    const lease = new Date(Date.now() + (leaseMinutes ?? 30) * 60_000).toISOString()
+    const e = await publish({
+      agent,
+      type: "claim",
+      task,
+      status: "open",
+      lease,
+    })
+    return `Claimed "${task}" as ${e.id} (lease until ${lease})`
+  }
+
+  async function coordRelease(agent: string, task?: string, id?: string): Promise<string> {
+    if (!task && !id) {
+      return "coord_release requires either 'task' or 'id'."
+    }
+    const e = await publish({
+      agent,
+      type: "release",
+      task,
+      taskID: id,
+    })
+    return `Released ${id ?? `"${task}"`} (${e.id})`
+  }
+
+  async function whoDoesWhat(): Promise<string> {
+    const entries = await ledger.read(ledgerFile)
+    const now = Date.now()
+    const open = dedupeClaims(
+      entries.filter(
+        (e) =>
+          e.type === "claim" &&
+          (e.status === "open" || e.status === "in-progress") &&
+          !leaseExpired(e.lease, now),
+      ),
+    )
+    // A claim by an agent is closed only if THAT agent released the same task
+    // with a position newer than the claim. A release by a different agent does
+    // not free another's claim — those are competing claims, both still open.
+    // (Renewals/handoffs create newer claims for the same agent, which are kept.)
+    const live = open.filter((c) => {
+      const laterReleaseByOwner = entries.some(
+        (e) =>
+          e.type === "release" &&
+          e.agent === c.agent &&
+          (e.task ?? e.taskID ?? "") === (c.task ?? c.taskID ?? "") &&
+          (e.ts > c.ts || (e.ts === c.ts && e.seq > c.seq)),
+      )
+      return !laterReleaseByOwner
+    })
+    const held = heldResources(entries, now)
+    const lines: string[] = []
+    if (live.length > 0) {
+      lines.push("Open claims:")
+      for (const e of live) {
+        lines.push(`- ${e.id}: ${e.agent} claims "${e.task ?? ""}" (lease until ${e.lease ?? "?"})`)
+      }
+    }
+    if (held.length > 0) {
+      lines.push("Held resources:")
+      for (const r of held) {
+        lines.push(`- ${r.id}: ${r.agent} holds ${r.resource} "${r.label}" (acquired ${r.ts})`)
+      }
+    }
+    if (lines.length === 0) return "No open claims or held resources."
+    return lines.join("\n")
+  }
+
+  async function coordCompact(retentionMs?: number): Promise<string> {
+    const prevRetention = compactRetentionMs
+    if (retentionMs && retentionMs > 0) {
+      compactRetentionMs = retentionMs
+    }
+    try {
+      const r = await compact()
+      const parts: string[] = []
+      if (r.archived > 0) parts.push(`archived ${r.archived} settled to ${path.join(".agentfeed", "ledger-archive")} (${r.archivedBytes} bytes gzip)`)
+      else parts.push("nothing to archive")
+      if (r.watermarksPruned > 0) parts.push(`archived ${r.watermarksPruned} stale watermark(s)`)
+      parts.push(`${r.live} live entries retained`)
+      return `Compacted: ${parts.join("; ")}.`
+    } finally {
+      compactRetentionMs = prevRetention
+    }
+  }
+
+  async function coordAwait(position: string, timeoutSeconds?: number): Promise<string> {
+    const timeout = (timeoutSeconds ?? 30) * 1000
+    const deadline = Date.now() + timeout
+    let seen = await ledger.read(ledgerFile)
+    const target = resolvePosition(position, seen)
+    if (!target) return `Unknown position: ${position}`
+    for (;;) {
+      if (entriesNewerThan(seen, target).length > 0) break
+      if (Date.now() > deadline) return `Timed out waiting after ${position}`
+      await new Promise((r) => setTimeout(r, 250))
+      seen = await ledger.read(ledgerFile)
+    }
+    const newer = entriesNewerThan(seen, target)
+    return buildDigest(newer) || "New activity seen."
+  }
+
+  async function coordAsk(agent: string, question: string, to?: string): Promise<string> {
+    const e = await publish({
+      agent,
+      type: "ask",
+      text: question,
+      target: to,
+    })
+    return `Asked${to ? ` ${to}` : ""}: "${question}" (${e.id})`
+  }
+
+  async function coordAnswer(agent: string, answer: string, questionId?: string, question?: string): Promise<string> {
+    if (!questionId && !question) {
+      return "coord_answer requires either 'questionId' or 'question'."
+    }
+    const e = await publish({
+      agent,
+      type: "answer",
+      text: answer,
+      taskID: questionId,
+      task: question,
+    })
+    return `Answered ${questionId ?? `"${question}"`} (${e.id})`
+  }
+
+  return {
+    ledgerFile,
+    dir,
+    skillFile,
+    skillName,
+    skillsDir,
+    topicGate,
+    onPrompt,
+    notePresent,
+    onToolAfter,
+    coordResource,
+    coordHandoff,
+    coordStatus,
+    coordHeartbeat,
+    coordLog,
+    coordClaim,
+    coordRelease,
+    whoDoesWhat,
+    coordCompact,
+    coordAwait,
+    coordAsk,
+    coordAnswer,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// v1 entrypoint (legacy function form).
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async (
+  { client, worktree, directory }: Parameters<Plugin>[0],
+  options: AgentfeedOptions = {},
+) => {
+  writeLoadCanary("agentfeed")
+  const logger: PluginLogger = createLogger(client, "agentfeed")
+  const e = createEngine(logger, worktree ?? directory, options)
+
   return {
     config: async (input: Config) => {
       // Self-register the 'coordinate' skill so agents can load the full
       // coordination protocol on demand (mirrors the general-skills pattern).
-      if (skillName) {
+      if (e.skillName) {
         const existing = (input as any).skills ?? {}
-        ;(input as any).skills = { ...existing, [skillName]: { file: path.relative(dir, skillFile) } }
+        ;(input as any).skills = { ...existing, [e.skillName]: { file: path.relative(e.dir, e.skillFile) } }
       }
     },
 
@@ -219,39 +546,10 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
       input: { sessionID: string; agent?: string },
       output: { parts: Array<{ type: string; text?: string }> },
     ) => {
-      try {
-        const agent = input.agent ?? "default"
-        agentBySession.set(input.sessionID, agent)
-        const textPart = output.parts.find((p) => p.type === "text")
-        if (textPart?.text) updateSessionTopic(input.sessionID, textPart.text)
-        if (topicGate && !shouldInjectProjectContext(input.sessionID)) return
-        if (!seenSessions.has(input.sessionID)) {
-          seenSessions.add(input.sessionID)
-          return
-        }
-        if (!textPart || !textPart.text?.trim()) return
-        const wmPath = watermarkPath(ledgerDir, input.sessionID, agent)
-        const wm = await wmStore.read(wmPath)
-        const entries = entriesNewerThan(await ledger.read(ledgerFile), wm)
-        if (entries.length === 0) return
-        const digest = buildDigest(entries, { maxEntries: maxDigestEntries })
-        if (!digest) return
-        // Keep the chat window lean: persist the full digest to a markdown file
-        // and prepend only a one-line pointer. The model reads the file if it
-        // needs the details (mirrors the lazy-loaded AGENTS.md rule pattern).
-        try {
-          fs.mkdirSync(path.dirname(digestFile), { recursive: true })
-          fs.writeFileSync(digestFile, digest + "\n")
-        } catch (writeErr: any) {
-          logger.warn(`digest write failed: ${writeErr?.message ?? String(writeErr)}`)
-        }
-        const relPath = path.relative(root, digestFile)
-        textPart.text = `## Coordination digest\n${entries.length} new entr${entries.length === 1 ? "y" : "ies"} — details in \`${relPath}\`.\n\n${textPart.text}`
-        // Advance watermark to the true last new entry (even if digest truncated)
-        await wmStore.write(wmPath, watermarkAfter(entries))
-      } catch (e: any) {
-        logger.error(`chat.message failed: ${e?.message ?? String(e)}`)
-      }
+      const parts = output?.parts ?? []
+      const textPart = parts.find((p) => p.type === "text")
+      const next = await e.onPrompt(input.sessionID, input.agent, textPart?.text)
+      if (next != null && textPart) textPart.text = next
     },
 
     "experimental.chat.system.transform": async (
@@ -260,25 +558,18 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
     ) => {
       try {
         const sid = (input as any).sessionID
-        if (topicGate && sid && getSessionTopic(sid) === "personal") return
-        if (output.system.some((s) => s.includes(SYSTEM_NOTE.split("\n")[0]))) return
+        if (e.topicGate && sid && getSessionTopic(sid) === "personal") return
+        if (e.notePresent(output.system)) return
         output.system = [SYSTEM_NOTE, ...output.system]
-      } catch (e: any) {
-        logger.error(`system.transform failed: ${e?.message ?? String(e)}`)
+      } catch (err: any) {
+        logger.error(`system.transform failed: ${err?.message ?? String(err)}`)
       }
     },
 
     "tool.execute.after": async (
       input: { tool: string; sessionID: string; args?: Record<string, unknown> },
     ) => {
-      try {
-        const a = detectActivity({ tool: input.tool, args: input.args })
-        if (!a) return
-        const agent = agentBySession.get(input.sessionID) ?? "default"
-        await autoPublishActivity(agent, a)
-      } catch (e: any) {
-        logger.error(`tool.execute.after (auto resource) failed: ${e?.message ?? String(e)}`)
-      }
+      await e.onToolAfter(input.tool, input.sessionID, input.args)
     },
 
     tool: {
@@ -291,25 +582,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           action: tool.schema.enum(["acquire", "release"]).describe("acquire = start using; release = free it"),
         },
         async execute(args, ctx) {
-          // Explicit acquires get the same default hold TTL as auto-acquires so a
-          // hold is always reclaimable after expiry (no permanent locks on crash).
-          const lease = args.action === "acquire"
-            ? new Date(Date.now() + resourceLeaseMs).toISOString()
-            : undefined
-          const entry = {
-            agent: ctx.agent,
-            type: "resource" as const,
-            resource: args.resource,
-            file: args.resource === "file" ? args.name : undefined,
-            ref: args.resource === "git" ? args.name : undefined,
-            action: args.action,
-            lease,
-            task: args.action === "acquire" ? (args.resource === "git" ? "git hold" : "file hold") : undefined,
-          }
-          const e = await publish(entry)
-          return args.action === "acquire"
-            ? `Acquired ${args.resource} "${args.name}" (${e.id}) — release it when done`
-            : `Released ${args.resource} "${args.name}" (${e.id}) — now free`
+          return e.coordResource(ctx.agent, args)
         },
       }),
 
@@ -321,23 +594,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           to: tool.schema.string().min(1).describe("Target agent name"),
         },
         async execute(args, ctx) {
-          const now = Date.now()
-          const lease = new Date(now + 30 * 60_000).toISOString()
-          // Close own claim on the task (if any) and open one for the target.
-          await publish({
-            agent: ctx.agent,
-            type: "release",
-            task: args.task,
-          })
-          const e = await publish({
-            agent: args.to,
-            type: "claim",
-            task: args.task,
-            status: "open",
-            lease,
-            target: ctx.agent,
-          })
-          return `Handed "${args.task}" to ${args.to} (${e.id}); they should coord_claim it to accept`
+          return e.coordHandoff(ctx.agent, args.task, args.to)
         },
       }),
 
@@ -349,13 +606,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           state: tool.schema.enum(["done", "failed", "in-progress"]).describe("Task state"),
         },
         async execute(args, ctx) {
-          const e = await publish({
-            agent: ctx.agent,
-            type: "status",
-            task: args.task,
-            status: args.state,
-          })
-          return `Marked "${args.task}" ${args.state} (${e.id})`
+          return e.coordStatus(ctx.agent, args.task, args.state)
         },
       }),
 
@@ -368,33 +619,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           kind: tool.schema.enum(["git", "file"]).optional().describe("Resource kind when renewing a resource"),
         },
         async execute(args, ctx) {
-          if (!args.task && !args.resource) {
-            return "coord_heartbeat requires 'task' or 'resource'."
-          }
-          const lease = new Date(Date.now() + 30 * 60_000).toISOString()
-          if (args.resource) {
-            // Renew a held resource by re-publishing its acquire with a fresh lease.
-            const kind = args.kind ?? "git"
-            const e = await publish({
-              agent: ctx.agent,
-              type: "resource",
-              resource: kind,
-              file: kind === "file" ? args.resource : undefined,
-              ref: kind === "git" ? args.resource : undefined,
-              action: "acquire",
-              lease,
-              task: kind === "file" ? "file hold" : "git hold",
-            })
-            return `Renewed hold on "${args.resource}" until ${lease} (${e.id})`
-          }
-          const e = await publish({
-            agent: ctx.agent,
-            type: "claim",
-            task: args.task,
-            status: "in-progress",
-            lease,
-          })
-          return `Renewed lease on "${args.task}" until ${lease} (${e.id})`
+          return e.coordHeartbeat(ctx.agent, args)
         },
       }),
 
@@ -405,12 +630,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           text: tool.schema.string().min(1).describe("What to publish"),
         },
         async execute(args, ctx) {
-          await publish({
-            agent: ctx.agent,
-            type: args.type,
-            text: args.text,
-          })
-          return `Logged ${args.type}: ${args.text}`
+          return e.coordLog(ctx.agent, args.type, args.text)
         },
       }),
 
@@ -421,15 +641,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           leaseMinutes: tool.schema.number().optional(),
         },
         async execute(args, ctx) {
-          const lease = new Date(Date.now() + (args.leaseMinutes ?? 30) * 60_000).toISOString()
-          const e = await publish({
-            agent: ctx.agent,
-            type: "claim",
-            task: args.task,
-            status: "open",
-            lease,
-          })
-          return `Claimed "${args.task}" as ${e.id} (lease until ${lease})`
+          return e.coordClaim(ctx.agent, args.task, args.leaseMinutes)
         },
       }),
 
@@ -440,16 +652,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           id: tool.schema.string().optional(),
         },
         async execute(args, ctx) {
-          if (!args.task && !args.id) {
-            return "coord_release requires either 'task' or 'id'."
-          }
-          const e = await publish({
-            agent: ctx.agent,
-            type: "release",
-            task: args.task,
-            taskID: args.id,
-          })
-          return `Released ${args.id ?? `"${args.task}"`} (${e.id})`
+          return e.coordRelease(ctx.agent, args.task, args.id)
         },
       }),
 
@@ -458,46 +661,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           "List current open task claims and held shared resources (excluding expired leases, released claims, and released resources) so you can avoid duplicating another agent's work.",
         args: {},
         async execute() {
-          const entries = await ledger.read(ledgerFile)
-          const now = Date.now()
-          const open = dedupeClaims(
-            entries.filter(
-              (e) =>
-                e.type === "claim" &&
-                (e.status === "open" || e.status === "in-progress") &&
-                !leaseExpired(e.lease, now),
-            ),
-          )
-          // A claim by an agent is closed only if THAT agent released the same task
-          // with a position newer than the claim. A release by a different agent does
-          // not free another's claim — those are competing claims, both still open.
-          // (Renewals/handoffs create newer claims for the same agent, which are kept.)
-          const live = open.filter((c) => {
-            const laterReleaseByOwner = entries.some(
-              (e) =>
-                e.type === "release" &&
-                e.agent === c.agent &&
-                (e.task ?? e.taskID ?? "") === (c.task ?? c.taskID ?? "") &&
-                (e.ts > c.ts || (e.ts === c.ts && e.seq > c.seq)),
-            )
-            return !laterReleaseByOwner
-          })
-          const held = heldResources(entries, now)
-          const lines: string[] = []
-          if (live.length > 0) {
-            lines.push("Open claims:")
-            for (const e of live) {
-              lines.push(`- ${e.id}: ${e.agent} claims "${e.task ?? ""}" (lease until ${e.lease ?? "?"})`)
-            }
-          }
-          if (held.length > 0) {
-            lines.push("Held resources:")
-            for (const r of held) {
-              lines.push(`- ${r.id}: ${r.agent} holds ${r.resource} "${r.label}" (acquired ${r.ts})`)
-            }
-          }
-          if (lines.length === 0) return "No open claims or held resources."
-          return lines.join("\n")
+          return e.whoDoesWhat()
         },
       }),
 
@@ -508,21 +672,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           retentionMs: tool.schema.number().optional().describe("Retention window (ms). Default 7 days."),
         },
         async execute(args) {
-          const prevRetention = compactRetentionMs
-          if (args.retentionMs && args.retentionMs > 0) {
-            compactRetentionMs = args.retentionMs
-          }
-          try {
-            const r = await compact()
-            const parts: string[] = []
-            if (r.archived > 0) parts.push(`archived ${r.archived} settled to ${path.join(".agentfeed", "ledger-archive")} (${r.archivedBytes} bytes gzip)`)
-            else parts.push("nothing to archive")
-            if (r.watermarksPruned > 0) parts.push(`archived ${r.watermarksPruned} stale watermark(s)`)
-            parts.push(`${r.live} live entries retained`)
-            return `Compacted: ${parts.join("; ")}.`
-          } finally {
-            compactRetentionMs = prevRetention
-          }
+          return e.coordCompact(args.retentionMs)
         },
       }),
 
@@ -533,19 +683,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           timeoutSeconds: tool.schema.number().optional(),
         },
         async execute(args) {
-          const timeout = (args.timeoutSeconds ?? 30) * 1000
-          const deadline = Date.now() + timeout
-          let seen = await ledger.read(ledgerFile)
-          const target = resolvePosition(args.position, seen)
-          if (!target) return `Unknown position: ${args.position}`
-          for (;;) {
-            if (entriesNewerThan(seen, target).length > 0) break
-            if (Date.now() > deadline) return `Timed out waiting after ${args.position}`
-            await new Promise((r) => setTimeout(r, 250))
-            seen = await ledger.read(ledgerFile)
-          }
-          const newer = entriesNewerThan(seen, target)
-          return buildDigest(newer) || "New activity seen."
+          return e.coordAwait(args.position, args.timeoutSeconds)
         },
       }),
 
@@ -556,13 +694,7 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           to: tool.schema.string().optional().describe("Optional: direct the question to a specific agent"),
         },
         async execute(args, ctx) {
-          const e = await publish({
-            agent: ctx.agent,
-            type: "ask",
-            text: args.question,
-            target: args.to,
-          })
-          return `Asked${args.to ? ` ${args.to}` : ""}: "${args.question}" (${e.id})`
+          return e.coordAsk(ctx.agent, args.question, args.to)
         },
       }),
 
@@ -574,22 +706,246 @@ export default (async ({ client, worktree, directory }: Parameters<Plugin>[0], o
           question: tool.schema.string().optional().describe("The question text you are answering (used if no questionId)"),
         },
         async execute(args, ctx) {
-          if (!args.questionId && !args.question) {
-            return "coord_answer requires either 'questionId' or 'question'."
-          }
-          const e = await publish({
-            agent: ctx.agent,
-            type: "answer",
-            text: args.answer,
-            taskID: args.questionId,
-            task: args.question,
-          })
-          return `Answered ${args.questionId ?? `"${args.question}"`} (${e.id})`
+          return e.coordAnswer(ctx.agent, args.answer, args.questionId, args.question)
         },
       }),
     },
   }
-}) satisfies Plugin
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 differences from v1:
+//   - the default export is a plain object (a function default is rejected);
+//   - no `client` and no `{ directory, worktree }` args — the root comes from
+//     `ctx.location`, plugin options from `ctx.options`, logging goes to stderr;
+//   - `config` (skills map) → `ctx.skill.transform` over the skills directory
+//     (shared/v2-skills.ts);
+//   - `chat.message` → `ctx.session.hook("prompt")` (mutating `event.prompt.text`);
+//   - `experimental.chat.system.transform` → `ctx.session.hook("context")`, where
+//     the system prompt is `{ type, text }` parts;
+//   - `tool.execute.after` → `ctx.tool.hook("execute.after")`;
+//   - the tool map → `ctx.tool.transform(editor)` with JSON Schema inputs and
+//     structured `{ content }` results.
+// v2 payload field names differ from v1's, so those reads are best-effort with
+// fallbacks; a missed field only means less bookkeeping.
+// ---------------------------------------------------------------------------
+function consoleLogger(service: string) {
+  return {
+    debug: (_m: string) => {},
+    info: (m: string) => console.error(`[${service}] ${m}`),
+    warn: (m: string) => console.error(`[${service}] WARN ${m}`),
+    error: (m: string) => console.error(`[${service}] ERROR ${m}`),
+  }
+}
+
+const str = (description: string) => ({ type: "string", description })
+const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
+  type: "object",
+  properties,
+  required,
+  additionalProperties: false,
+})
+const emptyInput = { type: "object", properties: {}, additionalProperties: false } as const
+
+export default {
+  id: "agentfeed",
+
+  async setup(ctx: any) {
+    writeLoadCanary("agentfeed")
+    const logger = consoleLogger("agentfeed")
+    const root: string = ctx.location?.project?.canonical ?? ctx.location?.directory
+    const e = createEngine(logger, root, (ctx.options ?? {}) as AgentfeedOptions)
+
+    // v1 registered the 'coordinate' skill through the config hook's skills map;
+    // v2 registers the skills directory through the skill editor instead.
+    await ctx.skill.transform((editor: any) => registerSkillDir(editor, e.skillsDir))
+
+    await ctx.session.hook("prompt", async (event: any) => {
+      const sessionID: string | undefined = event?.sessionID
+      if (!sessionID) return
+      const agent: string | undefined = event?.agent ?? event?.info?.agent
+      const next = await e.onPrompt(sessionID, agent, event?.prompt?.text)
+      if (next != null && event?.prompt) event.prompt.text = next
+    })
+
+    await ctx.session.hook("context", (event: any) => {
+      try {
+        const sid: string | undefined = event?.sessionID
+        if (e.topicGate && sid && getSessionTopic(sid) === "personal") return
+        const parts: Array<{ type: string; text: string }> = Array.isArray(event.system) ? event.system : []
+        if (e.notePresent(parts.map((p) => p?.text ?? ""))) return
+        if (Array.isArray(event.system)) event.system.unshift({ type: "text", text: SYSTEM_NOTE })
+      } catch (err: any) {
+        logger.error(`system.transform failed: ${err?.message ?? String(err)}`)
+      }
+    })
+
+    await ctx.tool.hook("execute.after", async (event: any) => {
+      const toolName: string = event?.tool ?? event?.name
+      const sessionID: string | undefined = event?.sessionID ?? event?.session?.id
+      if (!toolName || !sessionID) return
+      await e.onToolAfter(toolName, sessionID, event?.input ?? event?.args)
+    })
+
+    await ctx.tool.transform((editor: any) => {
+      const agentOf = (context: any) => context?.agent ?? "default"
+
+      editor.add({
+        name: "coord_resource",
+        description:
+          "Acquire or release a shared resource (git or file) so other agents know whether it is held or free. Auto-detected git/file activity marks an acquire; call this with action 'release' when you are done so others can take over.",
+        input: obj({
+          resource: { type: "string", enum: ["git", "file"], description: "Kind of resource" },
+          name: str("Resource name (git branch/ref, or file path)"),
+          action: { type: "string", enum: ["acquire", "release"], description: "acquire = start using; release = free it" },
+        }, ["resource", "name", "action"]),
+        async execute(args: any, context: any) {
+          return { content: await e.coordResource(agentOf(context), args) }
+        },
+      })
+
+      editor.add({
+        name: "coord_handoff",
+        description:
+          "Hand a task to another agent: closes your claim on it and opens a claim for the target. The target sees the handoff in their digest and can coord_claim to accept.",
+        input: obj({
+          task: str("Task identifier to hand off"),
+          to: str("Target agent name"),
+        }, ["task", "to"]),
+        async execute(args: any, context: any) {
+          return { content: await e.coordHandoff(agentOf(context), args.task, args.to) }
+        },
+      })
+
+      editor.add({
+        name: "coord_status",
+        description:
+          "Report a task's state (done / failed / in-progress) so others can see board progress. Use when you finish or fail a task.",
+        input: obj({
+          task: str("Task identifier"),
+          state: { type: "string", enum: ["done", "failed", "in-progress"], description: "Task state" },
+        }, ["task", "state"]),
+        async execute(args: any, context: any) {
+          return { content: await e.coordStatus(agentOf(context), args.task, args.state) }
+        },
+      })
+
+      editor.add({
+        name: "coord_heartbeat",
+        description:
+          "Renew the lease on a claim (or on a held resource) so long-running work is not reclaimed by another agent after the TTL. Call periodically on long tasks.",
+        input: obj({
+          task: str("Task to renew (or leave empty to renew a resource)"),
+          resource: str("Resource name to renew (branch or file path)"),
+          kind: { type: "string", enum: ["git", "file"], description: "Resource kind when renewing a resource" },
+        }),
+        async execute(args: any, context: any) {
+          return { content: await e.coordHeartbeat(agentOf(context), args) }
+        },
+      })
+
+      editor.add({
+        name: "coord_log",
+        description: "Publish a message or status update to the shared coordination ledger. Other agents and the human reader will see it.",
+        input: obj({
+          type: { type: "string", enum: ["msg", "status"] },
+          text: str("What to publish"),
+        }, ["type", "text"]),
+        async execute(args: any, context: any) {
+          return { content: await e.coordLog(agentOf(context), args.type, args.text) }
+        },
+      })
+
+      editor.add({
+        name: "coord_claim",
+        description: "Claim a task with a TTL lease so other agents know you own it.",
+        input: obj({
+          task: str("Task identifier to claim"),
+          leaseMinutes: { type: "number" },
+        }, ["task"]),
+        async execute(args: any, context: any) {
+          return { content: await e.coordClaim(agentOf(context), args.task, args.leaseMinutes) }
+        },
+      })
+
+      editor.add({
+        name: "coord_release",
+        description: "Release a claim you previously made, by task name or claim id.",
+        input: obj({
+          task: str("Task identifier to release"),
+          id: str("Claim id (host:seq) to release"),
+        }),
+        async execute(args: any, context: any) {
+          return { content: await e.coordRelease(agentOf(context), args.task, args.id) }
+        },
+      })
+
+      editor.add({
+        name: "coord_who_does_what",
+        description:
+          "List current open task claims and held shared resources (excluding expired leases, released claims, and released resources) so you can avoid duplicating another agent's work.",
+        input: emptyInput,
+        async execute() {
+          return { content: await e.whoDoesWhat() }
+        },
+      })
+
+      editor.add({
+        name: "coord_compact",
+        description:
+          "Archive settled coordination events to a git-ignored compressed backup and shrink the live ledger. Keeps open claims, held resources, unanswered asks, and recent events; compresses the rest into .agentfeed/ledger-archive/. Run on each host; git remains the full durable record.",
+        input: obj({
+          retentionMs: { type: "number", description: "Retention window (ms). Default 7 days." },
+        }),
+        async execute(args: any) {
+          return { content: await e.coordCompact(args?.retentionMs) }
+        },
+      })
+
+      editor.add({
+        name: "coord_await",
+        description: "Wait until the ledger has new entries after the given position, or a timeout elapses. Useful for waiting on a handoff. Pass an entry id (host:seq) or a full position 'ts|host|seq'.",
+        input: obj({
+          position: str("Entry id 'host:seq' or watermark 'ts|host|seq'"),
+          timeoutSeconds: { type: "number" },
+        }, ["position"]),
+        async execute(args: any) {
+          return { content: await e.coordAwait(args.position, args.timeoutSeconds) }
+        },
+      })
+
+      editor.add({
+        name: "coord_ask",
+        description: "Broadcast a question to other agents. It appears in everyone's coordination digest; others can answer with coord_answer.",
+        input: obj({
+          question: str("The question to ask"),
+          to: str("Optional: direct the question to a specific agent"),
+        }, ["question"]),
+        async execute(args: any, context: any) {
+          return { content: await e.coordAsk(agentOf(context), args.question, args.to) }
+        },
+      })
+
+      editor.add({
+        name: "coord_answer",
+        description: "Answer a question previously posted with coord_ask. Pass the question id or re-state the question text.",
+        input: obj({
+          answer: str("Your answer"),
+          questionId: str("The ask entry id (host:seq) you are answering"),
+          question: str("The question text you are answering (used if no questionId)"),
+        }, ["answer"]),
+        async execute(args: any, context: any) {
+          return { content: await e.coordAnswer(agentOf(context), args.answer, args.questionId, args.question) }
+        },
+      })
+    })
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
+}
 
 function leaseExpired(lease: string | undefined, now: number): boolean {
   if (!lease) return false

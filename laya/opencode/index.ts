@@ -1,6 +1,7 @@
 import type { Config, Plugin } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { registerSkillDir } from "../../shared/v2-skills"
 import fs from "fs"
 import path from "path"
 import { writeLoadCanary } from "../../shared/load-canary"
@@ -17,7 +18,10 @@ function skillCount(dir: string): number {
     }).length
 }
 
-export default async ({ client }: Parameters<Plugin>[0]) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint. v1 appended the skills directory to `config.skills.paths`.
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client }) => {
   writeLoadCanary("laya")
   const logger = createLogger(client, "laya")
   const count = skillCount(skillsDir)
@@ -31,4 +35,22 @@ export default async ({ client }: Parameters<Plugin>[0]) => {
       ;(input as any).skills = { ...skills, paths }
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 has no config hook, so the skills directory is
+// replayed into `ctx.skill.transform` (shared/v2-skills.ts).
+// ---------------------------------------------------------------------------
+export default {
+  id: "laya",
+
+  async setup(ctx: any) {
+    writeLoadCanary("laya")
+    await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
 }

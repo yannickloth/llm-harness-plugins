@@ -1,5 +1,6 @@
 .agentmem/
 .context-editing/
+.premium-read-offload/
 .history/
 .ai/
 .direnv/

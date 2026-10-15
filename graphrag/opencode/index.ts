@@ -148,7 +148,10 @@ function launchDetached(args: string[], logFile: string): void {
   proc.unref()
 }
 
-export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint (legacy function form).
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client, directory, worktree }) => {
   writeLoadCanary("graphrag")
   const logger = createLogger(client, "graphrag")
   const cfg = loadConfig()
@@ -351,4 +354,229 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       }),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 differences: no `client` (root from `ctx.location`,
+// logging to stderr), the v1 `event` hook becomes a `ctx.event.subscribe`
+// iterator (`{ type, properties }`), `tool.execute.after` →
+// `ctx.tool.hook("execute.after")`, and the tool map → `ctx.tool.transform`.
+// ---------------------------------------------------------------------------
+function consoleLogger(service: string) {
+  return {
+    debug: (_m: string) => {},
+    info: (m: string) => console.error(`[${service}] ${m}`),
+    warn: (m: string) => console.error(`[${service}] WARN ${m}`),
+    error: (m: string) => console.error(`[${service}] ERROR ${m}`),
+  }
+}
+
+export default {
+  id: "graphrag",
+
+  async setup(ctx: any) {
+    writeLoadCanary("graphrag")
+    const logger = consoleLogger("graphrag")
+    const cfg = loadConfig()
+    const root: string = ctx.location?.project?.canonical ?? ctx.location?.directory
+    const indexRoot = path.join(root, cfg.indexRoot)
+    const settingsFile = path.join(indexRoot, "settings.yaml")
+    const logDir = path.join(indexRoot, "logs")
+
+    const javaCp = `${classesDir}:${kgClassesDir}`
+
+    async function injectContext(sessionId: string, text: string) {
+      try {
+        await ctx.session.synthetic({ sessionID: sessionId, text })
+      } catch (e) {
+        logger.error(`inject failed: ${(e as Error).message}`)
+      }
+    }
+
+    async function checkVersion(): Promise<{ current: string | null; manifest: Manifest | null; match: boolean }> {
+      const manifest = readManifest(root, cfg)
+      const current = await binaryVersion(cfg.graphragBinary)
+      const match = manifest === null || current === null || manifest.graphrag_version === current
+      return { current, manifest, match }
+    }
+
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        for await (const input of ctx.event.subscribe({ signal: controller.signal })) {
+          if (controller.signal.aborted) break
+          const type = input?.type
+          const props = input?.properties ?? input?.data ?? {}
+
+          if (type === "session.created") {
+            const sessionId: string | undefined = props?.sessionID ?? props?.info?.id
+            if (!sessionId) continue
+
+            const binPath = await resolveBinary(cfg.graphragBinary)
+            if (!binPath) {
+              logger.info("binary not found on PATH")
+              await injectContext(sessionId,
+                "graphrag not on PATH — start opencode from the project terminal so direnv loads, or set graphrag_binary in config.")
+              continue
+            }
+            const version = await binaryVersion(cfg.graphragBinary)
+            logger.info(`binary=${binPath} version=${version ?? "unknown"}`)
+
+            const manifest = readManifest(root, cfg)
+            if (!manifest) {
+              await injectContext(sessionId,
+                "GraphRAG index missing — build with `graphrag mode=index` when ready.")
+              continue
+            }
+            if (manifest.dirty.length > 0) {
+              await injectContext(sessionId,
+                `GraphRAG index stale: ${manifest.dirty.length} files changed since ${manifest.commit.slice(0, 8)}.`)
+            }
+          } else if (type === "file.edited") {
+            const file = props?.file ?? ""
+            if (file && isRelevantFile(root, file)) addToDirtySet(root, cfg, file)
+          } else if (type === "file.watcher.updated") {
+            const file = props?.file ?? ""
+            if (props?.event !== "unlink" && file && isRelevantFile(root, file)) {
+              addToDirtySet(root, cfg, file)
+            }
+          } else if (type === "session.idle") {
+            if (!cfg.autoUpdate) continue
+            const manifest = readManifest(root, cfg)
+            const dirtyCount = manifest ? manifest.dirty.length : 0
+            if (dirtyCount === 0) continue
+            const now = Date.now()
+            const binPath = await resolveBinary(cfg.graphragBinary)
+            if (!binPath) {
+              logger.info("skipping auto-update — graphrag binary not on PATH")
+              continue
+            }
+            if (!(await claimSpawnSlot(indexRoot, cfg.debounceSeconds * 1000))) {
+              logger.info("skipping auto-update — indexer already running or launched recently")
+              continue
+            }
+            try {
+              mkdirSync(logDir, { recursive: true })
+            } catch { /* exists */ }
+            const logFile = path.join(logDir, `update-${now}.log`)
+            launchDetached([
+              "java", "--class-path", javaCp, indexCliClass,
+              "update", root, configFile,
+            ], logFile)
+            const label = manifest ? `${dirtyCount} dirty files` : "lazy init"
+            logger.info(`incremental update launched (${label}), log: ${logFile}`)
+          }
+        }
+      } catch {
+        // the event stream is best-effort
+      }
+    })()
+
+    await ctx.tool.hook("execute.after", async (event: any) => {
+      const toolName: string = event?.tool ?? event?.name
+      if (!FILE_READ_TOOLS.has(toolName)) return
+      const input = event?.input ?? event?.args ?? {}
+      const filePath = (input.filePath ?? input.path ?? input.pattern ?? "") as string
+      if (!filePath) return
+      const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath)
+      if (!absPath.startsWith(root)) return
+      if (!isRelevantFile(root, absPath)) return
+
+      let manifest = readManifest(root, cfg)
+      const rel = path.relative(root, absPath)
+      if (!manifest) {
+        manifest = {
+          commit: "none",
+          timestamp: new Date().toISOString(),
+          graphrag_version: "unknown",
+          graphrag_binary: cfg.graphragBinary,
+          dirty: [rel],
+        }
+        try {
+          writeFileSync(manifestPath(root, cfg), JSON.stringify(manifest, null, 2))
+        } catch { /* best effort */ }
+        return
+      }
+
+      if (!manifest.dirty.includes(rel)) {
+        manifest.dirty.push(rel)
+        try {
+          writeFileSync(manifestPath(root, cfg), JSON.stringify(manifest, null, 2))
+        } catch { /* best effort */ }
+      }
+    })
+
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "graphrag",
+        description: "GraphRAG semantic index: mode=local|global|drift (semantic search), status (index state), index (build/update in background)",
+        input: {
+          type: "object",
+          properties: {
+            mode: {
+              type: "string",
+              enum: ["local", "global", "drift", "status", "index"],
+              description: "local=entity-focused, global=corpus-wide themes, drift=hybrid, status=manifest state, index=build or update",
+            },
+            query: { type: "string", description: "Search query (required for local/global/drift)" },
+          },
+          required: ["mode"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          const mode = args.mode as string
+
+          if (mode === "status") {
+            const out = await $`java --class-path ${javaCp} ${indexCliClass} status ${root} ${configFile}`.nothrow().text()
+            return { content: out.trim() || "No index state available." }
+          }
+
+          if (mode === "index") {
+            // Route through the same cross-session throttle as auto-update.
+            if (!(await claimSpawnSlot(indexRoot, cfg.debounceSeconds * 1000))) {
+              return { content: "An index job is already running or was launched too recently. Try again later." }
+            }
+            const isInit = !existsSync(manifestPath(root, cfg))
+            try {
+              mkdirSync(logDir, { recursive: true })
+            } catch { /* exists */ }
+            const logFile = path.join(logDir, `${isInit ? "init" : "update"}-${Date.now()}.log`)
+            launchDetached([
+              "java", "--class-path", javaCp, indexCliClass,
+              isInit ? "init" : "update", root, configFile, pluginDir,
+            ], logFile)
+            return { content: `Index ${isInit ? "init" : "update"} started in background. Log: ${logFile}. Check progress with mode=status.` }
+          }
+
+          const query = (args.query ?? "").trim()
+          if (!query) return { content: "Query required for local/global/drift modes." }
+
+          const binPath = await resolveBinary(cfg.graphragBinary)
+          if (!binPath) {
+            return { content: "graphrag not on PATH — start opencode from the project terminal so direnv loads, or set graphrag_binary in config." }
+          }
+          if (!existsSync(settingsFile)) {
+            return { content: "No index found. Build one with mode=index first." }
+          }
+
+          const { current, manifest, match } = await checkVersion()
+          if (!match && manifest) {
+            return { content: `REFUSED: index was built with graphrag ${manifest.graphrag_version} but current binary is ${current}. Rebuild with mode=index before querying.` }
+          }
+
+          const result = await $`${binPath} query --method ${mode} --query ${query} --root ${indexRoot} --config ${settingsFile}`.nothrow().text()
+          const prefix = stalenessLine(manifest, current)
+          if (!result.trim()) return { content: `${prefix}\nQuery returned no output. Check logs in ${logDir}.` }
+          return { content: `${prefix}\n\n${result.trim()}` }
+        },
+      })
+    })
+
+    return () => controller.abort()
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
 }

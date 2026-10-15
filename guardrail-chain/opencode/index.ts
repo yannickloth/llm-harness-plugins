@@ -157,9 +157,10 @@ export default {
       })
     })
 
-    // v1 also auto-scans files on the `file.edited` hook. v2 has no file.edited
-    // equivalent; the closest is tool.execute.after. Field names vary, so this
-    // is best-effort and only reports (the v1 hook only logged too).
+    // v1 also auto-scanned files on the `file.edited` hook. V2 does emit a
+    // `file.edited` event, but `tool.execute.after` already covers write/edit
+    // here — using one path avoids scanning the same file twice. Field names
+    // vary, so this is best-effort and only reports (the v1 hook only logged too).
     await ctx.tool.hook("execute.after", async (event: any) => {
       const t = event?.tool ?? event?.name
       if (t !== "write" && t !== "edit") return
@@ -180,7 +181,7 @@ export default {
       } catch (_) {}
     })
   },
-  async server(input: any) {
-    return v1Factory(input)
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
   },
 }

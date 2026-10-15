@@ -3,6 +3,7 @@ import fs from "fs"
 import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
+import { registerSkillDir, parseFrontmatter } from "../../shared/v2-skills"
 import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
@@ -26,7 +27,11 @@ function agentFiles(dir: string): { name: string; file: string }[] {
     .map(entry => ({ name: entry.replace(/\.md$/, ""), file: path.join(dir, entry) }))
 }
 
-export default async ({ client }: Parameters<Plugin>[0]) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint. v1 appended the skills directory to `config.skills.paths` and
+// registered the plugin's agents on `config.agent`.
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client }) => {
   writeLoadCanary("context-toolkit")
   const logger = createLogger(client, "context-toolkit")
   const count = skillCount(skillsDir)
@@ -47,4 +52,45 @@ export default async ({ client }: Parameters<Plugin>[0]) => {
       ;(input as any).agent = existingAgents
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 has no config hook, so skills are replayed into
+// `ctx.skill.transform` (shared/v2-skills.ts) and agents into
+// `ctx.agent.transform` (each file's body becomes the agent `system`).
+// ---------------------------------------------------------------------------
+function agentBody(raw: string): string {
+  return raw.replace(/^---[\s\S]*?\n---\s*\n?/, "")
+}
+
+export default {
+  id: "context-toolkit",
+
+  async setup(ctx: any) {
+    writeLoadCanary("context-toolkit")
+    const records = agentFiles(agentsDir).map(({ name, file }) => {
+      const raw = fs.readFileSync(file, "utf8")
+      const { description } = parseFrontmatter(raw)
+      return { name, description, system: agentBody(raw) }
+    })
+
+    await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+
+    await ctx.agent.transform((editor: any) => {
+      for (const rec of records) {
+        if (editor.get(rec.name)) continue
+        editor.update(rec.name, (agent: any) => {
+          agent.name = rec.name
+          if (rec.description) agent.description = rec.description
+          agent.mode = "subagent"
+          agent.system = rec.system
+        })
+      }
+    })
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
 }

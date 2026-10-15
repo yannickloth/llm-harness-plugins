@@ -124,9 +124,11 @@ export default {
       if (!filePath || !sessionId) return
       await sidecar(root, "record-access", [sessionId, accessType, filePath])
     })
+
+    return () => controller.abort()
   },
 
-  async server(input: any) {
-    return v1Factory(input)
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
   },
 }

@@ -81,7 +81,10 @@ async function layaPredict(state: unknown, questions: Record<string, unknown>): 
   throw new Error("laya response missing answers")
 }
 
-const plugin: Plugin = async ({ client }) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint (legacy function form).
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client }) => {
   writeLoadCanary("local-decide")
   const logger = createLogger(client, "local-decide")
   logger.info(`plugin active — bounded decisions via laya (${LAYA_URL})`)
@@ -170,4 +173,109 @@ const plugin: Plugin = async ({ client }) => {
   }
 }
 
-export default plugin
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. The tool map becomes `ctx.tool.transform` with a JSON
+// Schema input and a structured `{ content }` result; v2 has no `client`.
+// ---------------------------------------------------------------------------
+const localDecideInput = {
+  type: "object",
+  properties: {
+    state: {
+      type: "string",
+      description:
+        "The situation to decide on. Keep it SHORT (a sentence or two) - " +
+        "laya truncates to its context window.",
+    },
+    actions: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "The allowed actions, e.g. ['escalate_human','retry_payload','ignore']. " +
+        "laya picks exactly one of these.",
+    },
+    threshold: { type: "number", description: "Confidence needed for `confident: true`. Default 0.85." },
+  },
+  required: ["state", "actions"],
+  additionalProperties: false,
+} as const
+
+async function localDecide(args: { state: string; actions: string[]; threshold?: number }): Promise<string> {
+  const threshold = args.threshold ?? 0.85
+  const actions = args.actions.filter((a) => a.trim()).map((a) => a.trim())
+  if (actions.length === 0) {
+    return JSON.stringify({ ok: false, error: "no actions given" })
+  }
+
+  const criteria: Record<string, string | null> = {}
+  for (const a of actions) criteria[a] = null
+
+  const started = Date.now()
+  let result: any
+  try {
+    result = await layaPredict(args.state, {
+      decision: {
+        type: "choice",
+        instructions: "Which single action should be taken next?",
+        criteria,
+      },
+    })
+  } catch (error: any) {
+    return JSON.stringify({
+      ok: false,
+      error: `laya request failed: ${error?.message ?? error}`,
+      hint: "Is laya-mcp running? systemctl --user start laya-mcp",
+    })
+  }
+
+  const answer = result?.answers?.decision
+  const action = typeof answer?.choice === "string" ? answer.choice : null
+  if (!action) {
+    return JSON.stringify({ ok: false, error: "laya returned no choice" })
+  }
+
+  const confidence = typeof answer?.confidence === "number" ? answer.confidence : null
+  const out: Record<string, unknown> = {
+    ok: true,
+    action,
+    probabilities: answer?.probabilities ?? null,
+    confidence,
+    confident: confidence !== null ? confidence >= threshold : false,
+    threshold,
+    model: result?.routing?.model ?? result?.model ?? null,
+    latency_ms: Date.now() - started,
+  }
+  // laya also returns a learned act/escalate hint; surface it, don't gate on it.
+  if (answer?.action?.act_probability !== undefined) {
+    out.act_probability = answer.action.act_probability
+  }
+  return JSON.stringify(out, null, 2)
+}
+
+export default {
+  id: "local-decide",
+
+  async setup(ctx: any) {
+    writeLoadCanary("local-decide")
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "local_decide",
+        description:
+          "Ask laya (the local System 1 decision engine) to make a bounded " +
+          "decisional call: routing, triage, classification, or escalate-or-not. " +
+          "Returns the chosen action plus laya's calibrated `confidence` and a " +
+          "`confident` boolean. Use for routine bounded choices; treat " +
+          "`confident: false` as a signal to decide yourself or escalate. Not for " +
+          "reasoning, code, or open-ended questions.",
+        input: localDecideInput,
+        async execute(args: any) {
+          return { content: await localDecide(args) }
+        },
+      })
+    })
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
+}

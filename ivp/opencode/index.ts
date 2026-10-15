@@ -54,7 +54,7 @@ export default {
     await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
   },
 
-  async server(input: any) {
-    return v1Factory(input)
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
   },
 }

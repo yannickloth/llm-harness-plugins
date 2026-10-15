@@ -45,7 +45,7 @@ async function loadPlugin(): Promise<PluginHandlers> {
   const defaultExport = mod.default as Parameters<Plugin>[0] extends never
     ? never
     : (opts: any) => Promise<PluginHandlers>
-  return defaultExport({ client, directory: tmpRoot })
+  return (defaultExport as any).server({ client, directory: tmpRoot })
 }
 
 async function fire(

@@ -34,7 +34,13 @@ function agentArgs(agent: string | undefined): string[] {
   return agent && agent !== "none" ? ["--agent", agent] : []
 }
 
-export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint (legacy function form) — premium-read-offload: pays the premium
+// session only for derived answers, and delegates bulk reads/writes to the cheap
+// DeepSeek worker. The dual-version default export at the bottom of this file
+// serves this factory through `server(input)`.
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
   writeLoadCanary("premium-read-offload")
   const logger = createLogger(client, "premium-read-offload")
   const root = worktree ?? directory
@@ -507,4 +513,540 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
       }),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 differences from v1:
+//   - the default export must be a plain object (v2 rejects a callable default);
+//   - no `client` — logging goes to stderr via `consoleLogger`;
+//   - no `worktree` — the root is `ctx.location.project.canonical`, falling back
+//     to `ctx.location.directory`;
+//   - the tool map → `ctx.tool.transform` with JSON Schema inputs and a
+//     structured `{ content }` result (v1 returned bare strings);
+//   - `tool.execute.before` → `ctx.tool.hook("execute.before")`, whose event
+//     carries `{ tool, input, sessionID }`;
+//   - `chat.message` → `ctx.session.hook("prompt")`. The v1 hook recorded the
+//     session's model from its `input.model`; the v2 prompt event exposes the
+//     model only best-effort, so that read falls back and, when it is absent,
+//     the session simply stays unrecorded (the gate then fails open, never
+//     closed) — same fail-open stance as the v1 hook.
+// Everything else (java sidecar calls, worker sessions, citation verification,
+// telemetry) is the same logic as the v1 body above.
+// ---------------------------------------------------------------------------
+function consoleLogger(service: string) {
+  return {
+    debug: (_m: string) => {},
+    info: (m: string) => console.error(`[${service}] ${m}`),
+    warn: (m: string) => console.error(`[${service}] WARN ${m}`),
+    error: (m: string) => console.error(`[${service}] ERROR ${m}`),
+  }
+}
+
+export default {
+  id: "premium-read-offload",
+
+  async setup(ctx: any) {
+    writeLoadCanary("premium-read-offload")
+    const logger = consoleLogger("premium-read-offload")
+    const root: string = ctx.location?.project?.canonical ?? ctx.location?.directory
+
+    if (process.env[DISABLED_ENV] === "0") {
+      logger.info("plugin disabled via LLMHP_PREMIUM_OFFLOAD=0")
+      return
+    }
+
+    logger.info(`plugin active — gate on premium sessions, worker=${WORKER_MODEL}`)
+
+    function java(args: string[], input?: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+      return safeSpawn(["java", "--class-path", classesDir, mainClass, ...args], input != null ? { input } : {})
+    }
+
+    async function jparse(args: string[], input?: string): Promise<any | null> {
+      const r = await java(args, input)
+      try { return JSON.parse(r.stdout.trim()) } catch { return null }
+    }
+
+    /** Append one cost-telemetry record. Best-effort, exactly as in v1. */
+    async function metric(fields: Record<string, unknown>): Promise<void> {
+      try {
+        const rec = { ts: new Date().toISOString(), plugin: "premium-read-offload", ...fields }
+        await jparse(["record-metric", root, JSON.stringify(rec)])
+      } catch (e) {
+        logger.warn(`record-metric failed: ${(e as Error).message}`)
+      }
+    }
+
+    /** Resolve an absolute path the way the read tool presents it. */
+    function abs(p: string): string {
+      if (!p) return p
+      return path.isAbsolute(p) ? p : path.resolve(root, p)
+    }
+
+    /** Path of the append-only cost-telemetry log (mirrors WorkerStore). */
+    function metricsPath(): string {
+      return path.join(root, ".premium-read-offload", "metrics.jsonl")
+    }
+
+    // Reclaim expired worker sessions on start (TTL-only; best-effort).
+    void jparse(["worker-prune", root])
+      .then((r) => { if (r?.pruned?.length) logger.info(`pruned ${r.pruned.length} expired worker session(s)`) })
+      .catch(() => {})
+
+    function blockMessage(file: string, detail: string): string {
+      return (
+        `PREMIUM_READ_OFFLOAD: this read was gated (${detail}). ` +
+        `This session runs on a premium model; reading a large file into context spends ` +
+        `scarce subscription quota. Instead, delegate the read to the cheap worker:\n` +
+        `  use the offload-read tool with {"question": "<what you need>", "paths": ["${file}"]}\n` +
+        `It returns a derived answer, NOT file bytes — correct for understanding, wrong for editing. ` +
+        `The result is JSON: check line_ranges for coverage and citations for verified/unverified claims. ` +
+        `If you genuinely need exact content (e.g. to edit), either read a bounded section with ` +
+        `offset/limit, or call allow-direct-read first, then retry this read.`
+      )
+    }
+
+    function bashBlockMessage(command: string, detail: string): string {
+      return (
+        `PREMIUM_READ_OFFLOAD: this command was gated (${detail}). ` +
+        `Reading a large file into context via bash spends premium subscription quota. ` +
+        `Use the offload-read tool instead, or a targeted command (e.g. a pipe to grep), ` +
+        `or call allow-direct-read for the file first.`
+      )
+    }
+
+    /** Build the worker message: XML file boundaries + the question. */
+    function buildMessage(question: string, corpus: Array<{ path: string; content: string }>): string {
+      const parts: string[] = []
+      for (const f of corpus) {
+        parts.push(`<file path="${f.path}">\n${f.content}\n</file>\n`)
+      }
+      parts.push(`Question: ${question}\n`)
+      return parts.join("\n")
+    }
+
+    function readCorpus(paths: string[]): Array<{ path: string; content: string }> {
+      const out: Array<{ path: string; content: string }> = []
+      for (const p of paths) {
+        const full = abs(p)
+        if (!fs.existsSync(full) || !fs.statSync(full).isFile()) {
+          throw new Error(`file not found or unreadable: ${p}`)
+        }
+        out.push({ path: full, content: fs.readFileSync(full, "utf-8") })
+      }
+      return out
+    }
+
+    /** Reused throwaway data home for worker sessions (keeps them out of the
+     * user's real session list, and makes them prunable). */
+    function workerDataDir(): string {
+      const override = process.env.LLMHP_OFFLOAD_DATA_DIR
+      const runtime = process.env.XDG_RUNTIME_DIR
+      const base = override ?? (runtime ? path.join(runtime, "premium-read-offload") : path.join(os.tmpdir(), "premium-read-offload"))
+      fs.mkdirSync(base, { recursive: true })
+      linkWorkerAuth(base)
+      return base
+    }
+
+    /** Link the real provider auth into the worker data home (401 guard). */
+    function linkWorkerAuth(base: string): void {
+      try {
+        const opencodeDir = path.join(base, "opencode")
+        fs.mkdirSync(opencodeDir, { recursive: true })
+        const realData = process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share")
+        for (const name of ["auth.json", "account.json"]) {
+          const target = path.join(opencodeDir, name)
+          if (fs.existsSync(target)) continue
+          const source = path.join(realData, "opencode", name)
+          if (!fs.existsSync(source)) continue
+          try {
+            fs.symlinkSync(source, target)
+          } catch {
+            fs.copyFileSync(source, target)
+          }
+        }
+      } catch (e) {
+        logger.warn(`could not link worker auth (offload may 401): ${(e as Error).message}`)
+      }
+    }
+
+    /** Corpus line count across all paths, or -1 if any file cannot be read. */
+    function corpusLineCount(paths: string[]): number {
+      let total = 0
+      for (const p of paths) {
+        const n = countFileLines(abs(p))
+        if (n < 0) return -1
+        total += n
+      }
+      return total
+    }
+
+    /** Outcome of a worker turn, with the telemetry the tool records. */
+    interface WorkerOutcome {
+      answer: string
+      cacheHit: boolean
+      corpusLines: number
+      latencyMs: number
+      paths: string[]
+      workerSession: string | null
+      lineRanges: Record<string, LineRange>
+      verification: CitationReport | null
+    }
+
+    /** Mechanically verify the worker's citations (fail open). */
+    async function verifyCitations(answer: string, paths: string[]): Promise<{ answer: string; citations: CitationReport } | null> {
+      const r = await java(["verify-answer", root, ...paths], answer)
+      try {
+        const j = JSON.parse(r.stdout.trim())
+        if (typeof j?.answer === "string" && j?.citations) return { answer: j.answer, citations: j.citations }
+      } catch {
+        // fall through to null
+      }
+      return null
+    }
+
+    /** Run one worker turn against a corpus (resume when the fingerprint matches). */
+    async function runWorker(question: string, paths: string[]): Promise<WorkerOutcome | null> {
+      if (!paths.length) throw new Error("offload-read requires at least one path")
+
+      const corpusPaths = paths.map(abs)
+      const corpusLines = corpusLineCount(paths)
+      const lineRanges = buildLineRanges(corpusPaths)
+
+      const getRes = await jparse(["worker-get", root, ...corpusPaths])
+      const existing: string | null = getRes?.sessionID ?? null
+      const cacheHit = existing != null
+
+      const worth = await jparse(["worth-offload", root, String(cacheHit), String(corpusLines), question])
+      if (worth?.worth === false) return null
+
+      const dataDir = workerDataDir()
+      const env = { XDG_DATA_HOME: dataDir }
+      const started = Date.now()
+      let stdout: string
+      let workerSession: string | null = existing
+
+      if (existing) {
+        const r = await safeSpawn(
+          ["opencode", "run", "--format", "json", "--model", WORKER_MODEL, ...agentArgs(READER_AGENT), "-s", existing, "--", question],
+          { cwd: root, env },
+        )
+        stdout = r.stdout
+      } else {
+        const corpus = readCorpus(paths)
+        const message = buildMessage(question, corpus)
+        // The corpus goes on stdin, never argv (MAX_ARG_STRLEN / E2BIG).
+        const r = await safeSpawn(
+          ["opencode", "run", "--format", "json", "--model", WORKER_MODEL, ...agentArgs(READER_AGENT)],
+          { cwd: root, env, input: message },
+        )
+        stdout = r.stdout
+        const sid = extractOpencodeSessionId(stdout)
+        if (sid) {
+          workerSession = sid
+          await jparse(["worker-set", root, sid, ...corpusPaths])
+        }
+      }
+
+      const text = extractOpencodeText(stdout)
+      if (!text) throw new Error("worker produced no text output")
+
+      let answer = text
+      let verification: CitationReport | null = null
+      try {
+        const v = await verifyCitations(text, corpusPaths)
+        if (v) { answer = v.answer; verification = v.citations }
+      } catch (e) {
+        logger.warn(`citation verification failed (answer returned unannotated): ${(e as Error).message}`)
+      }
+
+      return { answer, cacheHit, corpusLines, latencyMs: Date.now() - started, paths: corpusPaths, workerSession, lineRanges, verification }
+    }
+
+    async function runWorkerWithTimeout(question: string, paths: string[]): Promise<WorkerOutcome | null> {
+      return await Promise.race([
+        runWorker(question, paths),
+        new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error(`worker timed out after ${WORKER_TIMEOUT_MS}ms`)), WORKER_TIMEOUT_MS),
+        ),
+      ])
+    }
+
+    // ── the gate ────────────────────────────────────────────────────────────
+
+    // v1's `chat.message` recorded the session model (the input that decides
+    // premium vs. cheap). The v2 prompt hook carries it best-effort.
+    // The session model is what arms the premium gate. Deduped per
+    // session+model so we do not spawn the java helper on every step.
+    const recordedModels = new Map<string, string>()
+    async function recordModel(sessionID: string, providerID: string, modelID: string): Promise<void> {
+      const key = `${providerID}/${modelID}`
+      if (recordedModels.get(sessionID) === key) return
+      recordedModels.set(sessionID, key)
+      try {
+        await jparse(["record-model", root, sessionID, providerID, modelID])
+      } catch (e) {
+        logger.warn(`record-model failed: ${(e as Error).message}`)
+      }
+    }
+
+    await ctx.session.hook("prompt", async (event: any) => {
+      const sessionID: string | undefined = event?.sessionID ?? event?.session?.id
+      const model = event?.model ?? event?.prompt?.model
+      const providerID: string | undefined = model?.providerID ?? event?.providerID
+      const modelID: string | undefined = model?.modelID ?? model?.id ?? event?.modelID
+      if (!sessionID || !providerID || !modelID) return
+      await recordModel(sessionID, providerID, modelID)
+    })
+
+    // V2's `prompt` hook runs before model resolution, so it does not carry the
+    // session model (unlike v1's `chat.message`). The `context` hook runs before
+    // each model request and does carry `{ sessionID, model }` — record it here
+    // so the premium gate is actually armed.
+    await ctx.session.hook("context", async (event: any) => {
+      const sessionID: string | undefined = event?.sessionID
+      const model = event?.model
+      const providerID: string | undefined = model?.providerID
+      const modelID: string | undefined = model?.modelID ?? model?.id
+      if (!sessionID || !providerID || !modelID) return
+      await recordModel(sessionID, providerID, modelID)
+    })
+
+    // v1 `tool.execute.before(input, output)` → v2 hook event carrying the tool
+    // name, its args and the session id (field names differ, hence the reads
+    // with fallbacks). A throw is still what blocks the tool call.
+    await ctx.tool.hook("execute.before", async (event: any) => {
+      const toolName: string | undefined = event?.tool ?? event?.name
+      const args: any = event?.input ?? event?.args
+      const sessionID: string | undefined = event?.sessionID ?? event?.session?.id
+      try {
+        if (toolName === "read") {
+          const filePath = typeof args?.filePath === "string" ? args.filePath
+            : typeof args?.file_path === "string" ? args.file_path : ""
+          if (!filePath) return
+          const offset = Number.isFinite(args?.offset) ? String(args.offset) : "-"
+          const limit = Number.isFinite(args?.limit) ? String(args.limit) : "-"
+          const v = await jparse(["decide-read", root, sessionID ?? "", abs(filePath), offset, limit])
+          if (v?.decision === "block") {
+            logger.info(`gated read: ${filePath} (${v.detail})`)
+            throw new Error(blockMessage(abs(filePath), v.detail))
+          }
+          return
+        }
+        if (toolName === "bash") {
+          const command = typeof args?.command === "string" ? args.command
+            : typeof args?.cmd === "string" ? args.cmd : ""
+          if (!command) return
+          const v = await jparse(["decide-bash", root, sessionID ?? "", command])
+          if (v?.decision === "block") {
+            logger.info(`gated bash read: ${command} (${v.detail})`)
+            throw new Error(bashBlockMessage(command, v.detail))
+          }
+        }
+      } catch (e) {
+        // A throw from decide-* logic IS the block; infrastructure failures are
+        // swallowed (fail open — never break the main task).
+        if (e instanceof Error && (e.message.startsWith("PREMIUM_READ_OFFLOAD"))) throw e
+        logger.warn(`gate check failed (allowing): ${(e as Error).message}`)
+      }
+    })
+
+    // ── tools (JSON Schema inputs, `{ content }` results) ─────────────────────
+
+    const str = (description: string) => ({ type: "string", description })
+    const emptyInput = { type: "object", properties: {}, additionalProperties: false } as const
+
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "offload-read",
+        description:
+          "Delegate a bulk file read to the cheap DeepSeek worker instead of reading the files into this " +
+          "premium session's context. Returns JSON, not file bytes: {answer, files_read, line_ranges, " +
+          "worker_session, cache_hit, citations, verification}. Read `answer` for the derived summary " +
+          "(correct for understanding, wrong for editing), and use the provenance fields to judge coverage: " +
+          "`files_read`/`line_ranges` say what the worker saw, `cache_hit` says whether it was a cheap resumed " +
+          "turn, and `citations` reports how many worker claims were mechanically verified against the files " +
+          "(claims with unresolvable citations are tagged [unverified] in `answer`). Files are cached in a " +
+          "persistent worker session, so follow-up questions about the same files are cheap.",
+        input: {
+          type: "object",
+          properties: {
+            question: str("What you need to know about the files"),
+            paths: { type: "array", items: { type: "string" }, description: "File paths to hand to the worker" },
+          },
+          required: ["question", "paths"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          const question: string = args?.question ?? ""
+          const paths: string[] = Array.isArray(args?.paths) ? args.paths : []
+          try {
+            const outcome = await runWorkerWithTimeout(question, paths)
+            if (!outcome) {
+              // The guard declined: too trivial or too small to justify a worker.
+              await metric({ op: "offload-read", outcome: "skipped-not-worth", question, paths: paths.map(abs) })
+              return {
+                content: JSON.stringify({
+                  skipped: true,
+                  reason: "question is trivial or corpus is small — not worth a worker round-trip",
+                  hint: "Read the file directly (it is small), or read a bounded section with offset/limit, and answer in-session.",
+                }),
+              }
+            }
+            await metric({
+              op: "offload-read",
+              outcome: "done",
+              cacheHit: outcome.cacheHit,
+              corpusLines: outcome.corpusLines,
+              latencyMs: outcome.latencyMs,
+              answerChars: outcome.answer.length,
+              workerSession: outcome.workerSession,
+              citationsVerified: outcome.verification?.verified,
+              citationsUnverified: outcome.verification?.unverified,
+              paths: outcome.paths,
+              workerModel: WORKER_MODEL,
+            })
+            return {
+              content: buildOffloadContract({
+                answer: outcome.answer,
+                filesRead: outcome.paths,
+                lineRanges: outcome.lineRanges,
+                workerSession: outcome.workerSession,
+                cacheHit: outcome.cacheHit,
+                verification: outcome.verification,
+              }),
+            }
+          } catch (e) {
+            await metric({ op: "offload-read", outcome: "error", detail: String(e), paths: paths.map(abs) })
+            return { content: JSON.stringify({ error: "offload failed", detail: String(e), hint: "Retry, or use a targeted read / allow-direct-read." }) }
+          }
+        },
+      })
+
+      editor.add({
+        name: "allow-direct-read",
+        description:
+          "Grant a one-shot permission to read a large file directly into this premium session, bypassing the " +
+          "offload gate once. Use only when exact content is genuinely needed (e.g. before editing). " +
+          "The permission applies to the next read of that path in this session.",
+        input: {
+          type: "object",
+          properties: {
+            path: str("File path to permit a direct read for"),
+            reason: str("Why exact content is needed (recorded in the audit log)"),
+          },
+          required: ["path", "reason"],
+          additionalProperties: false,
+        },
+        async execute(args: any, context: any) {
+          const p: string = args?.path ?? ""
+          const reason: string = args?.reason ?? ""
+          const sessionID: string | undefined = context?.sessionID ?? context?.session?.id
+          try {
+            const r = await jparse(["grant-direct", root, sessionID ?? "", abs(p)])
+            logger.info(`allow-direct-read granted: ${p} — ${reason}`)
+            return { content: JSON.stringify({ granted: r?.granted === true, path: p, reason }) }
+          } catch (e) {
+            return { content: JSON.stringify({ granted: false, detail: String(e) }) }
+          }
+        },
+      })
+
+      editor.add({
+        name: "code-write",
+        description:
+          "Delegate boilerplate code generation to the cheap DeepSeek worker. Use for tests, config, docstrings, " +
+          "type stubs — any generation where >80% is predictable from reference files. Returns the generated code; " +
+          "pass `target` to write it to disk. Review the output for the ~5-20% that needs judgment.",
+        input: {
+          type: "object",
+          properties: {
+            spec: str("What to generate"),
+            reference: str("File whose patterns/conventions the output must match (required)"),
+            target: str("Path to write the generated code to; omit to return it"),
+          },
+          required: ["spec", "reference"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          const spec: string = args?.spec ?? ""
+          const reference: string = args?.reference ?? ""
+          const target: string | undefined = args?.target
+          if (!reference) {
+            return { content: JSON.stringify({ error: "reference is required — the worker needs a file to match patterns against" }) }
+          }
+          try {
+            const refFull = abs(reference)
+            if (!fs.existsSync(refFull)) {
+              return { content: JSON.stringify({ error: `reference file not found: ${reference}` }) }
+            }
+            const ref = fs.readFileSync(refFull, "utf-8")
+            const message = `Spec: ${spec}\n\nReference:\n${ref}\n`
+            if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Offload disabled in subprocess." }
+            const started = Date.now()
+            // Large references go on stdin (same E2BIG fix as offload-read).
+            const r = await safeSpawn(
+              ["opencode", "run", "--format", "json", "--model", WORKER_MODEL, ...agentArgs(WRITER_AGENT)],
+              { cwd: root, env: { XDG_DATA_HOME: workerDataDir() }, input: message },
+            )
+            let code = extractOpencodeText(r.stdout)
+            if (!code) {
+              await metric({ op: "code-write", outcome: "error", detail: "worker produced no output", reference: refFull, workerModel: WORKER_MODEL })
+              return { content: JSON.stringify({ error: "worker produced no output" }) }
+            }
+            // Strip markdown fences the worker sometimes adds.
+            code = code.replace(/^```[a-zA-Z]*\n/gm, "").replace(/^```\s*$/gm, "")
+            await metric({
+              op: "code-write",
+              outcome: "done",
+              reference: refFull,
+              target: target ? abs(target) : null,
+              generatedLines: code.split("\n").length,
+              latencyMs: Date.now() - started,
+              workerModel: WORKER_MODEL,
+            })
+            if (target) {
+              const targetFull = abs(target)
+              fs.mkdirSync(path.dirname(targetFull), { recursive: true })
+              fs.writeFileSync(targetFull, code)
+              logger.info(`code-write wrote ${code.split("\n").length} lines to ${target}`)
+              return { content: JSON.stringify({ wrote: target, lines: code.split("\n").length }) }
+            }
+            return { content: code }
+          } catch (e) {
+            await metric({ op: "code-write", outcome: "error", detail: String(e), reference, workerModel: WORKER_MODEL })
+            return { content: JSON.stringify({ error: "code-write failed", detail: String(e) }) }
+          }
+        },
+      })
+
+      editor.add({
+        name: "offload-status",
+        description: "Report the premium-read-offload gate status for the current session (premium? thresholds? worker model?).",
+        input: emptyInput,
+        async execute() {
+          const workerIds = await jparse(["worker-list", root])
+          return {
+            content: JSON.stringify({
+              workerModel: WORKER_MODEL,
+              dataDir: workerDataDir(),
+              thresholds: {
+                premium: process.env.LLMHP_OFFLOAD_MIN_LINES ?? "1000",
+                zai: process.env.LLMHP_OFFLOAD_ZAI_MIN_LINES ?? "400",
+                targetedMax: process.env.LLMHP_OFFLOAD_TARGETED_MAX ?? "2000",
+                minWorthLines: process.env.LLMHP_OFFLOAD_MIN_WORTH_LINES ?? "200",
+              },
+              workerTtlDays: WORKER_TTL_DAYS,
+              workerSessions: workerIds?.sessionIDs ?? [],
+              metrics: `${metricsPath()} (JSONL; one record per offload/code-write, skipped, or error)`,
+            }),
+          }
+        },
+      })
+    })
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
 }

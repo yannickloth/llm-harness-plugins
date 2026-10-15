@@ -679,9 +679,9 @@ const v1Factory = async ({ client, directory, worktree }: Parameters<Plugin>[0],
 //   chat.message           → ctx.session.hook("prompt", …)
 //   tool.execute.after     → ctx.tool.hook("execute.after", …)
 //   event                  → ctx.event.subscribe(…), aborted by the cleanup
-//                            function; V2 has no `file.edited` event, so scoped
-//                            injection runs from the tool hook instead (the same
-//                            substitution guardrail-chain documents).
+//                            function. V2 also emits `file.edited`, but v1 drove
+//                            scoped injection from the tool hook, so the tool hook
+//                            is kept as the single path.
 //   tool map               → ctx.tool.transform(editor) with JSON Schema inputs
 //                            and structured `{ content }` results.
 // The helpers above are unchanged: they speak the V1 client surface, so a small
@@ -957,7 +957,7 @@ export default {
     return () => controller.abort()
   },
 
-  async server(input: any) {
-    return v1Factory(input)
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
   },
 }

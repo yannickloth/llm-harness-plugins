@@ -132,11 +132,11 @@ export default {
       if (settings.topicGate && sid && getSessionTopic(sid) === "personal") return
       const parts: Array<{ type: string; text: string }> = Array.isArray(event.system) ? event.system : []
       if (parts.some(p => (p.text ?? "").includes(CODIFY_FIRST_MARKER))) return
-      event.system = [...parts, { type: "text", text: CODIFY_FIRST_DIRECTIVE }]
+      if (Array.isArray(event.system)) event.system.push({ type: "text", text: CODIFY_FIRST_DIRECTIVE })
     })
   },
 
-  async server(input: any) {
-    return v1Factory(input)
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
   },
 }

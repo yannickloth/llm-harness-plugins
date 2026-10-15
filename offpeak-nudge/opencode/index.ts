@@ -453,14 +453,16 @@ export default {
       console.error(`[offpeak-nudge] ${body.title}: ${body.message}`)
     }
 
+    let boundaryTimer: ReturnType<typeof setInterval> | undefined
+
     const startBoundaryTimer = () => {
       if (options.boundaryTimer === false) return
       const ms = options.boundaryIntervalMs ?? 60_000
-      const t = setInterval(() => {
+      boundaryTimer = setInterval(() => {
         // The v1 path showed a toast on boundary crossings; keep the state
         // tracking so peak/off-peak transitions stay recorded.
       }, ms)
-      t.unref?.()
+      boundaryTimer.unref?.()
     }
     startBoundaryTimer()
 
@@ -472,7 +474,7 @@ export default {
       trackProvider(event?.sessionID, provider)
       const parts: Array<{ type: string; text: string }> = Array.isArray(event.system) ? event.system : []
       if (parts.some(p => (p.text ?? "").includes(NUDGE_MARKER))) return
-      event.system = [{ type: "text", text: systemRuleFor(plan, displayName(provider!)) }, ...parts]
+      if (Array.isArray(event.system)) event.system.unshift({ type: "text", text: systemRuleFor(plan, displayName(provider!)) })
     })
 
     await ctx.session.hook("prompt", async (event: any) => {
@@ -609,9 +611,14 @@ If the user confirms, run the task. If not, do not run it.\n\n${text}`
         },
       })
     })
+
+    return () => {
+      if (boundaryTimer) clearInterval(boundaryTimer)
+      controller.abort()
+    }
   },
 
-  async server(input: any) {
-    return v1Factory(input)
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
   },
 }

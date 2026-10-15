@@ -136,10 +136,10 @@ export default {
         ? buildStaticContext(root, flags)
         : buildSessionContext(root, flags)
       if (!c) return
-      event.system = [{ type: "text", text: c }, ...parts]
+      if (Array.isArray(event.system)) event.system.unshift({ type: "text", text: c })
     })
   },
-  async server(input: any) {
-    return v1Factory(input)
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
   },
 }

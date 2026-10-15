@@ -211,7 +211,7 @@ async function loadPlugin(dir: string, configPath: string) {
   process.env.LLMHP_SEMANTIC_ROUTER_CONFIG = configPath
   const mod = await import(join(import.meta.dir, "index.ts") + `?t=${Date.now()}-${Math.random()}`)
   const client = { app: { log: async () => {} } }
-  const hooks: any = await mod.default({ client, directory: dir, worktree: dir })
+  const hooks: any = await (mod.default as any).server({ client, directory: dir, worktree: dir })
   return { mod, hooks }
 }
 
@@ -342,7 +342,7 @@ describe("semantic-router plugin", () => {
     process.env.LLMHP_SEMANTIC_ROUTER = "0"
     try {
       const mod = await import(join(import.meta.dir, "index.ts") + `?t=${Date.now()}`)
-      const result: any = await mod.default({ client: { app: { log: async () => {} } }, directory: "/tmp", worktree: "/tmp" })
+      const result: any = await (mod.default as any).server({ client: { app: { log: async () => {} } }, directory: "/tmp", worktree: "/tmp" })
       expect(result.tool).toBeUndefined()
     } finally {
       if (prev === undefined) delete process.env.LLMHP_SEMANTIC_ROUTER

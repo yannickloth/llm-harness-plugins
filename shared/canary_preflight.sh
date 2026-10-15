@@ -27,7 +27,8 @@ CFG="${2:?uso: canary_preflight.sh <opencode> <opencode.json>}"
 [ -r "$CFG" ] || { echo "canary: config not readable: $CFG" >&2; exit 1; }
 [ "${LLMHP_CANARY_OFF:-0}" = 1 ] && exit 0
 
-# Plugin ids from the config: <id>/opencode/<file>.ts -> id; anything else -> file basename.
+# Plugin ids from the config entries: <id>/opencode/<file>.ts and the V2
+# directory form <id>/opencode both map to <id>; anything else -> basename.
 IDS="$(python3 - "$CFG" <<'PY'
 import json, os, sys
 cfg = json.load(open(sys.argv[1]))
@@ -36,8 +37,10 @@ ids = []
 for p in cfg.get("plugin", []):
     path = os.path.join(root, p) if p.startswith(".") else p
     parts = path.replace("\\", "/").split("/")
-    if len(parts) >= 2 and parts[-2] == "opencode":
+    if len(parts) >= 3 and parts[-2] == "opencode":
         ids.append(parts[-3])
+    elif len(parts) >= 2 and parts[-1] == "opencode":
+        ids.append(parts[-2])
     else:
         ids.append(os.path.splitext(os.path.basename(path))[0])
 print("\n".join(ids))
@@ -47,15 +50,21 @@ PY
 
 STATE="${LLMHP_CANARY_STATE:-${TMPDIR:-/tmp}/llmhp-canary}"
 VER="$("$BIN" --version 2>/dev/null)" || { echo "canary: '$BIN --version' failed" >&2; exit 1; }
-# PROTO invalidates stamps when the marker format or checks change (v3: key on config content).
+# V2 loads plugins only with a private server: plain `run` talks to the background
+# service and can die before plugin init. `--standalone` keeps the probe hermetic
+# and is a no-op flag on V1 (which does not advertise it), so add it when supported.
+EXTRA=()
+"$BIN" run --help 2>&1 | grep -q -- '--standalone' && EXTRA=(--standalone)
+# PROTO invalidates stamps when the marker format or probe invocation changes
+# (v4: `--standalone` when supported, so V2 actually initializes plugins).
 CFG_SHA="$(sha256sum "$CFG" | cut -d' ' -f1)"
-KEY="$(printf '%s' "proto-3|$VER|$CFG_SHA|$IDS|" | tr '\n' '\001' | sha256sum | cut -d' ' -f1)"
+KEY="$(printf '%s' "proto-4|$VER|$CFG_SHA|$IDS|" | tr '\n' '\001' | sha256sum | cut -d' ' -f1)"
 [ -f "$STATE/ok-$KEY" ] && exit 0
 
 MARKS="$(mktemp -d "${TMPDIR:-/tmp}/canary.XXXXXX")"
 N="pre-$$-$RANDOM$RANDOM"
 ( exec env LLMHP_CANARY_DIR="$MARKS" LLMHP_CANARY_NONCE="$N" \
-    "$BIN" run "canary del muro" --model canary/no-credito </dev/null >/dev/null 2>&1 ) &
+    "$BIN" run ${EXTRA[@]+"${EXTRA[@]}"} "canary del muro" --model canary/no-credito </dev/null >/dev/null 2>&1 ) &
 PID=$!
 ok() {
   for id in $IDS; do [ -f "$MARKS/$N.$id.testigo" ] || return 1; done

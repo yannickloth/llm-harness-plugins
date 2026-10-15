@@ -2,7 +2,7 @@ import { type Plugin, tool } from "@opencode-ai/plugin"
 import path from "path"
 import fs from "fs"
 import os from "os"
-import { createLogger } from "../../shared/plugin-logger"
+import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
 import {
   ConfigError,
   DEFAULT_LEXICAL_MARGIN,
@@ -45,16 +45,13 @@ const FAILURE_COOLDOWN_MS = Number(process.env.LLMHP_SEMANTIC_ROUTER_COOLDOWN_MS
 /** Cap on cached query embeddings. */
 const QUERY_CACHE_MAX = 256
 
-export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) => {
-  writeLoadCanary("semantic-router")
-  const logger = createLogger(client, "semantic-router")
-  const root = worktree ?? directory
-
-  if (process.env[DISABLED_ENV] === "0") {
-    logger.info("plugin disabled via LLMHP_SEMANTIC_ROUTER=0")
-    return {}
-  }
-
+// ---------------------------------------------------------------------------
+// Router engine shared by both entrypoints: config loading/merging, the
+// embedding index with lexical fallback, and classification. The v1 and v2
+// entrypoints differ only in how they expose hooks and tools, so they both
+// build one engine and wire their own surface around it.
+// ---------------------------------------------------------------------------
+function createEngine(logger: PluginLogger, root: string, directory: string) {
   // ── config ────────────────────────────────────────────────────────────────
 
   function configPaths(): string[] {
@@ -373,18 +370,60 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     queryCache.clear()
   }
 
-  // ── hooks ─────────────────────────────────────────────────────────────────
+  // ── engine API ─────────────────────────────────────────────────────────────
+
+  // Getters keep the reassignable state live across `reload()` and index builds.
+  return {
+    get loaded() { return loaded },
+    get usingLexical() { return usingLexical },
+    get activeEncoder() { return activeEncoder },
+    get index() { return index },
+    get disabledUntil() { return disabledUntil },
+    queryCache,
+    activeRoutes,
+    classify,
+    classifyDetailed,
+    reload,
+    configPaths,
+    embeddingsFile,
+    routeTextForInjection,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// v1 entrypoint (legacy function form).
+// ---------------------------------------------------------------------------
+const v1Factory: Plugin = async ({ client, directory, worktree }) => {
+  writeLoadCanary("semantic-router")
+  const logger = createLogger(client, "semantic-router")
+  const root = worktree ?? directory
+
+  if (process.env[DISABLED_ENV] === "0") {
+    logger.info("plugin disabled via LLMHP_SEMANTIC_ROUTER=0")
+    return {}
+  }
+
+  const e = createEngine(logger, root, directory)
+
+  logger.info(
+    e.loaded.config
+      ? `plugin active — routes=${e.loaded.config.routes.length} ` +
+        (e.loaded.config.encoder
+          ? `encoder=${e.loaded.config.encoder.baseURL} (${e.loaded.config.encoder.model})${e.loaded.config.fallbackEncoders.length ? ` +${e.loaded.config.fallbackEncoders.length} fallback` : ""}`
+          : "lexical-only (no encoder)")
+      : `plugin active — no routes configured (inert)${e.loaded.error ? `; ${e.loaded.error}` : ""}`,
+  )
 
   return {
     "chat.message": async (
       input: { sessionID: string },
       output: { parts: Array<{ type: string; text: string }> },
     ) => {
-      if (!loaded.config) return
+      if (!e.loaded.config) return
       const textPart = output.parts?.find((p) => p.type === "text" && typeof p.text === "string" && p.text.trim())
       if (!textPart) return
-      const match = await classify(textPart.text)
-      activeRoutes.set(input.sessionID, match)
+      const match = await e.classify(textPart.text)
+      e.activeRoutes.set(input.sessionID, match)
       if (match) logger.info(`session ${input.sessionID} → route "${match.name}" (${match.score.toFixed(3)})`)
     },
 
@@ -394,14 +433,14 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
     ) => {
       const sid = input.sessionID
       if (!sid) return
-      const match = activeRoutes.get(sid)
+      const match = e.activeRoutes.get(sid)
       if (!match) return
-      const block = routeTextForInjection(match)
+      const block = e.routeTextForInjection(match)
       output.system = Array.isArray(output.system) ? [block, ...output.system] : [block]
     },
 
     "tool.execute.before": async (input: { tool: string; sessionID: string }) => {
-      const match = activeRoutes.get(input.sessionID)
+      const match = e.activeRoutes.get(input.sessionID)
       const deny = match?.route.denyTools
       if (deny && deny.includes(input.tool)) {
         throw new Error(
@@ -420,12 +459,12 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
           question: tool.schema.string().describe("Query text to classify"),
         },
         async execute({ question }: { question: string }) {
-          const cfg = loaded.config
+          const cfg = e.loaded.config
           if (!cfg) {
-            return JSON.stringify({ error: "no semantic-router config found", paths: configPaths() })
+            return JSON.stringify({ error: "no semantic-router config found", paths: e.configPaths() })
           }
           try {
-            const { match, mode, candidates } = await classifyDetailed(question)
+            const { match, mode, candidates } = await e.classifyDetailed(question)
             return JSON.stringify({
               route: match?.name ?? null,
               score: match ? Number(match.score.toFixed(4)) : null,
@@ -434,8 +473,8 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
               margin: mode === "lexical" ? cfg.lexicalMargin : cfg.defaultMargin,
               candidates,
             })
-          } catch (e) {
-            return JSON.stringify({ error: String(e) })
+          } catch (err) {
+            return JSON.stringify({ error: String(err) })
           }
         },
       }),
@@ -444,19 +483,19 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         description: "Report semantic-router config sources, encoder, routes, thresholds, and the active route for this session.",
         args: {},
         async execute(_args: unknown, context: { sessionID: string }) {
-          const cfg = loaded.config
+          const cfg = e.loaded.config
           return JSON.stringify({
             enabled: cfg != null,
-            configSources: loaded.sources,
-            configError: loaded.error,
-            configPaths: configPaths(),
+            configSources: e.loaded.sources,
+            configError: e.loaded.error,
+            configPaths: e.configPaths(),
             encoders: cfg
               ? [cfg.encoder, ...cfg.fallbackEncoders]
-                  .filter((e): e is EncoderConfig => e != null)
-                  .map((e) => ({ baseURL: e.baseURL, model: e.model, hasApiKey: !!e.apiKey }))
+                  .filter((enc): enc is EncoderConfig => enc != null)
+                  .map((enc) => ({ baseURL: enc.baseURL, model: enc.model, hasApiKey: !!enc.apiKey }))
               : [],
-            mode: usingLexical ? "lexical" : "embeddings",
-            activeEncoder: activeEncoder ? { baseURL: activeEncoder.baseURL, model: activeEncoder.model } : null,
+            mode: e.usingLexical ? "lexical" : "embeddings",
+            activeEncoder: e.activeEncoder ? { baseURL: e.activeEncoder.baseURL, model: e.activeEncoder.model } : null,
             defaultThreshold: cfg?.defaultThreshold ?? DEFAULT_THRESHOLD,
             defaultMargin: cfg?.defaultMargin ?? 0.08,
             lexicalThreshold: cfg?.lexicalThreshold ?? DEFAULT_LEXICAL_THRESHOLD,
@@ -471,11 +510,11 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
               denyTools: r.denyTools ?? [],
               keywords: r.keywords ?? [],
             })) ?? [],
-            indexed: index != null,
-            activeRoute: activeRoutes.get(context.sessionID)?.name ?? null,
-            cachedQueries: queryCache.size,
-            embeddingsFile: embeddingsFile(),
-            embeddingsBackoffMs: Math.max(0, disabledUntil - Date.now()),
+            indexed: e.index != null,
+            activeRoute: e.activeRoutes.get(context.sessionID)?.name ?? null,
+            cachedQueries: e.queryCache.size,
+            embeddingsFile: e.embeddingsFile(),
+            embeddingsBackoffMs: Math.max(0, e.disabledUntil - Date.now()),
           })
         },
       }),
@@ -484,15 +523,183 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0]) =>
         description: "Reload the semantic-router config from disk and clear the embedding index and query cache.",
         args: {},
         async execute() {
-          reload()
-          logger.info(`reloaded — routes=${loaded.config?.routes.length ?? 0}`)
+          e.reload()
+          logger.info(`reloaded — routes=${e.loaded.config?.routes.length ?? 0}`)
           return JSON.stringify({
             reloaded: true,
-            routes: loaded.config?.routes.map((r) => r.name) ?? [],
-            error: loaded.error,
+            routes: e.loaded.config?.routes.map((r) => r.name) ?? [],
+            error: e.loaded.error,
           })
         },
       }),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 differences: no `client` (root from `ctx.location`,
+// logging to stderr), `chat.message` → `ctx.session.hook("prompt")`,
+// `experimental.chat.system.transform` → `ctx.session.hook("context")` (system
+// parts), `tool.execute.before` → `ctx.tool.hook("execute.before")`, and the
+// tool map → `ctx.tool.transform` with JSON Schema inputs.
+// ---------------------------------------------------------------------------
+function consoleLogger(service: string) {
+  return {
+    debug: (_m: string) => {},
+    info: (m: string) => console.error(`[${service}] ${m}`),
+    warn: (m: string) => console.error(`[${service}] WARN ${m}`),
+    error: (m: string) => console.error(`[${service}] ERROR ${m}`),
+  }
+}
+
+export default {
+  id: "semantic-router",
+
+  async setup(ctx: any) {
+    writeLoadCanary("semantic-router")
+    const logger = consoleLogger("semantic-router")
+    const root: string = ctx.location?.project?.canonical ?? ctx.location?.directory
+
+    if (process.env[DISABLED_ENV] === "0") {
+      logger.info("plugin disabled via LLMHP_SEMANTIC_ROUTER=0")
+      return
+    }
+
+    const e = createEngine(logger, root, root)
+
+    await ctx.session.hook("prompt", async (event: any) => {
+      if (!e.loaded.config) return
+      const text: string | undefined = event?.prompt?.text
+      if (typeof text !== "string" || !text.trim()) return
+      const match = await e.classify(text)
+      e.activeRoutes.set(event.sessionID, match)
+      if (match) logger.info(`session ${event.sessionID} → route "${match.name}" (${match.score.toFixed(3)})`)
+    })
+
+    await ctx.session.hook("context", (event: any) => {
+      const sid: string | undefined = event?.sessionID
+      if (!sid) return
+      const match = e.activeRoutes.get(sid)
+      if (!match) return
+      const block = e.routeTextForInjection(match)
+      if (Array.isArray(event.system)) event.system.unshift({ type: "text", text: block })
+    })
+
+    await ctx.tool.hook("execute.before", (event: any) => {
+      const toolName: string = event?.tool ?? event?.name
+      const match = e.activeRoutes.get(event?.sessionID)
+      const deny = match?.route.denyTools
+      if (deny && deny.includes(toolName)) {
+        throw new Error(
+          `SEMANTIC_ROUTER: tool "${toolName}" is disabled while route "${match!.name}" is active. ` +
+          `Complete the request without it, or rephrase if this is a different kind of task.`,
+        )
+      }
+    })
+
+    const str = (description: string) => ({ type: "string", description })
+    const emptyInput = { type: "object", properties: {}, additionalProperties: false } as const
+
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "semantic-route",
+        description:
+          "Classify a query against the configured semantic routes and report the winning route, its " +
+          "similarity score, and all candidates. Use to debug routing or check intent before acting.",
+        input: {
+          type: "object",
+          properties: { question: str("Query text to classify") },
+          required: ["question"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          const cfg = e.loaded.config
+          if (!cfg) {
+            return { content: JSON.stringify({ error: "no semantic-router config found", paths: e.configPaths() }) }
+          }
+          try {
+            const { match, mode, candidates } = await e.classifyDetailed(args.question)
+            return {
+              content: JSON.stringify({
+                route: match?.name ?? null,
+                score: match ? Number(match.score.toFixed(4)) : null,
+                mode,
+                threshold: mode === "lexical" ? cfg.lexicalThreshold : cfg.defaultThreshold,
+                margin: mode === "lexical" ? cfg.lexicalMargin : cfg.defaultMargin,
+                candidates,
+              }),
+            }
+          } catch (err) {
+            return { content: JSON.stringify({ error: String(err) }) }
+          }
+        },
+      })
+
+      editor.add({
+        name: "semantic-route-status",
+        description: "Report semantic-router config sources, encoder, routes, thresholds, and the active route for this session.",
+        input: emptyInput,
+        async execute(_args: any, context: any) {
+          const cfg = e.loaded.config
+          const sessionID: string | undefined = context?.sessionID
+          return {
+            content: JSON.stringify({
+              enabled: cfg != null,
+              configSources: e.loaded.sources,
+              configError: e.loaded.error,
+              configPaths: e.configPaths(),
+              encoders: cfg
+                ? [cfg.encoder, ...cfg.fallbackEncoders]
+                    .filter((enc): enc is EncoderConfig => enc != null)
+                    .map((enc) => ({ baseURL: enc.baseURL, model: enc.model, hasApiKey: !!enc.apiKey }))
+                : [],
+              mode: e.usingLexical ? "lexical" : "embeddings",
+              activeEncoder: e.activeEncoder ? { baseURL: e.activeEncoder.baseURL, model: e.activeEncoder.model } : null,
+              defaultThreshold: cfg?.defaultThreshold ?? DEFAULT_THRESHOLD,
+              defaultMargin: cfg?.defaultMargin ?? 0.08,
+              lexicalThreshold: cfg?.lexicalThreshold ?? DEFAULT_LEXICAL_THRESHOLD,
+              lexicalMargin: cfg?.lexicalMargin ?? DEFAULT_LEXICAL_MARGIN,
+              routes: cfg?.routes.map((r) => ({
+                name: r.name,
+                utterances: r.utterances.length,
+                threshold: r.threshold ?? cfg.defaultThreshold,
+                margin: r.margin ?? cfg.defaultMargin,
+                hasInject: !!r.inject,
+                skill: r.skill ?? null,
+                denyTools: r.denyTools ?? [],
+                keywords: r.keywords ?? [],
+              })) ?? [],
+              indexed: e.index != null,
+              activeRoute: sessionID ? e.activeRoutes.get(sessionID)?.name ?? null : null,
+              cachedQueries: e.queryCache.size,
+              embeddingsFile: e.embeddingsFile(),
+              embeddingsBackoffMs: Math.max(0, e.disabledUntil - Date.now()),
+            }),
+          }
+        },
+      })
+
+      editor.add({
+        name: "semantic-route-reload",
+        description: "Reload the semantic-router config from disk and clear the embedding index and query cache.",
+        input: emptyInput,
+        async execute() {
+          e.reload()
+          logger.info(`reloaded — routes=${e.loaded.config?.routes.length ?? 0}`)
+          return {
+            content: JSON.stringify({
+              reloaded: true,
+              routes: e.loaded.config?.routes.map((r) => r.name) ?? [],
+              error: e.loaded.error,
+            }),
+          }
+        },
+      })
+    })
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
 }

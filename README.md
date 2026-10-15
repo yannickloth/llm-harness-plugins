@@ -149,6 +149,8 @@ Call it in a pipeline or CI before real runs. The preflight also verifies that
 plugins **initialized in config order** (sub-millisecond monotonic markers,
 ties allowed) — that sequential loading is what makes the load-order table
 above enforceable. Results are cached per (binary version + config content).
+Under OpenCode V2 the probe auto-adds `--standalone` (a private server, so plugin
+init is hermetic); V1 does not advertise the flag, so it is left out there.
 Env: `LLMHP_CANARY_WAIT` (def. 60s), `LLMHP_CANARY_STATE` (stamp cache dir),
 `LLMHP_CANARY_ORDER=0` (skip the order check), `LLMHP_CANARY_OFF=1` (skip).
 `shared/canary_preflight.test.sh` pins the behavior with a fake `opencode`, including

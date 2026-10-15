@@ -13,7 +13,8 @@
 #   8. every */opencode/index.ts in this repo calls writeLoadCanary("<its dir name>") — a new
 #      plugin without wiring fails here, not silently in a host project;
 #   9. init order violated (a later-config plugin initialized first) -> fail closed, pair named;
-#  10. LLMHP_CANARY_ORDER=0 -> order inversion tolerated (explicit opt-out).
+#  10. LLMHP_CANARY_ORDER=0 -> order inversion tolerated (explicit opt-out);
+#  11. the V2 directory plugin path (<id>/opencode, no entry file) resolves to the same id.
 set -u
 SHARED_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SHARED_DIR/.." && pwd)"
@@ -35,6 +36,11 @@ FAKE="$TMP/opencode_falso.sh"
 cat > "$FAKE" <<'EOF'
 #!/bin/bash
 if [ "${1:-}" = "--version" ]; then echo "${FAKE_VERSION:-1.0.0} (opencode)"; exit 0; fi
+if [ "${1:-}" = "run" ] && [ "${2:-}" = "--help" ]; then
+  echo "FLAGS"
+  echo "  --standalone            Run with a private server instead of the background service"
+  exit 0
+fi
 if [ "${1:-}" = "run" ]; then
   echo run >> "$FAKE_LOG"
   if [ "${FAKE_PRE:-1}" = 1 ] && [ -n "${LLMHP_CANARY_DIR:-}" ]; then
@@ -146,6 +152,14 @@ run_preflight c10 FAKE_VERSION=3.1.0 FAKE_INVERT=1 LLMHP_CANARY_ORDER=0
 check $? "exit 0"
 check_eq "$(probes)" 2 "probe ran"
 check_eq "$(stamps)" 4 "OK cached for the opt-out key"
+
+echo "11. id derivation: V2 directory form -> datetime-inject"
+cat > "$CFG" <<'EOF'
+{ "plugin": ["./datetime-inject/opencode"] }
+EOF
+run_preflight c11 FAKE_VERSION=3.2.0 FAKE_PLUGINS="datetime-inject"
+check $? "directory path resolves to the plugin id"
+check_eq "$(stamps)" 5 "OK cached for the directory-form key"
 
 echo
 if [ "$fallos" -gt 0 ]; then echo "FAIL $fallos canary preflight check(s)"; exit 1; fi

@@ -31,7 +31,7 @@ describe("premium-read-offload", () => {
   test("plugin exports hooks and 4 tools", async () => {
     const mod = await import(join(import.meta.dir, "index.ts"))
     expect(mod.default).toBeDefined()
-    const result = await mod.default({ directory: "/tmp/test", worktree: undefined } as any)
+    const result = await (mod.default as any).server({ directory: "/tmp/test", worktree: undefined } as any)
     expect(result["tool.execute.before"]).toBeDefined()
     expect(result["chat.message"]).toBeDefined()
     expect(result.tool).toBeDefined()
@@ -64,7 +64,7 @@ describe("premium-read-offload", () => {
     process.env.LLMHP_OFFLOAD_DATA_DIR = workerDir
     try {
       const mod = await import(join(import.meta.dir, "index.ts") + `?t=${Date.now()}`)
-      const result = await mod.default({ directory: dir, worktree: dir } as any)
+      const result = await (mod.default as any).server({ directory: dir, worktree: dir } as any)
       const out = JSON.parse(String(await result.tool["offload-status"].execute({}, { sessionID: "s1" } as any)))
       expect(out.dataDir).toBe(workerDir)
       expect(existsSync(join(workerDir, "opencode", "auth.json"))).toBe(true)
@@ -87,7 +87,7 @@ describe("premium-read-offload", () => {
 
   test("tool schemas carry the expected args", async () => {
     const mod = await import(join(import.meta.dir, "index.ts"))
-    const result = await mod.default({ directory: "/tmp/test", worktree: undefined } as any)
+    const result = await (mod.default as any).server({ directory: "/tmp/test", worktree: undefined } as any)
     expect(result.tool["offload-read"].args.question).toBeDefined()
     expect(result.tool["offload-read"].args.paths).toBeDefined()
     expect(result.tool["allow-direct-read"].args.path).toBeDefined()
@@ -102,7 +102,7 @@ describe("premium-read-offload", () => {
     process.env.LLMHP_PREMIUM_OFFLOAD = "0"
     try {
       const mod = await import(join(import.meta.dir, "index.ts") + `?t=${Date.now()}`)
-      const result = await mod.default({ directory: "/tmp/test", worktree: undefined } as any)
+      const result = await (mod.default as any).server({ directory: "/tmp/test", worktree: undefined } as any)
       expect(result.tool).toBeUndefined()
     } finally {
       if (prev === undefined) delete process.env.LLMHP_PREMIUM_OFFLOAD
@@ -112,7 +112,7 @@ describe("premium-read-offload", () => {
 
   test("offload-read rejects empty paths", async () => {
     const mod = await import(join(import.meta.dir, "index.ts"))
-    const result = await mod.default({ directory: "/tmp/test", worktree: undefined } as any)
+    const result = await (mod.default as any).server({ directory: "/tmp/test", worktree: undefined } as any)
     const out = await result.tool["offload-read"].execute(
       { question: "q", paths: [] },
       { sessionID: "s1", directory: "/tmp/test", worktree: "/tmp/test" } as any,
@@ -122,7 +122,7 @@ describe("premium-read-offload", () => {
 
   test("code-write requires a reference", async () => {
     const mod = await import(join(import.meta.dir, "index.ts"))
-    const result = await mod.default({ directory: "/tmp/test", worktree: undefined } as any)
+    const result = await (mod.default as any).server({ directory: "/tmp/test", worktree: undefined } as any)
     const out = await result.tool["code-write"].execute(
       { spec: "write tests" },
       { sessionID: "s1", directory: "/tmp/test", worktree: "/tmp/test" } as any,
@@ -132,7 +132,7 @@ describe("premium-read-offload", () => {
 
   test("offload-read skips a trivial question (worth-it guard)", async () => {
     const mod = await import(join(import.meta.dir, "index.ts"))
-    const result = await mod.default({ directory: "/tmp/test", worktree: undefined } as any)
+    const result = await (mod.default as any).server({ directory: "/tmp/test", worktree: undefined } as any)
     const out = await result.tool["offload-read"].execute(
       { question: "how many lines are in this file?", paths: ["tiny.ts"] },
       { sessionID: "s1", directory: "/tmp/test", worktree: "/tmp/test" } as any,
@@ -188,7 +188,7 @@ describe("premium-read-offload", () => {
 
   test("offload-status reports thresholds, TTL, and metrics path", async () => {
     const mod = await import(join(import.meta.dir, "index.ts"))
-    const result = await mod.default({ directory: "/tmp/test", worktree: undefined } as any)
+    const result = await (mod.default as any).server({ directory: "/tmp/test", worktree: undefined } as any)
     const out = await result.tool["offload-status"].execute({}, { sessionID: "s1" } as any)
     const parsed = JSON.parse(String(out))
     expect(parsed.thresholds.minWorthLines).toBeDefined()

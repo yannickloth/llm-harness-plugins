@@ -221,7 +221,7 @@ describe("datetime-inject helpers", () => {
 describe("datetime-inject plugin hooks", () => {
   async function loadHooks(opts: Record<string, unknown> = {}) {
     const mod = await import(`./index.ts?${Date.now()}`)
-    return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: false, ...opts })
+    return (mod.default as any).server({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: false, ...opts })
   }
 
   test("plugin registers both hooks", async () => {
@@ -329,7 +329,7 @@ describe("datetime-inject plugin hooks", () => {
 describe("datetime-inject topic gate", () => {
   async function loadHooks(opts: Record<string, unknown> = {}) {
     const mod = await import(`./index.ts?${Date.now()}`)
-    return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: true, ...opts })
+    return (mod.default as any).server({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: true, ...opts })
   }
 
   test("does not inject datetime into a personal session", async () => {
@@ -379,7 +379,7 @@ describe("datetime-inject topic gate", () => {
 
   test("topicGate:false preserves original always-inject behavior", async () => {
     const mod = await import(`./index.ts?${Date.now()}`)
-    const hooks = await mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: false })
+    const hooks = await (mod.default as any).server({ directory: REPO_ROOT, worktree: REPO_ROOT }, { topicGate: false })
     await hooks["chat.message"]({ sessionID: "p2" }, { parts: [{ type: "text", text: "first" }] })
     const output = { parts: [{ type: "text", text: "second" }] }
     await hooks["chat.message"]({ sessionID: "p2" }, output)

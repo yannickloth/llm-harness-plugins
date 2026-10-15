@@ -31,7 +31,7 @@ describe("permission-modes", () => {
     const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
     expect(mod.default).toBeDefined()
 
-    const result = await mod.default({
+    const result = await (mod.default as any).server({
       directory: "/tmp/test",
       worktree: undefined,
     })
@@ -46,7 +46,7 @@ describe("permission-modes", () => {
 
   test("tool schemas have correct args", async () => {
     const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-    const result = await mod.default({
+    const result = await (mod.default as any).server({
       directory: "/tmp/test",
       worktree: undefined,
     })
@@ -69,7 +69,7 @@ describe("permission-modes", () => {
 
   test("tool.execute.before handler shape", async () => {
     const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-    const result = await mod.default({
+    const result = await (mod.default as any).server({
       directory: "/tmp/test",
       worktree: undefined,
     })
@@ -82,7 +82,7 @@ describe("permission-modes", () => {
     const tmpDir = `${require("os").tmpdir()}/perm-test-${Date.now()}`
     const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
 
-    const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+    const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
     // Prompt tri-state (default mode returns promptUser=true): must NOT throw,
     // so the tool proceeds and opencode's own permission gate handles prompting.
@@ -110,7 +110,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-deny-${Date.now()}`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       // dontAsk mode -> bash is a silent hard deny (promptUser=false) -> throws.
       await result.tool["permission-mode"].execute({ mode: "dontAsk" })
@@ -132,7 +132,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-tt-`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       const output = await result.tool["permission-mode"].execute({ mode: "plan" })
       const parsed = JSON.parse(output)
@@ -147,7 +147,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-ti-`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       const output = await result.tool["permission-mode"].execute({ mode: "bogus" })
       expect(output).toContain("error")
@@ -161,7 +161,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-ts-`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       const output = await result.tool["permission-status"].execute({})
       const parsed = JSON.parse(output)
@@ -181,7 +181,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-tst-`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       const output = await result.tool["permission-state"].execute({})
       const parsed = JSON.parse(output)
@@ -199,7 +199,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-tc-`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       const output = await result.tool["permission-check"].execute({ tool: "read", filePath: "src/main.ts" })
       const parsed = JSON.parse(output)
@@ -214,7 +214,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-tcf-`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       const output = await result.tool["permission-check"].execute({ tool: "bash" })
       const parsed = JSON.parse(output)
@@ -228,7 +228,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-tm-`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       const output = await result.tool["permission-mode"].execute({ mode: "plan" })
       expect(output).toBeDefined()
@@ -242,7 +242,7 @@ describe("permission-modes", () => {
     const tmpDir = require("fs").mkdtempSync(`${require("os").tmpdir()}/perm-t6-`)
     try {
       const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-      const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+      const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
       for (const mode of ["default", "plan", "acceptEdits", "bypassPermissions", "dontAsk", "auto"]) {
         const output = await result.tool["permission-mode"].execute({ mode })
@@ -257,7 +257,7 @@ describe("permission-modes", () => {
   test("tool.execute.before reads filePath from output.args aliases", async () => {
     const tmpDir = `${require("os").tmpdir()}/perm-test-parserr-${Date.now()}`
     const mod = await import(join(import.meta.dir, "..", "opencode", "index.ts"))
-    const result = await mod.default({ directory: tmpDir, worktree: tmpDir })
+    const result = await (mod.default as any).server({ directory: tmpDir, worktree: tmpDir })
 
     // read uses file_path alias; prompt tri-state must not throw.
     await expect(

@@ -4,7 +4,7 @@ const REPO_ROOT = new URL("../..", import.meta.url).pathname
 
 async function loadHooks(opts: Record<string, unknown> = {}) {
   const mod = await import(`./index.ts?${Date.now()}`)
-  return mod.default({ client: {}, directory: REPO_ROOT, worktree: REPO_ROOT }, opts)
+  return (mod.default as any).server({ client: {}, directory: REPO_ROOT, worktree: REPO_ROOT }, opts)
 }
 
 const hetzner = { model: { providerID: "hetzner" } }

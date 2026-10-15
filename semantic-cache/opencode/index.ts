@@ -81,7 +81,10 @@ type SemanticCacheOptions = {
   topicGate?: boolean
 }
 
-export default async ({ client, directory, worktree }: Parameters<Plugin>[0], options: SemanticCacheOptions = {}) => {
+// ---------------------------------------------------------------------------
+// v1 entrypoint (legacy function form).
+// ---------------------------------------------------------------------------
+const v1Factory = async ({ client, directory, worktree }: Parameters<Plugin>[0], options: SemanticCacheOptions = {}) => {
   writeLoadCanary("semantic-cache")
   const logger = createLogger(client, "semantic-cache")
   const cdir = cacheDir({ worktree, directory })
@@ -235,4 +238,200 @@ export default async ({ client, directory, worktree }: Parameters<Plugin>[0], op
       }),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 entrypoint (docs/build/plugins/migrate-v1): `id` + `setup(ctx)`, with v1
+// served by `server`. v2 differences: no `client` (root from `ctx.location`,
+// logging to stderr), `chat.message` → `ctx.session.hook("prompt")` (mutable
+// `event.prompt.text`), `event` → `ctx.event.subscribe`, `tool.execute.after` →
+// `ctx.tool.hook("execute.after")`, and the tool map → `ctx.tool.transform`.
+// `experimental.text.complete` has no v2 equivalent; the assistant text is
+// captured from the `session.next.text.ended` server event instead.
+// ---------------------------------------------------------------------------
+function consoleLogger(service: string) {
+  return {
+    debug: (_m: string) => {},
+    info: (m: string) => console.error(`[${service}] ${m}`),
+    warn: (m: string) => console.error(`[${service}] WARN ${m}`),
+    error: (m: string) => console.error(`[${service}] ERROR ${m}`),
+  }
+}
+
+export default {
+  id: "semantic-cache",
+
+  async setup(ctx: any) {
+    writeLoadCanary("semantic-cache")
+    const logger = consoleLogger("semantic-cache")
+    const root: string = ctx.location?.project?.canonical ?? ctx.location?.directory
+    const cdir = cacheDir({ directory: root, worktree: root })
+    const options = (ctx.options ?? {}) as SemanticCacheOptions
+    const topicGate = options.topicGate ?? true
+
+    async function injectContextV2(sessionId: string, text: string) {
+      try {
+        await ctx.session.synthetic({ sessionID: sessionId, text })
+      } catch {
+        // injection must never break the session
+      }
+    }
+
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        for await (const input of ctx.event.subscribe({ signal: controller.signal })) {
+          if (controller.signal.aborted) break
+          const type = input?.type
+          const props = input?.properties ?? input?.data ?? {}
+
+          if (type === "session.created") {
+            invalidateStale(cdir).catch(() => {})
+          } else if (type === "session.deleted") {
+            const sid: string | undefined = props?.sessionID ?? props?.info?.id
+            if (!sid) continue
+            pendingBySession.delete(sid)
+            assistantTextBySession.delete(sid)
+            injectionsBySession.delete(sid)
+          } else if (type === "session.next.text.ended") {
+            const sid: string | undefined = props?.sessionID
+            const text: string | undefined = props?.text
+            if (!sid || !text) continue
+            const bucket = assistantTextBySession.get(sid) ?? []
+            bucket.push(text)
+            assistantTextBySession.set(sid, bucket)
+          }
+        }
+      } catch {
+        // the event stream is best-effort bookkeeping
+      }
+    })()
+
+    await ctx.session.hook("prompt", async (event: any) => {
+      const sessionId: string | undefined = event?.sessionID
+      if (!sessionId) return
+      const text: string = (event?.prompt?.text ?? "").trim()
+      if (!text) return
+      // Never re-process a cache-hit pointer we injected ourselves.
+      if (text.startsWith(CACHE_HIT_MARKER)) return
+      updateSessionTopic(sessionId, text)
+
+      // Flush the prior turn's completed (prompt, assistant-response) pair —
+      // unless that turn was served from the cache.
+      const prior = pendingBySession.get(sessionId)
+      const priorText = assistantTextBySession.get(sessionId)
+      if (prior && !prior.served && priorText && priorText.length) {
+        store(cdir, prior.prompt, priorText.join("\n"), SOURCE_AUTO).catch(() => {})
+      }
+
+      const cached = await lookup(cdir, text).catch((e: unknown) => {
+        logger.warn(`cache lookup unavailable: ${(e as Error)?.message ?? String(e)}`)
+        return undefined
+      })
+      pendingBySession.set(sessionId, { prompt: text, served: !!cached })
+      assistantTextBySession.delete(sessionId)
+
+      if (topicGate && !shouldInjectProjectContext(sessionId)) return
+      if (cached && canInject(sessionId) && markInjected(`${sessionId}|${text}`)) {
+        const detailFile = path.join(cdir, "hits", `${hash(text)}.md`)
+        try {
+          fs.mkdirSync(path.dirname(detailFile), { recursive: true })
+          fs.writeFileSync(detailFile, `[CACHE HIT] stale cached answer (verify before acting)\n\n${cached}\n`)
+        } catch {
+          // never let a detail-file write failure break the session
+        }
+        const relPath = path.relative(root, detailFile)
+        await injectContextV2(
+          sessionId,
+          `${CACHE_HIT_MARKER} A semantically similar prompt was answered before. Details (stale — verify against current state): \`${relPath}\`.`,
+        )
+        logger.info(`injected cached response for session ${sessionId}`)
+      }
+    })
+
+    await ctx.tool.hook("execute.after", async (event: any) => {
+      const toolName: string = event?.tool ?? event?.name
+      if (!WRITE_TOOLS.has(toolName)) return
+      const filePath = extractFilePath(event?.input ?? event?.args ?? {})
+      if (!filePath) return
+
+      // Invalidate entries that reference the changed file, then store the
+      // file-op outcome so a future identical edit is served from cache.
+      invalidateFiles(cdir, filePath).catch(() => {})
+      const output = event?.result?.output ?? event?.result?.content ?? event?.output
+      if (output !== undefined && output !== null) {
+        store(cdir, `the file ${path.basename(filePath)} was modified (${toolName})`, typeof output === "string" ? output : JSON.stringify(output), SOURCE_FILEOP).catch(() => {})
+      }
+    })
+
+    const str = (description: string) => ({ type: "string", description })
+
+    await ctx.tool.transform((editor: any) => {
+      editor.add({
+        name: "cache-lookup",
+        description:
+          "Check if a semantically similar prompt has a cached response. Uses local embedding — no API call. Returns cached response on hit.",
+        input: {
+          type: "object",
+          properties: { prompt: str("The prompt to check in the cache") },
+          required: ["prompt"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          let cached: string | undefined
+          try {
+            cached = await lookup(cdir, args.prompt)
+          } catch (e) {
+            return { content: `[CACHE UNAVAILABLE] ${(e as Error)?.message ?? String(e)}` }
+          }
+          if (cached) {
+            return { content: `[CACHE HIT] ${cached}\n\n⚠️ Stale — verify against current state before acting.` }
+          }
+          return { content: "[CACHE MISS] No similar prompt found in cache." }
+        },
+      })
+
+      editor.add({
+        name: "cache-store",
+        description: "Store a prompt-response pair in the semantic cache. Prompt is locally embedded; response stored with WAL atomicity.",
+        input: {
+          type: "object",
+          properties: {
+            prompt: str("The prompt to cache"),
+            response: str("The response to cache"),
+          },
+          required: ["prompt", "response"],
+          additionalProperties: false,
+        },
+        async execute(args: any) {
+          try {
+            await store(cdir, args.prompt, args.response)
+            return { content: "Cached response for prompt." }
+          } catch (e) {
+            return { content: `[CACHE UNAVAILABLE] ${(e as Error)?.message ?? String(e)}` }
+          }
+        },
+      })
+
+      editor.add({
+        name: "cache-stats",
+        description: "Get cache statistics: hits, misses, entry count, total size, hit rate.",
+        input: { type: "object", properties: {}, additionalProperties: false },
+        async execute() {
+          try {
+            const body = await stats(cdir)
+            return { content: body || "No cache data." }
+          } catch (e) {
+            return { content: `[CACHE UNAVAILABLE] ${(e as Error)?.message ?? String(e)}` }
+          }
+        },
+      })
+    })
+
+    return () => controller.abort()
+  },
+
+  async server(input: any, options?: any) {
+    return v1Factory(input, options)
+  },
 }

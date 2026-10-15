@@ -10,7 +10,7 @@ const client = { app: { log: async () => {} } } as any
 const usedSessions: string[] = []
 
 function makePlugin(options?: Parameters<typeof codifyFirst>[1]) {
-  return codifyFirst(client as any, options)
+  return (codifyFirst as any).server(client as any, options)
 }
 
 let counter = 0

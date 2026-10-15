@@ -39,7 +39,7 @@ describe("general-skills STE-100 system injection", () => {
   })
 
   test("system.transform injects the rule at the front of the system prompt", async () => {
-    const plugin = await pluginFactory({ client: noopClient } as any)
+    const plugin = await (pluginFactory as any).server({ client: noopClient } as any)
     const output = { system: ["existing system"] }
     await plugin["experimental.chat.system.transform"]({} as any, output)
     expect(output.system).toHaveLength(2)
@@ -48,14 +48,14 @@ describe("general-skills STE-100 system injection", () => {
   })
 
   test("system.transform does not duplicate when marker already present", async () => {
-    const plugin = await pluginFactory({ client: noopClient } as any)
+    const plugin = await (pluginFactory as any).server({ client: noopClient } as any)
     const output = { system: [STE100_RULE, "existing system"] }
     await plugin["experimental.chat.system.transform"]({} as any, output)
     expect(output.system).toHaveLength(2)
   })
 
   test("system.transform handles an empty system array", async () => {
-    const plugin = await pluginFactory({ client: noopClient } as any)
+    const plugin = await (pluginFactory as any).server({ client: noopClient } as any)
     const output = { system: [] }
     await plugin["experimental.chat.system.transform"]({} as any, output)
     expect(output.system).toHaveLength(1)

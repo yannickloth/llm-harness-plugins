@@ -20,7 +20,7 @@ afterAll(async () => {
 
 async function loadHooks(opts: Record<string, unknown> = {}) {
   const mod = await import(`./index.ts?${Date.now()}`)
-  return mod.default({ directory: REPO_ROOT, worktree: REPO_ROOT, client: { app: { log: async () => {} } } }, { topicGate: false, ...opts })
+  return (mod.default as any).server({ directory: REPO_ROOT, worktree: REPO_ROOT, client: { app: { log: async () => {} } } }, { topicGate: false, ...opts })
 }
 
 describe("agentfeed plugin", () => {
@@ -368,7 +368,7 @@ describe("agentfeed plugin", () => {
 describe("agentfeed topic gate", () => {
   async function loadGated(opts: Record<string, unknown> = {}) {
     const mod = await import(`./index.ts?${Date.now()}`)
-    return mod.default(
+    return (mod.default as any).server(
       { directory: REPO_ROOT, worktree: REPO_ROOT, client: { app: { log: async () => {} } } },
       { ledgerDir: `/tmp/agentfeed-gate-${Date.now()}`, javaBinary: "true", topicGate: true, ...opts },
     )
