@@ -136,6 +136,12 @@ describe("v1 / v2 record builders", () => {
     expect(entries.one.model).toBe("deepseek/deepseek-v4-pro")
   })
 
+  test("agentConfigEntries defaults mode to subagent when frontmatter omits it", () => {
+    dir = mkdtempSync(join(tmpdir(), "agent-records-"))
+    writeFileSync(join(dir, "naked.md"), `---\nname: naked\ndescription: No mode declared.\n---\n\nbody\n`)
+    expect(agentConfigEntries(dir).naked.mode).toBe("subagent")
+  })
+
   test("agentTransformRecords carry the body without frontmatter", () => {
     dir = mkdtempSync(join(tmpdir(), "agent-records-"))
     writeFileSync(join(dir, "one.md"), SAMPLE)

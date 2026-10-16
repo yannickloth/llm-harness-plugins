@@ -110,12 +110,16 @@ export function agentConfigEntries(dir: string): Record<string, Record<string, u
     const raw = fs.readFileSync(file, "utf8")
     const meta = parseAgentMeta(raw)
     const entry: Record<string, unknown> = {
+      // `mode` is the gate that makes an agent runnable as a subagent. It must
+      // be set explicitly: a `{file:}` prompt reference drops the file's
+      // frontmatter, and when the name is also declared in `opencode.json` the
+      // JSON definition wins over the file. Omit it and the agent is known but
+      // rejected with "cannot run as a subagent".
       mode: meta.mode ?? "subagent",
       prompt: `{file:${file}}`,
     }
-    // `description` is required for the agent to be enumerable as a subagent:
-    // OpenCode drops frontmatter for a `{file:}` prompt reference, so it must
-    // be supplied explicitly here.
+    // `description` accompanies `mode`: without it the agent cannot be
+    // advertised to a caller even when the mode allows spawning.
     if (meta.description) entry.description = meta.description
     if (meta.model) entry.model = meta.model
     out[name] = entry

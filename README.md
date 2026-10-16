@@ -109,13 +109,17 @@ A plugin can also register its own agents instead of relying on the script. The
 two protocols differ, and `shared/agent-links.ts` implements both:
 
 - **V1** — the `config` hook may mutate `config.agent`;
-  `agentConfigEntries()` builds the records. Set `description` explicitly: an
-  agent wired through a `{file:}` prompt reference loses its frontmatter, and an
-  agent with no description is not enumerable as a subagent.
+  `agentConfigEntries()` builds the records. Supply **two** keys explicitly:
+  `mode: subagent` and `description`. A `{file:}` prompt reference drops the
+  agent file's frontmatter, and when the name is also declared in a repo's
+  `opencode.json` that JSON definition wins over the file. `mode` is the gate —
+  without it the agent is known but rejected with "cannot run as a subagent" —
+  and `description` is what lets a caller see it.
 - **V2** — native creation is not available (`ctx.agent` has `update`/`remove`
   but no `add`), so `ctx.agent.transform` cannot introduce a new agent.
   `ensureAgentLinks()` instead materialises the same symlinks as
-  `install-agents.sh`, idempotently, during `setup(ctx)`.
+  `install-agents.sh`, idempotently, during `setup(ctx)`. The file frontmatter
+  then supplies `mode` and `description`.
 
 An explicit `agent` entry in a repo's `opencode.json` always wins — both paths
 skip a name that is already declared, so per-repo overrides (pinned model,
