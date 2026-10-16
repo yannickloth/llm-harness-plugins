@@ -81,56 +81,44 @@ Agent files under `<plugin>/agents/` are **not** auto-discovered — the plugin
 directory is not a location OpenCode scans for agents, so a plugin that spawns
 `opencode run --agent <name>` (agentmem's `memory-keeper`/`memory-dreamer`, for
 example) fails with `Session.AgentNotFoundError` until the name resolves.
-Symlink them into the global agent directory, which every version in use
-discovers:
 
-```bash
-./install-agents.sh                      # default allowlist: agentmem
-OPENCODE_AGENT_PLUGINS="agentmem ivp" ./install-agents.sh
-./install-agents.sh --dry-run            # preview
+Plugins register their own agents from `shared/agents.ts` — no symlinks, no
+copies, nothing written outside the plugin:
+
+```ts
+// v1 (config hook)                          // v2 (setup)
+config: async (input) => {                   await ctx.agent.transform((editor) =>
+  registerAgentDirV1(input, agentsDir)         registerAgentDirV2(editor, agentsDir))
+}                                            )
 ```
 
-Only allowlisted plugins are linked, on purpose: an agent file the oldest client
-in use cannot validate makes that client refuse to start. Linking every plugin
-agent at once broke JetBrains' bundled opencode 1.18.25, which aborted with
-`Configuration is invalid at ~/.config/opencode/agent/typst-syntax-fixer.md` (a
-legacy `tools:` frontmatter file that V2 normalizes but 1.18.x rejects). Add
-plugins one at a time and confirm each client still starts.
+- **V2** — `ctx.agent.transform`'s editor has no `add`, but `update(id, fn)`
+  **creates** the agent when `id` is absent (it inserts a default and then runs
+  `fn`), so creation is spelled `update`. Each record is built inline:
+  frontmatter body → `system`, `mode`, `steps`, `color`, `model`
+  (`provider/model[#variant]`), and `permission:` verbs mapped to ordered rules
+  (`bash`→`shell`, `write`/`patch`→`edit`, `task`→`subagent`, `todowrite`→`todo`).
+  Rules are **appended**, so the runtime defaults — including the
+  `read *.env → ask` guards — survive.
+- **V1** — the `config` hook's `agent` map is filled inline (`prompt`, `mode`,
+  `maxSteps`, `permission`, `tools`); `{file:}` is avoided because V1 parses and
+  validates that file's frontmatter. Verbs V1's schema does not model become
+  `tools: { <verb>: false }` when denied.
 
-The symlinks keep the repo file as the single source of truth, so editing an
-agent's frontmatter (`mode`, `steps`, `permission`) takes effect without
-re-running the script. Re-running is safe and self-pruning: links into this repo
-that the allowlist no longer covers are removed, and a real file in the
-destination is never overwritten.
+Reading the files ourselves also keeps their frontmatter out of a client's config
+validator — the failure that forced the old symlink script to keep an allowlist
+(a legacy `tools:` file made JetBrains' bundled opencode 1.18.25 refuse to start
+with `Configuration is invalid at ~/.config/opencode/agent/typst-syntax-fixer.md`).
 
-#### Self-registration (per plugin)
-
-A plugin can also register its own agents instead of relying on the script. The
-two protocols differ, and `shared/agent-links.ts` implements both:
-
-- **V1** — the `config` hook may mutate `config.agent`;
-  `agentConfigEntries()` builds the records. Supply **two** keys explicitly:
-  `mode: subagent` and `description`. A `{file:}` prompt reference drops the
-  agent file's frontmatter, and when the name is also declared in a repo's
-  `opencode.json` that JSON definition wins over the file. `mode` is the gate —
-  without it the agent is known but rejected with "cannot run as a subagent" —
-  and `description` is what lets a caller see it.
-- **V2** — native creation is not available (`ctx.agent` has `update`/`remove`
-  but no `add`), so `ctx.agent.transform` cannot introduce a new agent.
-  `ensureAgentLinks()` instead materialises the same symlinks as
-  `install-agents.sh`, idempotently, during `setup(ctx)`. The file frontmatter
-  then supplies `mode` and `description`.
-
-An explicit `agent` entry in a repo's `opencode.json` always wins — both paths
+An explicit `agent` entry in a repo's `opencode.json` always wins: both paths
 skip a name that is already declared, so per-repo overrides (pinned model,
 reasoning effort) are preserved.
 
-`scientific-writing` uses both paths. It links only its own `agents/`
-(25 files, all using `name`/`mode`/`description`/`model` with no legacy `tools:`
-frontmatter, so it does not trip the 1.18.25 failure described above). Turn its
-auto-linking off with `SCIENTIFIC_WRITING_NO_AGENT_LINKS=1`.
+Eleven plugins ship agents and self-register: `agentmem`, `scientific-writing`,
+`general-skills`, `typst-toolkit`, `latex-toolkit`, `ivp`, `tier-router`,
+`natural-prose`, `sdlc-guardrails`, `premium-read-offload`, `context-toolkit`.
 
-`bun test shared/agent-links.test.ts` covers the parsing and link semantics.
+`bun test shared/agents.test.ts` covers the parsing and both registration paths.
 
 | # | Plugin | Must load before... | Reason |
 |---|--------|--------------------|--------|
@@ -311,12 +299,11 @@ llm-harness-plugins/
 ├── agentmem/                  ← plugin
 │   ├── opencode/
 │   │   └── index.ts           ← OpenCode plugin entry
-│   ├── agents/                ← agent prompt .md files
+│   ├── agents/                ← agent prompt .md files (self-registered in setup)
 │   ├── builds/classes/        ← compiled Java (committed)
 │   └── src/main/java/eu/infolead/llmhp/memory/
 │       └── ...                ← Java core
 ├── build.sh
-├── install-agents.sh            ← links <plugin>/agents/*.md into ~/.config/opencode/agent/
 ├── opencode.json.sample
 └── README.md
 ```

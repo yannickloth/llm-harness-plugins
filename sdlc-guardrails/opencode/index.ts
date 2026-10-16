@@ -5,10 +5,12 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
 import { extractFilePath } from "./helpers"
+import { registerAgentDirV1, registerAgentDirV2 } from "../../shared/agents"
 import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
+const agentsDir = path.join(pluginDir, "agents")
 const mainClass = "eu.infolead.llmhp.sdlcguardrails.SdlcGuardrailsCli"
 
 const FIX_STATE_REL = ".sdlc-guardrails/fix-scope.json"
@@ -63,6 +65,10 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
   }
 
   return {
+    // Register the plugin's agents on the v1 config map (no symlinks).
+    config: async (input: any) => {
+      registerAgentDirV1(input, agentsDir)
+    },
     "tool.execute.before": async (input: { tool: string; sessionID: string }, output: { args: any }) => {
       const toolName = input.tool
       if (toolName === "bash") {
@@ -232,6 +238,9 @@ export default {
     writeLoadCanary("sdlc-guardrails")
     const logger = consoleLogger("sdlc-guardrails")
     const root: string = ctx.location?.project?.canonical ?? ctx.location?.directory
+
+    // Agents registered inline — no symlinks (see shared/agents.ts).
+    await ctx.agent.transform((editor: any) => registerAgentDirV2(editor, agentsDir))
 
     /** Parse the JSON verdict from the CLI. */
     async function guardCheck(toolName: string, target: string | null, sessionID: string): Promise<{ verdict: string; rule: string | null; reason: string | null } | null> {

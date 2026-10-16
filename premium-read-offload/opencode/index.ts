@@ -5,6 +5,7 @@ import os from "os"
 import { createLogger } from "../../shared/plugin-logger"
 import { safeSpawn, extractOpencodeText, extractOpencodeSessionId, NO_SUBSPAWN_ENV } from "../../shared/safe-spawn"
 import { moduleDir } from "../../shared/module-dir"
+import { registerAgentDirV1, registerAgentDirV2 } from "../../shared/agents"
 import {
   buildLineRanges,
   buildOffloadContract,
@@ -16,6 +17,7 @@ import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
+const agentsDir = path.join(pluginDir, "agents")
 const mainClass = "eu.infolead.llmhp.offload.OffloadCli"
 
 /** Disable the whole plugin (gate + tools register but no-op) when "0". */
@@ -356,6 +358,10 @@ const v1Factory: Plugin = async ({ client, directory, worktree }: Parameters<Plu
 
   return {
     ...hooks,
+    // Register the plugin's reader agents on the v1 config map (no symlinks).
+    config: async (input: any) => {
+      registerAgentDirV1(input, agentsDir)
+    },
     tool: {
       "offload-read": tool({
         description:
@@ -557,6 +563,9 @@ export default {
     }
 
     logger.info(`plugin active — gate on premium sessions, worker=${WORKER_MODEL}`)
+
+    // Agents registered inline — no symlinks (see shared/agents.ts).
+    await ctx.agent.transform((editor: any) => registerAgentDirV2(editor, agentsDir))
 
     function java(args: string[], input?: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
       return safeSpawn(["java", "--class-path", classesDir, mainClass, ...args], input != null ? { input } : {})

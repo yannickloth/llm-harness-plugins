@@ -8,9 +8,11 @@ import { safeSpawn, safeSpawnSync, spawnDetached, killProcessTree, NO_SUBSPAWN_E
 import { shouldInjectProjectContext, updateSessionTopic, getSessionTopic } from "../../shared/session-topic"
 import { moduleDir } from "../../shared/module-dir"
 import { isInRoot } from "./path-utils"
+import { registerAgentDirV1, registerAgentDirV2 } from "../../shared/agents"
 import { writeLoadCanary } from "../../shared/load-canary"
 
 const agentmemDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
+const agentsDir = path.join(agentmemDir, "agents")
 const classesDir = path.join(agentmemDir, "build", "classes")
 const mainClass = "eu.infolead.llmhp.memory.MemorySystemCli"
 
@@ -432,6 +434,11 @@ const v1Factory = async ({ client, directory, worktree }: Parameters<Plugin>[0],
   sweepMaintenanceSessions(client, root).catch(e => logger.warn(`maintenance sweep failed: ${(e as Error).message}`))
 
   return {
+    // Register the plugin's agents (memory-keeper / memory-dreamer / memory-verifier)
+    // on the v1 config map, so `opencode run --agent <name>` resolves without a symlink.
+    config: async (input: any) => {
+      registerAgentDirV1(input, agentsDir)
+    },
     event: async ({ event }) => {
       switch (event.type) {
         case "session.created": {
@@ -734,6 +741,10 @@ export default {
     const mdir = path.join(root, ".agentmem")
 
     sweepMaintenanceSessions(client, root).catch(e => logger.warn(`maintenance sweep failed: ${(e as Error).message}`))
+
+    // Agents are registered inline (no symlinks): `editor.update` creates when
+    // the id is absent. See shared/agents.ts.
+    await ctx.agent.transform((editor: any) => registerAgentDirV2(editor, agentsDir))
 
     await ctx.session.hook("prompt", async (event: any) => {
       const text: string = event?.prompt?.text ?? ""

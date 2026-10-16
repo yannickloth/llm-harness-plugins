@@ -9,10 +9,12 @@ import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
 import { writeLoadCanary } from "../../shared/load-canary"
 import { registerSkillDir } from "../../shared/v2-skills"
+import { registerAgentDirV1, registerAgentDirV2 } from "../../shared/agents"
 import fs from "fs"
 import path from "path"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
+const agentsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "agents")
 
 function skillCount(dir: string): number {
   if (!fs.existsSync(dir)) return 0
@@ -39,6 +41,8 @@ const v1Factory: Plugin = async ({ client }) => {
       const paths: string[] = Array.isArray(skills.paths) ? [...skills.paths] : []
       if (count > 0 && !paths.includes(skillsDir)) paths.push(skillsDir)
       ;(input as any).skills = { ...skills, paths }
+
+      registerAgentDirV1(input, agentsDir)
     },
   }
 }
@@ -52,6 +56,7 @@ export default {
   async setup(ctx: any) {
     writeLoadCanary("ivp")
     await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+    await ctx.agent.transform((editor: any) => registerAgentDirV2(editor, agentsDir))
   },
 
   async server(input: any, options?: any) {

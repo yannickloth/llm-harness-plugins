@@ -4,9 +4,11 @@ import path from "path"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
 import { registerSkillDir } from "../../shared/v2-skills"
+import { registerAgentDirV1, registerAgentDirV2 } from "../../shared/agents"
 import { writeLoadCanary } from "../../shared/load-canary"
 
 const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
+const agentsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "agents")
 
 // The deterministic prose analyzer lives in the sibling general-skills plugin.
 // Resolve its absolute path once at plugin load (import.meta.dir = <root>/natural-prose/opencode).
@@ -38,6 +40,8 @@ const v1Factory: Plugin = async ({ client }) => {
       const paths: string[] = Array.isArray(skills.paths) ? [...skills.paths] : []
       if (count > 0 && !paths.includes(skillsDir)) paths.push(skillsDir)
       ;(input as any).skills = { ...skills, paths }
+
+      registerAgentDirV1(input, agentsDir)
     },
     tool: {
       "naturalize-analyzer-path": {
@@ -66,6 +70,7 @@ export default {
   async setup(ctx: any) {
     writeLoadCanary("natural-prose")
     await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+    await ctx.agent.transform((editor: any) => registerAgentDirV2(editor, agentsDir))
 
     await ctx.tool.transform((editor: any) => {
       editor.add({

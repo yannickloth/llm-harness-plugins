@@ -5,10 +5,12 @@ import fs from "fs"
 import os from "os"
 import { safeSpawn, spawnDetached, killProcessTree, NO_SUBSPAWN_ENV, extractOpencodeText } from "../../shared/safe-spawn"
 import { moduleDir } from "../../shared/module-dir"
+import { registerAgentDirV1, registerAgentDirV2 } from "../../shared/agents"
 import { writeLoadCanary } from "../../shared/load-canary"
 
 const pluginDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const classesDir = path.join(pluginDir, "build", "classes")
+const agentsDir = path.join(pluginDir, "agents")
 const sharedClassesDir = path.join(pluginDir, "..", "shared", "build", "classes")
 const classpath = `${classesDir}${path.delimiter}${sharedClassesDir}`
 const mainClass = "eu.infolead.llmhp.router.RouterCli"
@@ -433,6 +435,11 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
   }
 
   return {
+    // Register the tier agents (fable/haiku/sonnet/opus-general) on the v1
+    // config map, so `opencode run --agent <tier>-general` resolves (no symlinks).
+    config: async (input: any) => {
+      registerAgentDirV1(input, agentsDir)
+    },
     "chat.message": async (input, output) => {
       // A plugin-loaded child opencode process (launched headlessly for
       // classification below) must never re-launch its own classifier — that
@@ -552,6 +559,9 @@ export default {
     writeLoadCanary("tier-router")
     const logger = consoleLogger("tier-router")
     const classifyDataDir = prepareClassifyDataDir(logger)
+
+    // Agents registered inline — no symlinks (see shared/agents.ts).
+    await ctx.agent.transform((editor: any) => registerAgentDirV2(editor, agentsDir))
 
     // Bounded dedup of already-annotated messages (same intent as v1's Map).
     const rewritten = new Map<string, true>()
