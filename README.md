@@ -103,6 +103,31 @@ re-running the script. Re-running is safe and self-pruning: links into this repo
 that the allowlist no longer covers are removed, and a real file in the
 destination is never overwritten.
 
+#### Self-registration (per plugin)
+
+A plugin can also register its own agents instead of relying on the script. The
+two protocols differ, and `shared/agent-links.ts` implements both:
+
+- **V1** — the `config` hook may mutate `config.agent`;
+  `agentConfigEntries()` builds the records. Set `description` explicitly: an
+  agent wired through a `{file:}` prompt reference loses its frontmatter, and an
+  agent with no description is not enumerable as a subagent.
+- **V2** — native creation is not available (`ctx.agent` has `update`/`remove`
+  but no `add`), so `ctx.agent.transform` cannot introduce a new agent.
+  `ensureAgentLinks()` instead materialises the same symlinks as
+  `install-agents.sh`, idempotently, during `setup(ctx)`.
+
+An explicit `agent` entry in a repo's `opencode.json` always wins — both paths
+skip a name that is already declared, so per-repo overrides (pinned model,
+reasoning effort) are preserved.
+
+`scientific-writing` uses both paths. It links only its own `agents/`
+(25 files, all using `name`/`mode`/`description`/`model` with no legacy `tools:`
+frontmatter, so it does not trip the 1.18.25 failure described above). Turn its
+auto-linking off with `SCIENTIFIC_WRITING_NO_AGENT_LINKS=1`.
+
+`bun test shared/agent-links.test.ts` covers the parsing and link semantics.
+
 | # | Plugin | Must load before... | Reason |
 |---|--------|--------------------|--------|
 | 1 | `guardrail-chain` | `session-lifecycle`, `agentmem` | `agentmem` imports `GuardrailPipeline`; early hooks avoid race conditions |
