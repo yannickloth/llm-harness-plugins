@@ -9,7 +9,7 @@ with a Java backend and OpenCode TypeScript shim.
 
 | Plugin | Description |
 |--------|-------------|
-| [`session-lifecycle`](./session-lifecycle) | Session lifecycle tracking — edit logs, git commit diffing, archival with 30-day retention |
+| [`session-lifecycle`](./session-lifecycle) | Session lifecycle tracking — edit logs, git commit diffing, archival with 30-day retention, and the per-session cost summary (root + subagent + day/month/all-time) read from OpenCode's session database |
 | [`guardrail-chain`](./guardrail-chain) | Shared guardrail pipeline — pre/post execution filters across plugins |
 | [`agentmem`](./agentmem) | Persistent file-based memory system — ADD-only, multi-signal retrieval, hierarchical scoping |
 | [`agentinsights`](./agentinsights) | Session analytics + AI-generated narrative reports — scan transcripts, extract facets via LLM, generate HTML insights |
@@ -275,6 +275,19 @@ cp llm-harness-plugins/agentmem/opencode .opencode/plugins/agentmem.ts
 ```
 
 Auto-loaded on startup — no `opencode.json` change needed.
+
+Plugins that import `../../shared/*` (most of them) break under a single-file
+copy: OpenCode resolves a plugin module's relative imports against the path it
+loaded, so an `index.ts` dropped one level shallower cannot find `shared/`.
+Copy the repo (or use the directory form above) instead, or drop a re-export
+shim in the plugins dir:
+
+```ts
+export { default } from "/abs/path/to/llm-harness-plugins/<plugin>/opencode/index.ts"
+```
+
+A **symlink** to the repo file does not work for the same reason — the loader
+resolves against the link path, not the target.
 
 See [`opencode.json.sample`](./opencode.json.sample) for full config with agents and commands.
 Tools registered: `save-memory`, `forget-memory`, `check-memory-health`, `init-memory`.
