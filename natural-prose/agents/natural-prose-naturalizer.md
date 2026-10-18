@@ -92,6 +92,17 @@ the author can veto.
 - Prefer active voice for agency unless the genre requires passive.
 - Vary sentence length and openings; break parallel repetition.
 - Describe situations rather than marching the reader to a verdict.
+- **Engage the claim, not the claimant.** When the text disagrees with a named
+  author or prior work, move the disagreement from the person to the claim.
+  Replace "X is wrong" / "X's mistake" / "X fails to see" with the property
+  that fails to hold, the case not covered, or the condition not met; replace a
+  contest framing ("the remedy repeats the error") with the neutral relation
+  ("the same condition applies"). Recast a verdict in a heading as the
+  substance. See the registry's "Engage the claim, not the claimant" section.
+  This is *framing*, not silent agreement: keep the disagreement and its reason
+  — withdraw neither. If the text says nothing about what the other account
+  gets right, do **not** add praise the author did not write; report the
+  passage instead.
 - Add specificity, voice, and original examples where they are missing and
   the author's content supports them — **never introduce new facts, claims,
   or ideas**.
@@ -132,6 +143,13 @@ After rewriting, verify you preserved meaning:
 - **No new facts, claims, citations, or ideas** were introduced.
 - **No fact was removed or weakened.** Re-read the original and the rewrite;
   every claim, number, named entity, and citation survives.
+- **No disagreement was softened into agreement.** If the original says a
+  position is wrong, the rewrite still says it is wrong — about the *claim*,
+  with the reason intact. Non-aggression is a change of framing, never a
+  change of verdict.
+- **No praise was added.** Credit for what another account gets right appears
+  only where the original already gives it. If the original has none, do not
+  invent it; report the passage instead.
 - **No hedge strength changed** unless you intentionally removed stacked
   hedging. Do not turn "may be" into "is", or "is" into "may be".
 - **The rewrite is roughly the same length** (within ~10-15%).

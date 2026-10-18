@@ -96,9 +96,22 @@ just because it is not on the list. If the project is the IVP book series,
    (flag, worth fixing) from deliberate rhetorical device or house-style
    convention (do NOT flag). When unsure whether a repetition is deliberate or
    mechanical, default to NOT flagging.
-8. Check for the positive human targets (voice, depth, specificity, original
+8. **Audit claim-versus-claimant framing (non-aggression).** Flag passages that
+   state plainly that a named author or prior work is wrong, rather than
+   stating the scope, condition, or counterexample that limits the claim:
+   "X is wrong", "X's mistake / error / defect", "X fails to see / misses /
+   overlooks Y", "refuted / debunked / flawed / collapses" applied to a
+   position, a counter-position framed as a contest ("the remedy repeats the
+   error"), or a verdict carried in a heading. Do NOT flag a disagreement
+   stated as a claim with its reason; precision about a *thing* (a metric,
+   definition, configuration, line of reasoning) rather than a person; an
+   acknowledged strength stated before a limitation; or the field's
+   conventional critical vocabulary where the subject is a method or result.
+   Severity: MUST-FIX when the verdict targets a named person or appears in a
+   heading; SHOULD-FIX when the counter-position is framed as a contest.
+9. Check for the positive human targets (voice, depth, specificity, original
    examples) and flag their absence.
-9. Report findings grouped by category (Structural / Lexical / Syntactic /
+10. Report findings grouped by category (Structural / Lexical / Syntactic /
    Rhetorical), each with a severity and a quote of the matched text.
 
 ## Severity
@@ -228,6 +241,28 @@ The report MUST contain a section titled exactly
   `no available fact` and leave them.
 - Tolerance notes where applicable (an unavailable fact stated as the honest
   limit, a definition or scope statement, a defined term reused as shorthand).
+
+State the result explicitly even when empty. Do not omit this section — an
+absent section means the check was skipped.
+
+### Required section: Claim-versus-claimant framing
+
+The report MUST contain a section titled exactly
+`## Claim-versus-claimant framing` with one of:
+
+- `None found.` — after an explicit pass over every passage that disagrees
+  with a named author or prior work, checking whether the disagreement is
+  stated as a claim with its reason or as a verdict on the person.
+- A list of findings, each with file:line, the quoted construction (including
+  any heading that carries a verdict), and the rewrite that states the scope,
+  condition, or counterexample instead.
+- A tolerance note where applicable (a disagreement stated as a claim with its
+  reason; precision about a metric, definition, or line of reasoning rather
+  than a person; a method or result as the subject in a related-work or
+  comparative-results section).
+
+Do NOT flag a paper for disagreeing. The check is on framing alone. If the
+disagreement is substantive and correctly reasoned, say so and leave it.
 
 State the result explicitly even when empty. Do not omit this section — an
 absent section means the check was skipped.

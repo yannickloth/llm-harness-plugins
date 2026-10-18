@@ -77,6 +77,53 @@ rather than *marching the reader to a verdict*. Flag:
 Fix: report what you observe; let the reader draw the conclusion. This is the
 IVP voice principle ("Describe, don't argue").
 
+### Engage the claim, not the claimant (non-aggression)
+
+Scholarship disagrees with prior work constantly; the disagreement belongs to
+the *claim*, not to the person who made it. The aim is to establish what is
+true, knowable, or correct — never to show an author wrong. Adversarial framing
+narrows the audience to those already convinced, provokes a defence of the
+author rather than an engagement with the argument, and substitutes a verdict
+for the reasoning that has to carry it. Reviews reject it; readers discount it.
+
+Flag these patterns:
+
+| Pattern (flag) | Rewrite as |
+|----------------|------------|
+| "X is wrong." / "He is wrong to …" | the supported claim: "the condition does not hold for these domains", "the scope is narrower than the claim admits" |
+| "X's mistake / error / defect" | the property: "the two cases are not distinguished", "the criterion is a proxy" |
+| "X fails to see / misses / overlooks Y" | "Y does not appear in the account, and it bears on the conclusion" |
+| "fails", "refuted", "debunked", "flawed", "collapses" applied to a person's position | the specific scope, condition, or counterexample that limits it |
+| counter-position framed as a contest ("the remedy repeats the error") | neutral relation: "the same condition applies", "the boundary raises the same question" |
+| verdict in a heading ("Why X Is Wrong") | the substance: "What the Criterion Does Not Cover" |
+
+**Nowhere is this a demand for false agreement.** State disagreement plainly
+when the evidence supports it — a paper that concedes what its own results
+contradict is as weak as one that attacks the author. The rule governs
+*framing*: disagree with the claim, give the reason, and let the reason carry
+the weight. Quote a named work exactly, including its correct parts; the
+one-line credit is usually the scope boundary itself.
+
+**Tolerance (do NOT flag):**
+
+- A disagreement stated as a claim with its reason ("the derivation does not
+  cover the shared-driver case, so uniqueness does not follow there").
+- Naming what is wrong in a *thing* — a metric, a definition, a configuration,
+  a line of reasoning — as distinct from a person.
+- Acknowledged strengths stated before the limitation; that is the scope
+  condition, not flattery.
+- The field's conventional critical vocabulary in a comparative-results or
+  related-work section, where the subject is a method or a result, not a person.
+
+**Severity.** MUST-FIX when the verdict targets a named person or their
+character, or when a heading carries the verdict. SHOULD-FIX when the
+counter-position is framed as a contest rather than as a scope relation.
+Suggestion when a single confrontational word would read better recast.
+
+**Fix.** Move the disagreement from the claimant to the claim. Replace
+"wrong / mistake / fails to see" with the property that fails to hold, the case
+not covered, or the condition not met.
+
 ### Anthropomorphized abstraction (non-living things don't act)
 
 An inanimate or conceptual thing is made the grammatical subject of a verb of
