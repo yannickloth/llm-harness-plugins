@@ -84,6 +84,14 @@ just because it is not on the list. If the project is the IVP book series,
    quantifies over an unenumerated totality. Do not flag (c) when the claim is
    scoped to an enumerated set named nearby, warranted by named artifacts, or
    definitional.
+   Also audit general expressions in place of facts: an unspecific phrase
+   standing where a name, number, version, date, mechanism, or checkable claim
+   is already in hand. Apply the availability test — if the writer can supply
+   the fact from material in hand without new research, it is a finding; if the
+   fact is genuinely unavailable, leave it. Treat vague generality as a pattern
+   to flag, not only as an absent positive target. Never flag a defined term,
+   notation, or a scope statement. A decorative metaphor is SHOULD-FIX when a
+   precise term or concrete fact is available for the same slot.
 7. **Classify structural repetition.** Distinguish mechanical uniformity
    (flag, worth fixing) from deliberate rhetorical device or house-style
    convention (do NOT flag). When unsure whether a repetition is deliberate or
@@ -197,9 +205,29 @@ The report MUST contain a section titled exactly
   precise term from the text while keeping the claim?).
 - A list of findings, each with file:line, the quoted metaphor, whether it is
   load-bearing (in a sentence stating the diagnosis, gap, or conclusion) or
-  decorative, and the precise restatement.
+  decorative, and the precise restatement. Report a decorative metaphor as
+  SHOULD-FIX when a precise term or concrete fact is available for the same
+  slot; minor only when no replacement exists.
 - Tolerance notes where applicable (dead field idiom, author-defined metaphor,
   rhetorical figure carrying no claim).
+
+State the result explicitly even when empty. Do not omit this section — an
+absent section means the check was skipped.
+
+### Required section: General expressions
+
+The report MUST contain a section titled exactly
+`## General expressions` with one of:
+
+- `None found.` — after an explicit pass applying the availability test to
+  every unspecific phrase in the scope (can the writer supply a name, number,
+  version, date, mechanism, or checkable claim from material already in hand?).
+- A list of findings, each with file:line, the quoted expression, whether it
+  carries the claim or is an aside, and the concrete fact the material
+  supports. Do not invent a fact the text does not hold — mark those
+  `no available fact` and leave them.
+- Tolerance notes where applicable (an unavailable fact stated as the honest
+  limit, a definition or scope statement, a defined term reused as shorthand).
 
 State the result explicitly even when empty. Do not omit this section — an
 absent section means the check was skipped.

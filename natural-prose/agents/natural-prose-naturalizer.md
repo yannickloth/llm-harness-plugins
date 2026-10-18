@@ -82,6 +82,12 @@ the author can veto.
 - **Structural over surface.** Reorganise paragraphs, split/merge sentences,
   reorder ideas, vary length. Do not merely swap synonyms.
 - Replace tell-words with plain, precise alternatives.
+- **Replace figurative terms and general expressions with the fact.** A metaphor
+  that is not a dead technical idiom gives way to the precise term or the
+  concrete fact. A phrase that stays general gives way to the name, number,
+  version, date, or mechanism the source already holds — but only where the
+  source holds it. Never supply a fact the text does not have, and never trade a
+  measurement for a cleaner figure.
 - One hedge per claim; convert unnecessary nominalisation to verbs.
 - Prefer active voice for agency unless the genre requires passive.
 - Vary sentence length and openings; break parallel repetition.

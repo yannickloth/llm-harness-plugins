@@ -38,6 +38,8 @@ verdict.
 2. **Judge.** Run `natural-prose-perplexity-judge` on the scope, passing it the
    statistical-layer output. It rates each file 1-10, notes predictability,
    checks positive human markers (voice, specificity, stance, reader guidance)
+   and the two precision patterns (a metaphor that is not a dead technical
+   idiom; a general expression where the concrete fact is already in hand)
    against the loaded registry, quotes findings with file:line, and ranks
    "naturalise first" candidates.
 3. **Reconcile.** Compare the judge's ratings against the statistical layer.

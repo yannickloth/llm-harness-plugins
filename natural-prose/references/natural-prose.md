@@ -151,7 +151,11 @@ claim, and it fails.
 
 **Severity rule.** When the metaphor is **load-bearing** — it appears in the
 sentence that states the diagnosis, gap, or conclusion — MUST-FIX. When it is
-decorative in a sentence making no claim, minor or leave.
+decorative in a sentence making no claim, SHOULD-FIX if a precise term or a
+concrete fact is available for the same slot; minor only when no replacement
+exists. Decorative is not a licence to keep a figure the writer can already
+replace with the fact: the test is whether the rewrite costs information, not
+whether the sentence carries a claim.
 
 **Tolerance (do NOT flag):**
 
@@ -166,6 +170,54 @@ decorative in a sentence making no claim, minor or leave.
 **Fix.** State the general rule with its conditions: who, what, where, by what
 criterion. The restatement is often longer than the metaphor; that cost is the
 point — precision is not free.
+
+### General expressions in place of facts
+
+A phrase stays at the level of generality the writer reached first, where a
+name, number, version, date, mechanism, or checkable claim is already in hand.
+The sentence is not false; it is unspecific. Vague generality is the strongest
+single tell (positive target 3), so treat it as a pattern to flag, not only as
+an absent virtue.
+
+The test is one question: **can the writer supply the fact from material
+already in hand, without new research?** If yes, the general expression is a
+finding. If the fact is genuinely unavailable, the sentence stays general and
+is not a finding.
+
+| General expression (flag) | Concrete-fact replacement |
+|---|---|
+| "version matters more than identity" | "C++98 and Java 8 are not C++23 and Java 26" |
+| "which traps are unavoidable" | "which mechanisms you cannot design away" |
+| "a low score is not a verdict on fitness" | "a low score does not mean the language is wrong for your project" |
+| "all outweigh it" | "each rules out languages on their own" |
+| "in today's landscape" | name the period, the release, or the constraint |
+| "many companies have adopted this" | name the companies and the count |
+| "significantly faster" | give the measurement and its conditions |
+| "the tooling is immature" | name the missing feature and the version that lacks it |
+
+**Detection markers:** `identity`, `matters more than`, `the bigger picture`,
+`it depends`, `context matters`, `various`, `several factors`, `for this
+purpose` when the purpose is unnamed, `in today's`, `significantly`, `mostly`,
+`roughly` without a figure, and an abstract noun standing alone where the
+concrete instance is on hand.
+
+**Severity.** SHOULD-FIX when the general expression carries the claim or the
+pivot of the passage. Suggestion for an aside. MUST-FIX only when the passage's
+own point is that a fact exists and the text withholds it.
+
+**Tolerance (do NOT flag):**
+
+- The fact is genuinely unavailable, and the generality states the honest limit
+  ("the published figures cover only the two largest vendors").
+- The generality is a definition or a scope statement, not a description
+  ("cohesion is correctness relative to a partitioning rule").
+- A term already defined or named precisely in the same passage, then reused as
+  shorthand.
+- Deliberate compression in a summary, abstract, or close, where the fact
+  appears in the body.
+
+**Fix.** Insert the fact. Never trade a number for a cleaner figure: when a
+metaphor and a measurement compete for one slot, the measurement wins.
 
 ### Vague relation verbs and deferred claims (oracular style)
 

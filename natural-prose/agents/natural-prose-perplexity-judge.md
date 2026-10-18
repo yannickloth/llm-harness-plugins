@@ -70,6 +70,13 @@ A passage that merely lacks machine tells but also lacks voice, specificity,
 stance, and reader guidance is not "fully human" — rate it lower and note which
 positive markers are missing, so the naturalizer knows what to add.
 
+In both modes, also rate against the registry's two precision patterns: a
+metaphor that is not a dead technical idiom, and a general expression standing
+where a name, number, version, date, mechanism, or checkable claim is already in
+hand. A figure or a generality that survives where the fact exists lowers the
+rating; report it with the concrete replacement the text supports, or mark it
+`no available fact`.
+
 ## Rating rubric
 
 Rate each file 1-10, where:

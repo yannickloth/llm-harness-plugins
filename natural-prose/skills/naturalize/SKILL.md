@@ -57,8 +57,10 @@ Usage: `/naturalize <scope> [domain]`
    report that it could not run — do not silently skip it.
 2. **Audit.** Run `natural-prose-auditor` with the active domain, passing it the
    deterministic scan output. It produces a grouped findings report (Structural
-   / Lexical / Syntactic / Rhetorical) with severities and quoted text, and
-   reconciles its contextual read against the deterministic scan.
+   / Lexical / Syntactic / Rhetorical) with severities and quoted text, plus the
+   three required sections (anthropomorphized abstractions, metaphor-bearing
+   claims, general expressions), and reconciles its contextual read against the
+   deterministic scan.
 3. **Naturalise.** Run `natural-prose-naturalizer` with the active domain on the
    flagged passages. It rewrites to natural prose, preserving formal content
    (scientific mode) and never introducing new facts. The naturalizer loads the

@@ -154,7 +154,11 @@ claim, and it fails.
 
 **Severity rule.** When the metaphor is **load-bearing** — it appears in the
 sentence that states the diagnosis, gap, or conclusion — MUST-FIX. When it is
-decorative in a sentence making no claim, minor or leave.
+decorative in a sentence making no claim, SHOULD-FIX if a precise term or a
+concrete fact is available for the same slot; minor only when no replacement
+exists. Decorative is not a licence to keep a figure the writer can already
+replace with the fact: the test is whether the rewrite costs information, not
+whether the sentence carries a claim.
 
 **Tolerance (do NOT flag):**
 
@@ -169,6 +173,54 @@ decorative in a sentence making no claim, minor or leave.
 **Fix.** State the general rule with its conditions: who, what, where, by what
 criterion. The restatement is often longer than the metaphor; that cost is the
 point — precision is not free.
+
+### General expressions in place of facts
+
+A phrase stays at the level of generality the writer reached first, where a
+lemma, dimension, threshold, version, count, or checkable claim is already in
+hand. The sentence is not false; it is unspecific. Vague generality is the
+strongest tell of generated scholarship, because a model smooths the specific
+into the general — so treat it as a pattern to flag, not only as an absent
+virtue.
+
+The test is one question: **can the writer supply the fact from the paper's own
+results, definitions, or named artifacts, without new research?** If yes, the
+general expression is a finding. If the fact is genuinely outside the paper's
+reach, the generality is the honest limit and is not a finding.
+
+| General expression (flag) | Concrete-fact replacement |
+|---|---|
+| "this reduces coupling" | name the dimension and the mechanism removed |
+| "the approach performs better" | give the measurement, the baseline, and the conditions |
+| "several factors influence the result" | name the factors and which the analysis holds fixed |
+| "the theory is more general" | name the covered case and the case the other account omits |
+| "significantly more cohesive" | name the purity–completeness pair and the module set measured |
+| "empirical evidence suggests" | name the study, the population, and the effect |
+
+**Detection markers:** `identity`, `matters more than`, `the bigger picture`,
+`it depends`, `context matters`, `various`, `several factors`, `for this
+purpose` when the purpose is unnamed, `in today's`, `significantly`, `mostly`,
+`roughly` without a figure, and an abstract noun standing alone where the
+concrete instance is on hand.
+
+**Severity.** SHOULD-FIX when the general expression carries the claim or the
+pivot of the passage. Suggestion for an aside. MUST-FIX only when the passage's
+own point is that a fact exists and the text withholds it.
+
+**Tolerance (do NOT flag):**
+
+- The fact is genuinely outside the paper's scope, and the generality states
+  the honest limit ("the published figures cover only the two largest vendors").
+- A definition, theorem statement, or scope statement, where generality is the
+  precision ("cohesion is correctness relative to a partitioning rule").
+- A term already defined or named precisely in the same passage, then reused as
+  shorthand.
+- Notation, symbols, and formal environments — always precise, never findings.
+- Deliberate compression in an abstract, contribution list, or close, where the
+  fact appears in the body.
+
+**Fix.** Insert the fact, or scope the claim to the artifact the paper
+examined. Never trade a measurement for a cleaner figure.
 
 ### Vague relation verbs and deferred claims (oracular style)
 
