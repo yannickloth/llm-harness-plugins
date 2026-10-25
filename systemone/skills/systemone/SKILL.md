@@ -93,8 +93,8 @@ fit the window, and **fail closed**: an error or a malformed model answer return
 
 | tool | answers | returns |
 |---|---|---|
-| `systemone_suffice(task, gathered)` | is the material enough, or keep searching? | `sufficient`, `blocked_by_missing_fact`, `next` (`answer`/`search`/`ask_user`) |
-| `systemone_risk(action, context?)` | how bad is this if it goes wrong, before running it? | `severity` 0-3, `data_loss`, `irreversible`, `needs_human`, `escalate` |
+| `systemone_suffice(task, gathered)` | is the material enough, or keep searching? | `sufficient`, `blocked_by_missing_fact`, `next` (`answer`/`search`/`ask_user`), `low_confidence` |
+| `systemone_risk(action, context?)` | how bad is this if it goes wrong, before running it? | `severity` 0-3, `destructive_pattern`, `data_loss`, `irreversible`, `needs_human`, `escalate` |
 | `systemone_consensus(question, sources[])` | do 2-8 sources agree, and which is the outlier? | `majority`, `agreement`, `outlier`, `per_source` |
 | `systemone_novel(entry, existing[])` | is this new, a duplicate, or a correction? | `action` (`add`/`skip`/`supersede`) |
 | `systemone_constraints(draft, constraints[])` | does each stated constraint hold? | `all_satisfied`, per-constraint `results` |
@@ -109,8 +109,14 @@ Notes that matter in practice:
   labelled sample before wiring a destructive action to `escalate` or
   `all_satisfied`.
 - **`systemone_risk` is a second opinion, not a substitute for reading the
-  command.** If the call fails, treat the action as risky and ask the user —
-  that is what the tool's own error says.
+  command** — and its `escalate` is a code decision, not a model one: a
+  destructive pattern (`rm -rf`, `mkfs`, `git reset --hard`, `DROP TABLE`, …)
+  forces `escalate: true` whatever the probabilities say. Measured: `rm -rf
+  <repo>` scored severity 1.6 and `needs_human` 0.03 on its own. If the call
+  fails, treat the action as risky and ask the user.
+- **`low_confidence: true` on `systemone_suffice` means `next` is a weak
+  preference, not a recommendation** — the choice distribution was flat even
+  though sufficiency itself cleared 0.5. Decide yourself or gather more.
 - **`systemone_consensus` asks one question per source**, so each source must be
   self-contained; a source that does not address the question scores low and
   will be reported as the outlier. Keep excerpts under ~1200 chars.

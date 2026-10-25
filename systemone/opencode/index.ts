@@ -259,13 +259,19 @@ const suffice = tool({
       const blocked = p(answers.blocked)
       const next = choiceOf(answers.next)
       if (enough === null || next === null) throw new Error("answers missing `enough` or `next`")
+      const nextConfidence = typeof answers.next?.confidence === "number" ? answers.next.confidence : null
       return JSON.stringify(
         {
           ok: true,
           sufficient: enough >= 0.5,
           blocked_by_missing_fact: blocked !== null && blocked >= 0.5,
           next,
-          confidence: answers.next?.confidence ?? null,
+          confidence: nextConfidence,
+          // A flat choice distribution is the "read the distribution" case: the
+          // probability mass is spread, so `next` is a weak preference, not a
+          // recommendation. Measured: "answer" at 0.67 sufficiency but 0.086
+          // choice confidence.
+          low_confidence: nextConfidence !== null && nextConfidence < 0.5,
           probabilities: { enough, blocked },
           backend,
           latency_ms,
@@ -324,13 +330,22 @@ const risk = tool({
         throw new Error("answers missing one of severity/data_loss/irreversible/needs_human")
       }
       const labels = ["none", "minor", "moderate", "severe"]
-      // Code decides the gate; the model only supplies the readings.
-      const escalate = needsHuman >= 0.5 || dataLoss >= 0.5 || irreversible >= 0.7 || severity >= 2
+      // One rounded value for both the label and the gate: they disagreed when
+      // the raw score sat at 1.6 (label said "moderate", the gate's `>= 2` said no).
+      const severityRounded = Math.round(severity)
+      // Code enforces, the model advises. A destructive pattern escalates no
+      // matter what the model thinks — measured case: `rm -rf <repo>` came back
+      // severity 1.6 with needs_human 0.03, which is exactly the confidence a
+      // 322M encoder should not be trusted with on an irreversible action.
+      const destructive = RISKY_COMMAND.test(args.action)
+      const escalate =
+        destructive || needsHuman >= 0.5 || dataLoss >= 0.5 || irreversible >= 0.7 || severityRounded >= 2
       return JSON.stringify(
         {
           ok: true,
-          severity: Math.round(severity),
-          severity_label: labels[Math.min(labels.length - 1, Math.round(severity))],
+          severity: severityRounded,
+          severity_label: labels[Math.min(labels.length - 1, severityRounded)],
+          destructive_pattern: destructive,
           data_loss: dataLoss >= 0.5,
           irreversible: irreversible >= 0.5,
           needs_human: needsHuman >= 0.5,
@@ -581,6 +596,109 @@ const deep = tool({
   },
 })
 
+// ---------------------------------------------------------------------------
+// Registration surface
+// ---------------------------------------------------------------------------
+//
+// One implementation, two hosts. The logic lives in the `tool()` definitions
+// below; they are wrapped ONCE here (wrapping inside the factory would nest the
+// ledger wrapper if the host calls it more than once). V1 hosts take the `tool`
+// map; V2 hosts have no such map — `server` is ignored when a plugin has a
+// `setup`, so the same definitions are re-exposed through
+// `ctx.tool.transform` with JSON Schema inputs, which is what v2 actually
+// reads. Without that second path none of these tools exist at all.
+
+const TOOLS: Record<string, any> = {
+  systemone_suffice: observed("systemone_suffice", suffice),
+  systemone_risk: observed("systemone_risk", risk),
+  systemone_consensus: observed("systemone_consensus", consensus),
+  systemone_novel: observed("systemone_novel", novel),
+  systemone_constraints: observed("systemone_constraints", constraints),
+  systemone_deep: observed("systemone_deep", deep),
+}
+
+const JSON_SCHEMA = (properties: Record<string, unknown>, required: string[] = []) => ({
+  type: "object",
+  properties,
+  required,
+  additionalProperties: false,
+})
+
+const TOOL_INPUTS: Record<string, unknown> = {
+  systemone_suffice: JSON_SCHEMA(
+    {
+      task: { type: "string", description: "What must be answered or decided, in one or two sentences." },
+      gathered: { type: "string", description: "The evidence you actually have. Clipped to fit the model window." },
+    },
+    ["task", "gathered"],
+  ),
+  systemone_risk: JSON_SCHEMA(
+    {
+      action: { type: "string", description: "The exact command or change, verbatim." },
+      context: {
+        type: "string",
+        description: "Anything that changes the risk: repo state, backup exists, blast radius, who is affected.",
+      },
+    },
+    ["action"],
+  ),
+  systemone_consensus: JSON_SCHEMA(
+    {
+      question: { type: "string", description: "The single yes/no proposition to test." },
+      sources: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 2,
+        maxItems: 8,
+        description: "2-8 self-contained excerpts, one per source, each under ~1200 chars.",
+      },
+    },
+    ["question", "sources"],
+  ),
+  systemone_novel: JSON_SCHEMA(
+    {
+      entry: { type: "string", description: "The item you are about to store." },
+      existing: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 1,
+        maxItems: 8,
+        description: "The most similar items already stored (retrieve candidates first).",
+      },
+    },
+    ["entry", "existing"],
+  ),
+  systemone_constraints: JSON_SCHEMA(
+    {
+      draft: { type: "string", description: "The text to check." },
+      constraints: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 1,
+        maxItems: 12,
+        description: "Each constraint as a single testable statement.",
+      },
+    },
+    ["draft", "constraints"],
+  ),
+  systemone_deep: JSON_SCHEMA(
+    {
+      model: {
+        type: "string",
+        enum: [...DEEP_MODELS],
+        description: "kev-0.8b (fastest), kev-4b, or kev-9b (slowest). All run on CPU here.",
+      },
+      state: { type: "string", description: "Text, or a JSON object serialised as a string." },
+      questions: {
+        type: "object",
+        additionalProperties: true,
+        description: 'Typed questions, e.g. {"urgent": {"type": "noul", "instructions": "..."}}.',
+      },
+    },
+    ["model", "state", "questions"],
+  ),
+}
+
 function skillCount(dir: string): number {
   if (!fs.existsSync(dir)) return 0
   return fs
@@ -601,6 +719,13 @@ const v1Factory: Plugin = async ({ client }) => {
   logger.info(`plugin active — ${count} skill(s) in ${skillsDir}; 6 decision tools`)
 
   return {
+    // V1-only: on OpenCode v2 a plugin that exports `setup` does not use this
+    // factory at all, and v2's plugin API exposes no tool-execution hook — only
+    // session hooks (prompt/context/model request). So exposure rows are written
+    // on v1 hosts and NOT on v2; measured here: five calls logged, zero
+    // exposures, while a risky command ran. `stats.ts` therefore prints "—" for
+    // the adoption ratios on v2, and the sampling audit in README.md is the
+    // working alternative. Kept for v1 hosts and as the place a v2 hook will go.
     "tool.execute.after": async (input: any) => {
       const name = String(input?.tool ?? "")
       if (!name || OUR_TOOLS.has(name)) return
@@ -627,14 +752,7 @@ const v1Factory: Plugin = async ({ client }) => {
         }
       }
     },
-    tool: {
-      systemone_suffice: observed("systemone_suffice", suffice),
-      systemone_risk: observed("systemone_risk", risk),
-      systemone_consensus: observed("systemone_consensus", consensus),
-      systemone_novel: observed("systemone_novel", novel),
-      systemone_constraints: observed("systemone_constraints", constraints),
-      systemone_deep: observed("systemone_deep", deep),
-    },
+    tool: TOOLS,
     config: async (input: Config) => {
       const skills = (input as any).skills ?? {}
       const paths: string[] = Array.isArray(skills.paths) ? [...skills.paths] : []
@@ -654,6 +772,22 @@ export default {
   async setup(ctx: any) {
     writeLoadCanary("systemone")
     await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+
+    // v2 tool registration. `server`'s `tool` map is ignored by a plugin that
+    // exports `setup`, which is why the first v2 build exposed none of these.
+    await ctx.tool.transform((editor: any) => {
+      for (const [name, definition] of Object.entries(TOOLS)) {
+        editor.add({
+          name,
+          description: definition.description,
+          input: TOOL_INPUTS[name],
+          async execute(input: any, context: any) {
+            // The definitions return a JSON string; v2 tools return { content }.
+            return { content: await definition.execute(input, context) }
+          },
+        })
+      }
+    })
   },
 
   async server(input: any, options?: any) {

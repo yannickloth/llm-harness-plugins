@@ -31,8 +31,9 @@ journalctl --user -u unsloth-studio --since today | grep -c 'POST.*"/v1/systemon
 journalctl --user -u unsloth-studio --since today | grep -c 'POST.*"/mcp/decisions"'
 ```
 
-Client side, the plugin appends one JSON line per call and per *exposure* (a
-moment where a decision was expected) to `~/.local/share/systemone/calls.jsonl`:
+Client side, the plugin appends one JSON line per call — and, on v1 hosts, per
+*exposure* (a moment where a decision was expected) — to
+`~/.local/share/systemone/calls.jsonl`:
 
 ```sh
 bun systemone/stats.ts          # last 7 days
@@ -54,8 +55,12 @@ Session-level adoption (rough)
   fetched content → jev_screen     :  45%  (10/22 sessions)
 ```
 
-The adoption rows are **proxies**: they count sessions where both the exposure
-and the call appeared — not whether that call was the right one for that moment.
+The adoption rows are **proxies**, and on OpenCode v2 they stay blank: v2's
+plugin API has no tool-execution hook, so only `kind: "call"` rows are written
+(measured — five calls, zero exposures, while a risky command ran). The
+`tool.execute.after` recorder therefore only fires on v1 hosts. On v2, measure
+expectation with the sampling audit below plus the server-side counts; the call
+counts and failure rates are still exact.
 
 ### 2. Measure: was the call expected here?
 
@@ -124,7 +129,8 @@ One JSON object per line:
 |---|---|---|
 | `SYSTEMONE_URL` | `http://127.0.0.1:8888/v1/systemone` | Decision API endpoint |
 | `SYSTEMONE_KEY_FILE` | `~/.config/opencode/keys/unsloth.key` | owner key; escalation and per-call `model` require an authenticated caller |
-| `SYSTEMONE_DEEP_TIMEOUT_MS` | `180000` | ceiling for a call (a 9B on CPU can genuinely take that long) |
+| `SYSTEMONE_TIMEOUT_MS` | `20000` | ceiling for a default-checkpoint call (a healthy one is ~120-400 ms) |
+| `SYSTEMONE_DEEP_TIMEOUT_MS` | `180000` | ceiling for an escalated call (a 9B on CPU can genuinely take that long) |
 | `SYSTEMONE_LEDGER` | `~/.local/share/systemone/calls.jsonl` | ledger path; point `stats.ts` at the same value |
 
 External decision tools (`jev_*`, `systemone_decide`) are recorded as
