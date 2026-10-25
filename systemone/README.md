@@ -7,7 +7,6 @@ ledger that records whether the tools are actually used.
 systemone/
   opencode/index.ts                     plugin: skills + 6 tools + adoption ledger
   skills/systemone/SKILL.md             when to spend a judgment; policy; routing
-  skills/systemone/reference/jev-tools.md    per-tool schemas for Jev's 12 composed tools
   skills/systemone/reference/laya-engine.md  checkpoints, routing, calibration, question design
   stats.ts                              adoption report over the ledger
 ```
@@ -51,11 +50,13 @@ Exposures (moments a decision was expected)
 
 Session-level adoption (rough)
   risky command  → systemone_risk :  67%  (6/9 sessions)
-  fetched content → jev_screen     :  45%  (10/22 sessions)
+  fetched content → systemone_screen:  45%  (10/22 sessions)
 ```
 
 The adoption rows are **proxies**: they count sessions where both the exposure
 and the call appeared — not whether that call was the right one for that moment.
+The `systemone_screen` row predates this plugin's own tool: it was measured while
+a third-party composed MCP server served screening.
 
 How exposures are detected differs by host, because v2 has no tool-execution
 hook:
@@ -79,7 +80,7 @@ call*, then compute recall. The triggers worth checking, from the skill:
 
 | moment | expected call |
 |---|---|
-| untrusted text is about to enter context | `jev_screen` |
+| untrusted text is about to enter context | `systemone_decide` (screen question) |
 | a destructive command is about to run | `systemone_risk` |
 | a retrieval loop has stalled twice | `systemone_suffice` |
 | before writing a memory entry | `systemone_novel` |
@@ -142,7 +143,7 @@ One JSON object per line:
 | `SYSTEMONE_DEEP_TIMEOUT_MS` | `180000` | ceiling for an escalated call (a 9B on CPU can genuinely take that long) |
 | `SYSTEMONE_LEDGER` | `~/.local/share/systemone/calls.jsonl` | ledger path; point `stats.ts` at the same value |
 
-External decision tools (`jev_*`, `systemone_decide`) are recorded as
+External decision tools (`systemone_decide`, laya's presets) are recorded as
 `"external": true` — they bypass the plugin, so they have no latency or ok flag.
 
 ## What this deliberately does not do

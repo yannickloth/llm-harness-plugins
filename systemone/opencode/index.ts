@@ -374,8 +374,8 @@ const consensus = tool({
   description:
     "Ask N short sources the SAME yes/no question and report whether they agree, " +
     "with the outlier identified. Use for source reconciliation or checking whether " +
-    "scraped pages / docs / logs actually support a claim. Not a substitute for " +
-    "jev_compare when you only have two passages and want their relation.",
+    "scraped pages / docs / logs actually support a claim. For two passages where " +
+    "you want their relation, ask `systemone_decide` directly.",
   args: {
     question: tool.schema.string().describe("The single yes/no proposition to test, e.g. 'is the timeout 30s?'"),
     sources: tool.schema
@@ -493,8 +493,8 @@ const constraints = tool({
   description:
     "Check a draft against explicit constraints (format, length, must-include, " +
     "register, forbidden content) one at a time. Use before delivering output that " +
-    "has hard requirements. Not for factual verification — that is jev_verify, " +
-    "which checks claims against evidence.",
+    "has hard requirements. Not for factual verification — that is a " +
+    "claim-vs-evidence `systemone_decide` call.",
   args: {
     draft: tool.schema.string().describe("The text to check."),
     constraints: tool.schema
@@ -730,9 +730,9 @@ const v1Factory: Plugin = async ({ client }) => {
     "tool.execute.after": async (input: any) => {
       const name = String(input?.tool ?? "")
       if (!name || OUR_TOOLS.has(name)) return
-      // External decision tools (Jev) are recorded here because they do not pass
-      // through our wrapper; they are the other half of the adoption picture.
-      if (name.startsWith("jev_") || name === "systemone_decide") {
+      // Studio's MCP `decide` is recorded here because it does not pass
+      // through our wrapper; it is the other half of the adoption picture.
+      if (name === "systemone_decide") {
         ledger({ kind: "call", tool: name, session: input?.sessionID, external: true })
         return
       }
@@ -801,9 +801,10 @@ export default {
             seenCalls.add(key)
             const name = String(part.name ?? "")
             if (OUR_TOOLS.has(name)) continue
-            if (name.startsWith("jev_") || name.startsWith("systemone_")) {
-              // External decision calls (Jev MCP, Studio's systemone_decide) do
-              // not pass through our wrappers, so they are recorded here.
+            if (name.startsWith("systemone_")) {
+              // External decision calls (Studio's `systemone_decide`, laya's
+              // presets) do not pass through our wrappers, so they are
+              // recorded here.
               ledger({ kind: "call", tool: name, session, external: true })
               continue
             }
