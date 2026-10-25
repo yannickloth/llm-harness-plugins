@@ -148,6 +148,9 @@ External decision tools (`systemone_decide`, laya's presets) are recorded as
 
 ## What this deliberately does not do
 
+- No execution. The decision model is one forward pass: no tools, no side
+  effects, no ability to act. Everything here returns a verdict, and enforcement
+  stays in code or in the harness's permission layer.
 - No silent escalation: the five judgment tools stay on the ~120 ms default
   checkpoint; `systemone_deep` is the only path to a larger one, and it evicts
   the resident model.

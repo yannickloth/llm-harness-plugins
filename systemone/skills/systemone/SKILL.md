@@ -10,6 +10,13 @@ questions** into typed answers with calibrated probabilities in a single forward
 pass. It never generates text, so there is nothing to parse and nothing to
 hallucinate.
 
+**The model judges; it does not act.** A System One call is one forward pass over
+a state and a set of questions — no tool loop, no side effects, no way to execute
+anything. Every tool here returns a verdict; enforcement (blocking a command,
+refusing a patch, prompting the user) is the caller's job. That is why
+`systemone_risk` is a second opinion rather than a guard, and why the destructive
+patterns in it are gated in code instead of being left to the model.
+
 **The capability is stable; the model is a setting.** The wire contract is
 `POST /v1/systemone` — served here by Unsloth Studio's Decision API on
 `127.0.0.1:8888`, which also mounts the same engine as MCP at
@@ -110,9 +117,11 @@ Notes that matter in practice:
 - **`systemone_risk` is a second opinion, not a substitute for reading the
   command** — and its `escalate` is a code decision, not a model one: a
   destructive pattern (`rm -rf`, `mkfs`, `git reset --hard`, `DROP TABLE`, …)
-  forces `escalate: true` whatever the probabilities say. Measured: `rm -rf
-  <repo>` scored severity 1.6 and `needs_human` 0.03 on its own. If the call
-  fails, treat the action as risky and ask the user.
+  forces `escalate: true` whatever the probabilities say, and `escalate_reasons`
+  names which trigger fired. Measured: `rm -rf <repo>` scored severity 1.6 and
+  `needs_human` 0.03 on its own. Quoted text is ignored when matching, so
+  `echo 'rm -rf /tmp/x'` is not treated as destructive. If the call fails, treat
+  the action as risky and ask the user.
 - **`low_confidence: true` on `systemone_suffice` means `next` is a weak
   preference, not a recommendation** — the choice distribution was flat even
   though sufficiency itself cleared 0.5. Decide yourself or gather more.

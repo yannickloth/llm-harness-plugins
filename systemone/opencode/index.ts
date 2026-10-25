@@ -172,7 +172,7 @@ function observed(name: string, definition: any): any {
         latency_ms: Date.now() - started,
         session: ctx?.sessionID,
         agent: ctx?.agent,
-        project: ctx?.worktree,
+        project: ctx?.worktree ?? ctx?.directory ?? null,
       })
       throw error
     }
@@ -189,7 +189,8 @@ function observed(name: string, definition: any): any {
       latency_ms: Date.now() - started,
       session: ctx?.sessionID,
       agent: ctx?.agent,
-      project: ctx?.worktree,
+      // v2 tool context carries `directory`, not `worktree`.
+      project: ctx?.worktree ?? ctx?.directory ?? null,
     })
     return out
   }
@@ -199,6 +200,18 @@ function observed(name: string, definition: any): any {
 /** Commands where a risk judgment is expected before running them. */
 const RISKY_COMMAND =
   /\b(rm\s+-[a-zA-Z]*[rf]|mkfs|dd\s+if=|shred|truncate\s+-s\s*0|git\s+reset\s+--hard|git\s+push\s+--force|git\s+clean\s+-[a-z]*f|drop\s+(table|database)|delete\s+from)\b/i
+
+/**
+ * Match against the command with quoted spans blanked out. A command that only
+ * *mentions* a destructive pattern — `echo 'rm -rf /tmp/x'`, a commit message,
+ * an opencode prompt — is not a destructive command, and counting it inflated
+ * the exposure denominator. The pattern itself lives outside the quotes, so
+ * `rm -rf "build dir"` still matches.
+ */
+function destructivePattern(command: string): boolean {
+  const bare = command.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""')
+  return RISKY_COMMAND.test(bare)
+}
 
 /** Tools whose output is external, untrusted-ish content that warrants screening. */
 const FETCH_TOOLS = new Set(["webfetch", "fetch", "websearch", "browser_fetch"])
@@ -340,9 +353,14 @@ const risk = tool({
       // matter what the model thinks — measured case: `rm -rf <repo>` came back
       // severity 1.6 with needs_human 0.03, which is exactly the confidence a
       // 322M encoder should not be trusted with on an irreversible action.
-      const destructive = RISKY_COMMAND.test(args.action)
-      const escalate =
-        destructive || needsHuman >= 0.5 || dataLoss >= 0.5 || irreversible >= 0.7 || severityRounded >= 2
+      const destructive = destructivePattern(args.action)
+      const escalateReasons: string[] = []
+      if (destructive) escalateReasons.push("destructive_pattern")
+      if (needsHuman >= 0.5) escalateReasons.push("needs_human")
+      if (dataLoss >= 0.5) escalateReasons.push("data_loss")
+      if (irreversible >= 0.7) escalateReasons.push("irreversible")
+      if (severityRounded >= 2) escalateReasons.push(`severity_${severityRounded}`)
+      const escalate = escalateReasons.length > 0
       return JSON.stringify(
         {
           ok: true,
@@ -353,6 +371,7 @@ const risk = tool({
           irreversible: irreversible >= 0.5,
           needs_human: needsHuman >= 0.5,
           escalate,
+          escalate_reasons: escalateReasons,
           probabilities: { data_loss: dataLoss, irreversible, needs_human: needsHuman },
           backend,
           latency_ms,
@@ -742,7 +761,7 @@ const v1Factory: Plugin = async ({ client }) => {
       }
       if (SHELL_TOOLS.has(name)) {
         const command = String(input?.args?.command ?? "")
-        if (RISKY_COMMAND.test(command)) {
+        if (destructivePattern(command)) {
           ledger({
             kind: "exposure",
             trigger: "risky_command",
@@ -814,7 +833,7 @@ export default {
             }
             if (SHELL_TOOLS.has(name)) {
               const command = String(part.input?.command ?? "")
-              if (RISKY_COMMAND.test(command)) {
+              if (destructivePattern(command)) {
                 ledger({
                   kind: "exposure",
                   trigger: "risky_command",
