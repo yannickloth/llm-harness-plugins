@@ -6,7 +6,6 @@
     "./ivp/opencode",
     "./graphics-toolkit/opencode",
     "./scientific-writing/opencode",
-    "./clm/opencode",
     "./context-toolkit/opencode",
     "./codify-first/opencode",
     "./context-editing/opencode",

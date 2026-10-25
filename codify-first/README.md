@@ -48,5 +48,5 @@ philosophy as the repo's load canary and preflight.)
   discoverable either way.
 
 Skill-only fallback: the skill self-registers via `skills.paths` (same
-mechanism as `laya`/`clm`), so the directive and the skill load together from
+mechanism as `systemone`), so the directive and the skill load together from
 the single plugin entry.

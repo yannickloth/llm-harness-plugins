@@ -1,10 +1,12 @@
----
-name: laya
-description: Use Laya, the local non-autoregressive System 1 decision engine, for fast calibrated typed judgments via the laya_* MCP tools (laya_predict, laya_route, laya_triage, laya_email, laya_guard, laya_moderation, laya_detect_language). Returns choice/score/noul answers with probabilities and confidence in a single forward pass (~30-70 ms, offline, no API key). Use for intent/urgency classification, model routing, input guardrails, content moderation, email triage, and any bounded label-shaped decision across 100+ languages. Not for generation, code, extraction of long spans, or multi-step reasoning.
-compatibility: Requires the laya-mcp systemd user service on 127.0.0.1:8765 (laptop-p16) and laya_* MCP tools visible in the session
----
+# Laya engine reference
 
-# Laya (local System 1 decision engine)
+Model-specific detail: checkpoints, routing precedence, calibration, question
+shapes, presets, and the laya-mcp / Python surfaces. Read this once a decision
+tool is chosen. It describes the **Laya** checkpoints only — if the panel is
+switched to a non-Laya decision model (clef, kev, lev, julia), the routing and
+calibration notes below do not apply to it.
+
+## Laya (local System 1 decision engine)
 
 Laya is a local, non-autoregressive decision model: give it a **state** (text, JSON,
 or conversation turns) plus **typed questions**, and it returns typed answers with
@@ -19,8 +21,9 @@ weighting and gating, not just display.
 - **MCP tools** (the primary interface): `laya_predict`, `laya_route`, `laya_triage`,
   `laya_email`, `laya_guard`, `laya_moderation`, `laya_detect_language`, served by the
   `laya-mcp` systemd user service over streamable HTTP at `127.0.0.1:8765/mcp`.
-  Both checkpoints it serves (english + multilingual) are preloaded GPU-resident, so
-  routing and inference cost milliseconds.
+  Both checkpoints it serves (english + multilingual) are preloaded and resident,
+  so routing and inference cost milliseconds — GPU when `LAYA_DEVICE=cuda`.
+  Studio's own Decision API serves the same weights but defaults to CPU.
 - **Python API**: the `laya` package (0.3.x) in `~/.local/share/laya/venv`
   (launcher `laya-python`). `Router` and `Agent` mirror the MCP tools for
   embedding Laya in scripts or pipelines.
