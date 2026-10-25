@@ -31,9 +31,8 @@ journalctl --user -u unsloth-studio --since today | grep -c 'POST.*"/v1/systemon
 journalctl --user -u unsloth-studio --since today | grep -c 'POST.*"/mcp/decisions"'
 ```
 
-Client side, the plugin appends one JSON line per call — and, on v1 hosts, per
-*exposure* (a moment where a decision was expected) — to
-`~/.local/share/systemone/calls.jsonl`:
+Client side, the plugin appends one JSON line per call and per *exposure* (a
+moment where a decision was expected) to `~/.local/share/systemone/calls.jsonl`:
 
 ```sh
 bun systemone/stats.ts          # last 7 days
@@ -55,12 +54,22 @@ Session-level adoption (rough)
   fetched content → jev_screen     :  45%  (10/22 sessions)
 ```
 
-The adoption rows are **proxies**, and on OpenCode v2 they stay blank: v2's
-plugin API has no tool-execution hook, so only `kind: "call"` rows are written
-(measured — five calls, zero exposures, while a risky command ran). The
-`tool.execute.after` recorder therefore only fires on v1 hosts. On v2, measure
-expectation with the sampling audit below plus the server-side counts; the call
-counts and failure rates are still exact.
+The adoption rows are **proxies**: they count sessions where both the exposure
+and the call appeared — not whether that call was the right one for that moment.
+
+How exposures are detected differs by host, because v2 has no tool-execution
+hook:
+
+- **v1:** `tool.execute.after` fires as the tool runs.
+- **v2:** the `session.hook("context")` callback receives the assembled
+  transcript, so each `messages[].content[]` part of type `tool-call` is scanned
+  at the next model request. Two consequences: an exposure is recorded *after*
+  the tool ran (fine for measuring, useless for blocking — blocking belongs in
+  permission rules or `ctx.permission.assert`), and matching is textual, so a
+  command that merely *mentions* `rm -rf` inside a quoted string counts. Measured:
+  four such commands in one session produced exactly four rows, and shell tools
+  are matched as `shell` as well as `bash`.
+- Dedupe is by tool name + input, not by call id.
 
 ### 2. Measure: was the call expected here?
 

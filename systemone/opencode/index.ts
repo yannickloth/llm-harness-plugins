@@ -203,6 +203,9 @@ const RISKY_COMMAND =
 /** Tools whose output is external, untrusted-ish content that warrants screening. */
 const FETCH_TOOLS = new Set(["webfetch", "fetch", "websearch", "browser_fetch"])
 
+/** Shell tool names across harnesses; this one is `shell`, not `bash`. */
+const SHELL_TOOLS = new Set(["bash", "shell"])
+
 const OUR_TOOLS = new Set([
   "systemone_suffice",
   "systemone_risk",
@@ -719,13 +722,11 @@ const v1Factory: Plugin = async ({ client }) => {
   logger.info(`plugin active — ${count} skill(s) in ${skillsDir}; 6 decision tools`)
 
   return {
-    // V1-only: on OpenCode v2 a plugin that exports `setup` does not use this
-    // factory at all, and v2's plugin API exposes no tool-execution hook — only
-    // session hooks (prompt/context/model request). So exposure rows are written
-    // on v1 hosts and NOT on v2; measured here: five calls logged, zero
-    // exposures, while a risky command ran. `stats.ts` therefore prints "—" for
-    // the adoption ratios on v2, and the sampling audit in README.md is the
-    // working alternative. Kept for v1 hosts and as the place a v2 hook will go.
+    // v1 path only: a plugin that exports `setup` does not use this factory on
+    // OpenCode v2, and v2 has no tool-execution hook — its equivalent lives in
+    // `setup` below, as a `context` hook that scans the assembled transcript. So
+    // both hosts record exposures; this branch is kept for v1 hosts, where it
+    // fires as the tool actually runs.
     "tool.execute.after": async (input: any) => {
       const name = String(input?.tool ?? "")
       if (!name || OUR_TOOLS.has(name)) return
@@ -739,7 +740,7 @@ const v1Factory: Plugin = async ({ client }) => {
         ledger({ kind: "exposure", trigger: "fetched_content", tool: name, session: input?.sessionID })
         return
       }
-      if (name === "bash") {
+      if (SHELL_TOOLS.has(name)) {
         const command = String(input?.args?.command ?? "")
         if (RISKY_COMMAND.test(command)) {
           ledger({
@@ -772,6 +773,69 @@ export default {
   async setup(ctx: any) {
     writeLoadCanary("systemone")
     await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
+
+    // TEMPORARY diagnostic: capture the shape of the v2 context event so the
+    // exposure scanner can be written against reality instead of a guess.
+    // v2 has no tool-execution hook, but every model request hands over the
+    // assembled transcript, and it carries each tool call as
+    // `messages[].content[]` with `type: "tool-call"`, `name`, `input`. Scan the
+    // tail of it to record the same exposures the v1 hook records, deduped by
+    // call id. Caveat: this fires on the NEXT request, i.e. after the tool ran —
+    // good enough to measure adoption, useless for blocking. Blocking belongs in
+    // permission rules or ctx.permission.assert.
+    const seenCalls = new Set<string>()
+    await ctx.session.hook("context", (event: any) => {
+      try {
+        const session = event?.sessionID
+        const msgs = Array.isArray(event?.messages) ? event.messages.slice(-80) : []
+        for (const message of msgs) {
+          for (const part of (message?.content ?? [])) {
+            if (part?.type !== "tool-call") continue
+            // Dedupe key is name + input, not `part.id`: the id is not
+            // documented as stable across request snapshots, while name+input is
+            // stable within a session. Identical commands repeated later collapse
+            // into one exposure — the lesser error. (Measured: four distinct
+            // commands in one session produced exactly four rows.)
+            const key = `${String(part.name ?? "")}:${JSON.stringify(part.input ?? {}).slice(0, 400)}`
+            if (seenCalls.has(key)) continue
+            seenCalls.add(key)
+            const name = String(part.name ?? "")
+            if (OUR_TOOLS.has(name)) continue
+            if (name.startsWith("jev_") || name.startsWith("systemone_")) {
+              // External decision calls (Jev MCP, Studio's systemone_decide) do
+              // not pass through our wrappers, so they are recorded here.
+              ledger({ kind: "call", tool: name, session, external: true })
+              continue
+            }
+            if (FETCH_TOOLS.has(name)) {
+              ledger({ kind: "exposure", trigger: "fetched_content", tool: name, session })
+              continue
+            }
+            if (SHELL_TOOLS.has(name)) {
+              const command = String(part.input?.command ?? "")
+              if (RISKY_COMMAND.test(command)) {
+                ledger({
+                  kind: "exposure",
+                  trigger: "risky_command",
+                  tool: name,
+                  session,
+                  command: command.slice(0, 200),
+                })
+              }
+            }
+          }
+        }
+        // Bounded memory: drop the oldest ids once the set gets large.
+        if (seenCalls.size > 4000) {
+          for (const key of seenCalls) {
+            seenCalls.delete(key)
+            if (seenCalls.size <= 2000) break
+          }
+        }
+      } catch {
+        // Observability must never break a model request.
+      }
+    })
 
     // v2 tool registration. `server`'s `tool` map is ignored by a plugin that
     // exports `setup`, which is why the first v2 build exposed none of these.
