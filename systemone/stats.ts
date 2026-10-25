@@ -121,12 +121,13 @@ const riskCalled = sessionsWith(e => e.kind === "call" && e.tool === "systemone_
 const riskAdopted = [...riskExposed].filter(s => riskCalled.has(s)).length
 
 const fetched = sessionsWith(e => e.kind === "exposure" && e.trigger === "fetched_content")
-const screened = sessionsWith(e => e.kind === "call" && e.tool === "systemone_screen")
-const fetchAdopted = [...fetched].filter(s => screened.has(s)).length
 
 console.log("\nSession-level adoption (rough)")
 console.log(`  risky command  → systemone_risk : ${pct(riskAdopted, riskExposed.size).padStart(4)}  (${riskAdopted}/${riskExposed.size} sessions)`)
-console.log(`  fetched content → systemone_screen: ${pct(fetchAdopted, fetched.size).padStart(4)}  (${fetchAdopted}/${fetched.size} sessions)`)
+// No ratio for fetched content: untrusted-input screening lived in the Jev tools,
+// which were removed. The exposure count is still reported above — it says how
+// often external text entered context, not whether anything judged it.
+console.log(`  fetched content (no local screener) : ${fetched.size} session(s) exposed`)
 console.log("\n  This is a proxy: it counts sessions where BOTH the exposure and the call")
 console.log("  appeared, not whether the call was the right one for that moment.")
 

@@ -50,13 +50,15 @@ Exposures (moments a decision was expected)
 
 Session-level adoption (rough)
   risky command  → systemone_risk :  67%  (6/9 sessions)
-  fetched content → systemone_screen:  45%  (10/22 sessions)
+  fetched content (no local screener) : 22 session(s) exposed
 ```
 
-The adoption rows are **proxies**: they count sessions where both the exposure
-and the call appeared — not whether that call was the right one for that moment.
-The `systemone_screen` row predates this plugin's own tool: it was measured while
-a third-party composed MCP server served screening.
+The risky-command row is a **proxy**: it counts sessions where both the
+exposure and the call appeared — not whether that call was the right one for
+that moment. Fetched content has no ratio on purpose: screening was the removed
+Jev server's job, so the count reports how often external text entered context,
+not whether anything judged it. Add a tool for it before trusting a number
+there.
 
 How exposures are detected differs by host, because v2 has no tool-execution
 hook:
