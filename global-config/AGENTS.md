@@ -15,6 +15,11 @@ Detail rules live in `global-config/rules/*.md` and are loaded **on demand**. Do
 | `rules/response-quality.md` | Drafting responses or handling errors |
 | `rules/operations.md` | Estimation, efficiency, session/file handling, dead code, review-context fixes |
 | `rules/kimi-subscription-models.md` | Choosing/validating a Kimi model ID, debugging "Model not found", configuring Kimi For Coding in opencode |
+| `rules/calculations.md` | Computing any number, quoting figures in a deliverable, or proposing a calculator install |
+
+## Computed Numbers
+
+**Never do arithmetic in your head.** Every number in a deliverable comes from a calculator run in this session: `calc` tool (general-skills plugin), `qalc` in a shell, `bc -l` in scripts, `maxima`/`sympy` for CAS. Quote engine + expression as provenance; cross-check load-bearing numbers by a second path. **If an engine is missing: run `calc_probe` and propose its install — ✗ never substitute a mental estimate.** Detail: `rules/calculations.md`.
 
 ## Scripting Language
 

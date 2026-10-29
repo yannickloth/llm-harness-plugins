@@ -9,7 +9,8 @@
     "./context-toolkit/opencode",
     "./codify-first/opencode",
     "./context-editing/opencode",
-    "./system-message-merge/opencode"
+    "./system-message-merge/opencode",
+    "./general-skills/opencode"
   ],
   "agent": {
     "driver-identifier": {

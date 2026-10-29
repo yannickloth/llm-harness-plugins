@@ -132,7 +132,7 @@ Eleven plugins ship agents and self-register: `agentmem`, `scientific-writing`,
 | 8 | `prompt-registry` | — | Manages prompt templates across all plugins |
 | 9 | `typst-toolkit` | — | Format-bound skills |
 | 10 | `latex-toolkit` | — | Format-bound skills |
-| 11 | `general-skills` | — | Generic audit agents, load last |
+| 11 | `general-skills` | — | Generic audit agents, the STE-100 + `[calc-discipline]` system rules, the `calc`/`calc_probe` tools, and the `use-calculator` skill; load last |
 | 11d | `systemone` | — | Skill + `systemone_deep` (escalation to a larger CPU decision checkpoint); independent of other plugins |
 | 11g | `context-editing` | `session-lifecycle`, `datetime-inject` | Context management; reuses `session-lifecycle` for trace retention; edits the message array after `datetime-inject` has added its per-message context |
 | 11b | `premium-read-offload` | — | Premium-session read/generation offload; independent of other plugins |
@@ -174,6 +174,51 @@ init-order violation fails closed.
 > **Note:** As of opencode v1.x, the docs only document npm packages in `plugin[]`. However, the source
 > code (`packages/opencode/src/config/plugin.ts`, `resolvePluginSpec`) explicitly supports relative
 > and absolute paths — resolved relative to the config file's directory. This is confirmed working.
+
+### Calculator discipline (`calc` / `calc_probe`)
+
+`general-skills` injects a standing system rule (`[calc-discipline]`, same
+mechanism as the STE-100 rule above) and registers two tools:
+
+| Tool | Args | Returns |
+|------|------|---------|
+| `calc` | `expr`, `engine?` (`auto`/`qalc`/`numbat`/`bc`/`python`/`sympy`/`maxima`) | `engine=… expr=…` + result + re-runnable `command:`; on failure `FAILED …` and an explicit instruction not to report any number from that attempt |
+| `calc_probe` | — | engine availability table +, for every MISSING engine, the install command for this OS family |
+
+Rule the injection enforces: **every number a session reports is computed by a
+calculator in that session, with provenance** — no mental arithmetic, no
+fluent-but-unverified digits. Engines are declared data in
+`general-skills/opencode/calc-tool.ts` (argv + stdin per engine), execution is
+injected, so the registry, picker, output cleaners, and the install proposals
+are all host-free and tested in `index.test.ts`.
+
+Missing engine → **propose the install, never silently skip the computation.**
+OS detection reads `/etc/os-release` (`ID=`, then `ID_LIKE=`) and emits the
+family's command; NixOS proposals name `users/common-hm.nix` because that module
+is imported by every user on every host (and by the standalone home-manager
+deployment). The packages are `pkgs.libqalculate` (the `qalc` binary is
+`libqalculate`'s output; `qalculate-qt`/`qalculate-gtk` are GUIs that do not
+ship it), `pkgs.numbat`, `pkgs.bc`, `pkgs.maxima`, `pkgs.gnuplot`.
+
+Skill: `use-calculator` (self-registered with the plugin's other skills).
+Detail reference: `global-config/rules/calculations.md`.
+
+Verified live on the CachyOS dev host (`calc_probe` → arch family, qalc ready):
+
+```
+engine=qalc  expr=110.5 lb to kg        → 50.12195689 kg
+engine=sympy expr=integrate(x**2*exp(x), (x,0,1)) → -2 + E
+engine=qalc  expr=stdev(12,17,23,29)    → 7.365459931   (statistics.stdev agrees)
+engine=numbat (missing)                 → install: sudo pacman -S numbat + proposal text
+```
+
+Two traps the live runs surfaced, documented in the skill and pinned by tests:
+`qalc` reads an **unknown function name as a product of units** — exit 0,
+plausible unit-laden output, no error (`simplify(...)` → `0 s·li`) — gate names
+with `qalc --list-functions <name>`; and `qalc`'s `int`/`integrate` return an
+unevaluated fragment, so integration goes to `maxima`/`sympy`. Sympy ≥ 1.13
+defines no symbols on `import *`, which is why the sympy engine routes through
+`parse_expr`.
 
 ### Topic gate (context injection)
 
