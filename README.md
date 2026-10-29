@@ -219,17 +219,22 @@ engine=qalc  expr=stdev(12,17,23,29)                → 7.365459931  (statistics
 engine=numbat (missing)                             → install: sudo pacman -S numbat + proposal text
 ```
 
-Runs on this host found two failure modes. Tests check both, and the skill
-documents both:
+Runs on this host found four failure modes. Tests check each one, and the skill
+documents them all:
 
 - qalc reads an unknown function name as a product of units. It exits with
   status 0, prints output with units, and raises no error (`simplify(...)` →
   `0 s·li`). Check names with `qalc --list-functions <name>`.
 - qalc's `int`/`integrate` return an unevaluated fragment. Compute integrals
   with `maxima`/`sympy`.
-
-Sympy ≥ 1.13 defines no symbols on `import *`. The sympy engine therefore uses
-`parse_expr`.
+- Maxima exits with status 0 on a syntax error, and prints a quoted noun form
+  (`'sum(1/k^2,k,1,inf)`) when it cannot compute. `maximaFailure` reads the
+  output, so the exit status is not evidence. The engine asks Maxima to print
+  with `printf(true, "~a", …)`, because Maxima's own display splits a fraction
+  around the `(%oN)` label. `--suppress-input-echo` and `-Q` are not used: the
+  5.47 wrapper rejects them.
+- Sympy ≥ 1.13 defines no symbols on `import *`, so the sympy engine uses
+  `parse_expr`.
 
 ### Topic gate (context injection)
 

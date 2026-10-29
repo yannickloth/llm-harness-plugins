@@ -11,6 +11,7 @@ import {
   formatProbeReport,
   installPlan,
   maximaCommands,
+  maximaFailure,
   noEngineProposal,
   osFamilyFromId,
   parseOsRelease,
@@ -163,11 +164,9 @@ describe("calc engine registry", () => {
     expect(ENGINES.bc.input!("1+1")).toBe("1+1;\n")
     expect(ENGINES.maxima.argv("integrate(x^2,x)")).toEqual([
       "maxima",
-      "--very-quiet",
-      "--suppress-input-echo",
-      "-Q",
+      "-q",
       "--batch-string",
-      "integrate(x^2,x);",
+      'printf(true, "~a", integrate(x^2,x));',
     ])
     expect(ENGINES.sympy.argv("solve(x**2-2)").slice(0, 4)).toEqual(["uv", "run", "--with", "sympy"])
   })
@@ -194,11 +193,11 @@ describe("calc engine registry", () => {
     expect(ENGINES.qalc.limits).toContain("integer-part")
   })
 
-  test("maximaCommands terminates statements without doubling them", () => {
-    expect(maximaCommands("integrate(x,x)")).toBe("integrate(x,x);")
-    expect(maximaCommands("integrate(x,x);")).toBe("integrate(x,x);")
-    expect(maximaCommands("display(donteval(1));")).toBe("display(donteval(1));")
+  test("maximaCommands prints plain text for one expression, and passes statements through", () => {
+    expect(maximaCommands("integrate(x,x)")).toBe('printf(true, "~a", integrate(x,x));')
+    expect(maximaCommands("a: 1; b: a!;")).toBe("a: 1; b: a!;")
     expect(maximaCommands("kill(all)$")).toBe("kill(all)$")
+    expect(maximaCommands("integrate(x,x);")).toBe("integrate(x,x);")
   })
 
   test("cleanMaxima keeps results, drops echoes and labels, unwraps pretty-print", () => {
@@ -213,6 +212,21 @@ describe("calc engine registry", () => {
     ].join("\n")
     expect(cleanMaxima(raw)).toBe("x --- 3")
     expect(cleanMaxima("(%o1) 1.449489743\n(%i2) ")).toBe("1.449489743")
+  })
+
+  test("cleanMaxima reads the printf form the engine asks for", () => {
+    // Live shape: echo, plain-text result, `false` label.
+    const raw = [
+      '(%i1) printf(true, "~a", integrate(x^2*e^x,x,0,1))',
+      '(e*log(e)^2-2*e*log(e)+2*e)/log(e)^3-2/log(e)^3',
+      '(%o1)                                      false',
+      '(%i2) ',
+    ].join("\n")
+    expect(cleanMaxima(raw)).toBe("(e*log(e)^2-2*e*log(e)+2*e)/log(e)^3-2/log(e)^3")
+  })
+
+  test("cleanMaxima returns nothing for preamble-only output", () => {
+    expect(cleanMaxima("Maxima 5.47.0 https://maxima.sourceforge.io\nusing Lisp SBCL 2.6.4\n")).toBe("")
   })
 })
 
@@ -334,9 +348,81 @@ describe("calc execution", () => {
     expect(long.endsWith("…")).toBe(true)
   })
 
+  test("series sum: three methods, difference reported (values from live runs)", async () => {
+    // Live values on this host: maxima ev(sum(1/k^2,k,1,1000),numer); python
+    // sum(1/(k*k) …); exact limit pi^2/6 from qalc.
+    const maxima = 1.6439345666815615
+    const python = 1.6439345666815597
+    const exact = 1.6449340668482264
+    const spread = Math.abs(maxima - python)
+    expect(spread).toBeGreaterThan(0)
+    expect(spread).toBeLessThan(1e-13)
+    // The partial sum is below the limit by about 1/n = 1e-3.
+    const tail = exact - maxima
+    expect(tail).toBeGreaterThan(5e-4)
+    expect(tail).toBeLessThan(1.5e-3)
+  })
+
   test("engineFailure is null on a clean run", () => {
     expect(engineFailure("qalc", { stdout: "4", stderr: "", exitCode: 0 })).toBeNull()
     expect(engineFailure("qalc", { stdout: "", stderr: "boom", exitCode: 2 })).toContain("exit 2")
+  })
+
+  test("maxima exits 0 on errors — the output carries the failure", () => {
+    // Live shape on Arch Maxima 5.47, exit status 0:
+    expect(
+      maximaFailure(
+        '(%i1) printf(true, "~a", integrate(x^2;\nincorrect syntax: Missing )\nintegrate(x^2;\n            ^\n',
+        "integrate(x^2;",
+      ),
+    ).toContain("incorrect syntax")
+    // An unknown function prints its own call back: not a number.
+    expect(
+      maximaFailure(
+        '(%i1) printf(true, "~a", foobar(2))\nfoobar(2)\n(%o1)                                      false\n',
+        "foobar(2)",
+      ),
+    ).toContain("unevaluated")
+    // Maxima prints a quoted noun form when it cannot evaluate (live-verified
+    // for an infinite sum on 5.47): letters and digits must match for that.
+    expect(
+      maximaFailure(
+        "(%i1) printf(true, \"~a\", sum(1/k^2, k, 1, inf))\n'sum(1/k^2,k,1,inf)\n(%o1)                                      false\n",
+        "sum(1/k^2, k, 1, inf)",
+      ),
+    ).toContain("unevaluated")
+    // Nothing printed (preamble only).
+    expect(maximaFailure("Maxima 5.47.0 https://maxima.sourceforge.io\n", "1+1;")).toContain(
+      "printed no result",
+    )
+    // A real result passes.
+    expect(
+      maximaFailure(
+        '(%i1) printf(true, "~a", integrate(x^2, x))\nx^3/3\n(%o1)                                      false\n',
+        "integrate(x^2,x)",
+      ),
+    ).toBeNull()
+  })
+
+  test("runEngine cleans the Maxima printf form to the plain-text result", async () => {
+    const host = fakeHost({
+      maxima: {
+        stdout:
+          '(%i1) printf(true, "~a", solve(x^2+2*x-5 = 0,x))\n[x = - sqrt(6) - 1, x = sqrt(6) - 1]\n(%o1)                                      false\n',
+      },
+    })
+    const out = await runEngine("maxima", "solve(x^2+2*x-5=0,x)", host)
+    expect(out.ok).toBe(true)
+    expect(out.output).toBe("[x = - sqrt(6) - 1, x = sqrt(6) - 1]")
+  })
+
+  test("runEngine reports the Maxima syntax error as a failure with exit 0", async () => {
+    const host = fakeHost({
+      maxima: { stdout: "(%i1) printf(true, \"~a\", integrate(x^2)\nincorrect syntax: Missing )\n" },
+    })
+    const out = await runEngine("maxima", "integrate(x^2;", host)
+    expect(out.ok).toBe(false)
+    expect(out.error).toContain("incorrect syntax")
   })
 })
 

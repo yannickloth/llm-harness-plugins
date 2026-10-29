@@ -39,14 +39,14 @@ answers.
 |---|---|---|
 | Default: units, currency, percentages, dates, bases, matrices, statistics | `qalc` | `qalc -t "150 km/h to mph"` → `93.20567884 mph` |
 | Symbolic: `diff`/`solve`/`factor`/matrix | `qalc` | `qalc -t "solve(x^2+2x-5=0)"` → `[1.449489743 −3.449489743]` |
-| Integrals, limits, series, ordinary differential equations (ODEs) — qalc has no integration | `maxima` · `sympy` | `maxima --very-quiet --batch-string "integrate(x^2,x);"` · see the sympy row |
+| Integrals, limits, series, ordinary differential equations (ODEs) — qalc has no integration | `maxima` · `sympy` | `maxima -q --batch-string 'printf(true, "~a", integrate(x^2,x));'` · see the sympy row |
 | Statistics — names verified: `mean` `median` `var` `stdev` `stdevp` `geomean` `harmmean` `meandev` | `qalc` | `qalc -t "stdev(12,17,23,29)"` → `7.365459931` |
 | Combinatorics — qalc has no `nCr`; use factorials | `qalc` | `qalc -t "23!/(3!20!)"` → `1771` |
 | Science with unit checking (a unit error is a type error) | `numbat` | `numbat -e "150 km/h -> mph"` |
 | Arithmetic inside a script or pipeline (POSIX, available on all POSIX systems) | `bc` | `echo 'scale=6; 22/7' \| bc -l` |
 | Statistics, combinatorics, and dates with the Python standard library | `python3` | `python3 -c "import statistics as s; print(s.mean([12,17,23,29]))"` → `20.25` |
 | Exact computer algebra system (CAS) in one call (needs `uv`) | `sympy` | `uv run --with sympy python -c "from sympy import *; from sympy.parsing.sympy_parser import parse_expr; print(parse_expr('integrate(x**2*exp(x), (x,0,1))', evaluate=True))"` → `-2 + E` |
-| Heavy CAS: ODEs, limits, sums, series | `maxima` | `maxima --very-quiet --suppress-input-echo --batch-string "integrate(x^2,x);"` |
+| Heavy CAS: ODEs, limits, sums, series | `maxima` | `maxima -q --batch-string 'printf(true, "~a", integrate(x^2,x));'` → `x^3/3` |
 | Plot of computed numbers | `gnuplot` | The numbers stay computed. Plotting renders them. |
 
 Prefer the `calc` tool over shell calls. The `calc` tool handles quoting and
@@ -95,6 +95,14 @@ contains an unevaluated `int(` or `∫(` is not a number.
 `3700 MB`. `3.7 GiB to MiB` → `3788.8 MiB`. State the prefix. Do not change the
 prefix.
 
+### Maxima failure modes (live-verified, 5.47)
+
+| Typed | What Maxima does | Signal |
+|---|---|---|
+| `integrate(x^2;` | prints `incorrect syntax: Missing )` and **exits with status 0** | the exit status proves nothing; `calc` reports `FAILED … incorrect syntax …` |
+| `sum(1/k^2, k, 1, inf)` | prints the quoted noun form `'sum(1/k^2,k,1,inf)` | the printed text equals the input → not a number. Use a finite sum: `ev(sum(1/k^2,k,1,1000), numer)` |
+| `1/3` | prints the exact `1/3` | state the form you want: `ev(1/3, numer)` → `0.3333333333333333` |
+
 Verified pairs on this host (engine / second method):
 
 | Quantity | calculator | second method |
@@ -104,7 +112,8 @@ Verified pairs on this host (engine / second method):
 | population standard deviation | `qalc stdevp(…)` → `6.378675411` | `statistics.pstdev` → `6.378675411086537` |
 | sample variance | `qalc var(…)` → `54.25` | `statistics.variance` → `54.25` |
 | 2⁶³−1 as hex | `qalc "2^63-1 to hex"` → `0x7FFFFFFFFFFFFFFF` | — |
-| ∫₀¹ x²eˣ dx (exact) | sympy `parse_expr` → `-2 + E` | python Simpson n=2000 → `0.7182818284590556`; `e-2` → `0.7182818284590451` |
+| ∫₀¹ x²eˣ dx (exact) | sympy `parse_expr` → `-2 + E` · maxima `printf` → `(e*log(e)^2-2*e*log(e)+2*e)/log(e)^3-2/log(e)^3` | python Simpson n=2000 → `0.7182818284590556`; `e-2` → `0.7182818284590451` |
+| ∑ 1/k², k=1..1000 | maxima `ev(sum(1/k^2,k,1,1000), numer)` → `1.6439345666815615` | python `sum(1/(k*k) …)` → `1.6439345666815597`; difference `1.8E−15` (qalc). The limit π²/6 → `1.6449340668482264` (python, 17 significant digits) |
 
 qalc prints 10 significant digits. The second method prints more digits. These
 are the same value. Do not read a digit-length difference as a difference in the

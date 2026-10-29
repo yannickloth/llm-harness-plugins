@@ -29,20 +29,23 @@ calculator computed in this session.
 | `bc` | `echo 'scale=6; 22/7' \| bc -l` | `-l`: scale 20 + exp/ln/sin/atan · `bc` also includes `dc` |
 | `python3` | `python3 -c "import statistics as s; print(s.mean([3,4,9]))"` | standard library math/stats/itertools/fractions/decimal/datetime |
 | `sympy` | `uv run --with sympy python -c "from sympy import *; from sympy.parsing.sympy_parser import parse_expr; print(parse_expr('integrate(x**2*exp(x),(x,0,1))', evaluate=True))"` → `-2 + E` | sympy ≥ 1.13 defines no symbols on `import *`, so the call goes through `parse_expr` · needs `uv` · first run needs network |
-| `maxima` | `maxima --very-quiet --suppress-input-echo --batch-string "integrate(x^2,x);"` | `;` terminators · `-Q` exits non-zero on error |
+| `maxima` | `maxima -q --batch-string 'printf(true, "~a", integrate(x^2,x));'` → `x^3/3` | `-q`: no start-up banner · `--batch-string`: run non-interactively · `printf(true,"~a", …)`: plain-text result on one line (Maxima's own display splits a fraction around the `(%oN)` label) · `;` terminators · Maxima exits 0 on a syntax error, and prints `'sum(…)` unevaluated when it cannot compute — both are failures, not results |
 
 Prefer these plugin tools (general-skills) over shell quoting. `calc` returns
 the engine, the expression, and the result; it limits execution time; on failure
 it returns no number. `calc_probe` returns engine availability and install
 proposals.
 
-# qalc Failure Modes (live-verified)
+# Failure Modes (live-verified)
 
-| Typed | What qalc does | Signal |
+| Typed | What the engine does | Signal |
 |---|---|---|
-| `simplify(…)`, `std(…)`, `nCr(…)` | qalc reads the name as a product of units, exits with status 0, and prints output with the wrong units | units in the result that you did not ask for → the name is wrong; check the name with `--list-functions` |
-| `int(…)`, `integrate(…)`, `int_0^1 … dx` | qalc returns an unevaluated fragment (`[int(x²) int(x)]`, `∫(…)`, `0 d`) | `int(` or `∫(` in the output → not a number; use maxima/sympy |
+| `simplify(…)`, `std(…)`, `nCr(…)` in qalc | qalc reads the name as a product of units, exits with status 0, and prints output with the wrong units | units in the result that you did not ask for → the name is wrong; check the name with `--list-functions` |
+| `int(…)`, `integrate(…)`, `int_0^1 … dx` in qalc | qalc returns an unevaluated fragment (`[int(x²) int(x)]`, `∫(…)`, `0 d`) | `int(` or `∫(` in the output → not a number; use maxima/sympy |
 | `3.7 GB to MB` and `3.7 GiB to MiB` | 3700 MB and 3788.8 MiB | the prefix changes the answer — state the prefix |
+| `integrate(x^2;` in maxima | Maxima prints `incorrect syntax: Missing )` and **exits with status 0** | the exit status proves nothing; read the output (`calc` reports `FAILED`) |
+| `sum(1/k^2, k, 1, inf)` in maxima | Maxima prints the quoted noun form `'sum(1/k^2,k,1,inf)` | printed text equals the input → not a number; use `ev(sum(1/k^2,k,1,1000), numer)` |
+| `150 km/h -> mph` in numbat | prints `93.2057 mph` (4 significant digits) | state the precision you need; qalc prints `93.20567884` |
 
 # Source Information
 

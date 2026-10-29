@@ -56,41 +56,101 @@ export type CalcOutcome = {
 // ---------------------------------------------------------------------------
 
 /**
- * Maxima echoes its input as `(%i1) …` and labels every result `(%o1) …`, with
- * multi-line pretty-printed math underneath the label. Keep the result blocks
- * only, strip the label, and join the wrapped lines of one result.
+ * Maxima echoes its input as `(%i1) …` and labels results as `(%o1) …`. Its own
+ * display splits a fraction around the label (numerator line above the label,
+ * denominator lines below), so a displayed result is not readable text. The
+ * engine asks Maxima to print single expressions with `printf(true, "~a", …)`:
+ * `printf` writes the plain-text form on one line, and the label under it is
+ * `false` (printf's return value).
+ *
+ * Cleaning keeps both shapes: printed lines under a `false` label are the
+ * result; for a real label, the label content plus its continuation lines is
+ * the result, and the numerator fragment just above the label is dropped as
+ * part of that same result. Preamble (version banner, Lisp notices) is dropped.
  */
 export function cleanMaxima(raw: string): string {
-  const blocks: string[] = []
+  const out: string[] = []
+  let pending: string[] = []
   let cur: string[] | null = null
-  const flush = () => {
-    if (cur && cur.length) blocks.push(cur.join(" ").replace(/\s+/g, " ").trim())
+  const collapse = (lines: string[]) => lines.join(" ").replace(/\s+/g, " ").trim()
+  const flushCur = () => {
+    if (cur && cur.length) out.push(collapse(cur))
     cur = null
   }
-  for (const line of raw.split("\n")) {
-    const result = line.match(/^\(%o\d+\)\s*(.*)$/)
-    if (result) {
-      flush()
-      cur = [result[1]]
-      continue
-    }
-    if (/^\(%i\d+\)/.test(line.trim()) || line.trim() === "") {
-      flush()
-      continue
-    }
-    if (cur) cur.push(line.trim())
+  const flushPending = () => {
+    if (pending.length) out.push(collapse(pending))
+    pending = []
   }
-  flush()
-  return blocks.join("\n").trim()
+  let started = false
+  for (const line of raw.split("\n")) {
+    const t = line.trim()
+    const echo = /^\(%i\d+\)/.test(t)
+    const label = t.match(/^\(%o\d+\)\s*(.*)$/)
+    // Version/Lisp preamble precedes the first prompt; it is not output.
+    if (!started && !echo && !label) continue
+    started = true
+    if (echo) {
+      flushCur()
+      flushPending()
+      continue
+    }
+    if (label) {
+      const content = label[1].trim()
+      if (!content || content === "false") {
+        // printf output is the real result; the label is printf's return value.
+        flushCur()
+        flushPending()
+        continue
+      }
+      // A display fraction puts its numerator line just above the label; that
+      // fragment belongs to this same result, so it is not output of its own.
+      flushCur()
+      pending = []
+      cur = [content]
+      continue
+    }
+    if (!t) continue
+    if (cur) cur.push(t)
+    else pending.push(t)
+  }
+  flushCur()
+  flushPending()
+  return out.join("\n").trim()
 }
 
 /** qalc reports some parse failures with exit 0 and an `error:` line on stdout;
  *  others exit non-zero and print a partial rendering (e.g. `sqrt(` → `√()`).
- *  Treat both shapes as failure — a rendered fragment is not a result. */
-export function engineFailure(engine: EngineId, res: SpawnResult): string | null {
+ *  Treat both shapes as failure — a rendered fragment is not a result. Maxima
+ *  is checked in its output too: `--batch-string` exits 0 on a syntax error. */
+export function engineFailure(engine: EngineId, res: SpawnResult, expr?: string): string | null {
   const out = `${res.stdout}\n${res.stderr}`
   if (res.exitCode !== 0) return `exit ${res.exitCode}: ${res.stderr.trim() || res.stdout.trim() || "no output"}`
   if (/^\s*error:/m.test(out)) return out.trim().split("\n").find(l => /^\s*error:/m.test(l)) ?? "error"
+  if (engine === "maxima") return maximaFailure(out, expr ?? "")
+  return null
+}
+
+/**
+ * Maxima failure detection from the output (`--batch-string` exits 0 on errors,
+ * live-verified on 5.47): a syntax error, a Lisp/fatal error, nothing printed,
+ * or a printed result identical to the input — an unknown function returns its
+ * own call unevaluated, which is not a number.
+ */
+export function maximaFailure(out: string, expr: string): string | null {
+  const crash = out
+    .split("\n")
+    .find(l => /incorrect syntax|Maxima has encountered|Lisp error|Fatal error/i.test(l))
+  if (crash) return crash.trim()
+  const printed = cleanMaxima(out)
+  if (!printed) return "Maxima printed no result — nothing was computed"
+  // Compare on letters and digits only. Maxima prints an unevaluated call as a
+  // quoted noun form (`'sum(1/k^2,k,1,inf)`), so the quote, the slashes and the
+  // spacing must not count.
+  const strip = (s: string) => s.replace(/[^A-Za-z0-9]/g, "")
+  const first = printed.split("\n")[0]
+  if (strip(first) === strip(expr)) {
+    return `Maxima returned the input unevaluated (${first}). Maxima does not know that name, or cannot compute it, so this is not a number.`
+  }
   return null
 }
 
@@ -172,10 +232,14 @@ export const ENGINES: Record<EngineId, EngineSpec> = {
   maxima: {
     id: "maxima",
     binary: "maxima",
-    // --batch-string runs commands non-interactively; --very-quiet drops the
-    // `(%o1)` expression labels; -Q exits non-zero on error so a failed
-    // derivation can never look like a result.
-    argv: e => ["maxima", "--very-quiet", "--suppress-input-echo", "-Q", "--batch-string", maximaCommands(e)],
+    // `-q` suppresses the start-up banner; `--batch-string` runs commands
+    // non-interactively and keeps the `(%oN)` result labels that cleanMaxima
+    // parses. `--very-quiet` is not used (it removes those labels, so the run
+    // returns no parsable result), and `--suppress-input-echo` / `-Q` are
+    // rejected by the 5.47 wrapper ("Warning: argument … not recognized").
+    // Maxima exits 0 on a syntax error, so maximaFailure reads the output
+    // instead of the exit status (live-verified).
+    argv: e => ["maxima", "-q", "--batch-string", maximaCommands(e)],
     versionArgs: ["--version"],
     nix: "maxima",
     pacman: "maxima",
@@ -183,7 +247,7 @@ export const ENGINES: Record<EngineId, EngineSpec> = {
     dnf: "maxima",
     brew: "maxima",
     good: "mature CAS: integrate/solve/limit/sum/odes, exact rationals, tensor algebra",
-    limits: "slow start (~1 s); Maxima syntax with `;` terminators, not infix C-style",
+    limits: "slow start (~1 s); `;`-terminated statements; exits 0 on syntax errors (maximaFailure catches them); prints `'sum(…)`/`foobar(2)` unevaluated when it cannot compute — maximaFailure flags both",
   },
 }
 
@@ -216,11 +280,20 @@ export function sympySource(expr: string): string {
   ].join("\n")
 }
 
-/** Maxima statements are `;`-terminated (`$` suppresses output of one). */
+/**
+ * Maxima statements are `;`-terminated (`$` suppresses output of one).
+ *
+ * A single expression is wrapped in `printf(true, "~a", …)`: Maxima's own
+ * display splits a fraction across lines around the `(%oN)` label, and the
+ * split text is not readable. `printf` writes the plain-text form on one line.
+ * Multi-statement input is passed through as written, terminators included.
+ */
 export function maximaCommands(expr: string): string {
   const t = expr.trim()
   if (!t) return t
-  return /[$;]\s*$/.test(t) ? t : `${t};`
+  const terminated = /[$;]\s*$/.test(t)
+  if (t.includes(";") || t.includes("$")) return terminated ? t : `${t};`
+  return `printf(true, "~a", ${t});`
 }
 
 // ---------------------------------------------------------------------------
@@ -390,7 +463,7 @@ export async function runEngine(
     })
   })
   const res = await raced
-  const fail = engineFailure(id, res)
+  const fail = engineFailure(id, res, expr)
   const raw = (res.stdout || "") + (res.stderr && !res.stdout ? `\n${res.stderr}` : "")
   const output = id === "maxima" ? cleanMaxima(raw) : raw.trim()
   if (fail) return { ok: false, engine: id, argv, output, error: timedOut ? `timeout after ${timeoutMs} ms` : fail }
