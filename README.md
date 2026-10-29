@@ -23,6 +23,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`local-decide`](./local-decide) | Plugin exposing the `local_decide` tool: a bounded System 1 choice (routing/triage/escalate-or-not) via **laya**, the local decision engine, returning the action plus laya's calibrated `confidence`/`confident`. **Dormant** until `laya-mcp` is enabled |
 | [`context-editing`](./context-editing) | Model-managed context — projects the conversation into an editable `context.md` (mirror) over an append-only trace, so long sessions stay relevant instead of rotting. Cache-aware, wire-format-safe, fail-open budget. Phase 0 (`notices-only`) by default |
 | [`codify-first`](./codify-first) | Meta-prompt plugin — injects a short intake directive (recurrence/stability/leverage gate) into the system prompt and ships the `codify-first` skill: check existing skills/agents, author the missing artifact into the project's `.opencode/`, then execute the task through it |
+| [`general-skills`](./general-skills) | Cross-project skill pack — 16 skills (`math`, `proof`, `logic`, `citation`, `ste-100`, `style`, `xref`, `redundancy`, `use-calculator`, `eval-loop`, `review-convergence`, …), 12 audit subagents, two permanent system rules (`[STE-100 Simplified Technical English]`, `[calc-discipline]`), and the `calc`/`calc_probe` tools: a session reports only numbers that a calculator computed (qalc/numbat/bc/python3/sympy/maxima), with the engine and expression stated, and a missing engine comes back as an install proposal instead of an estimate |
 
 `local-decide` is currently dormant: its backend is laya, whose `laya-mcp` service is installed but
 not auto-started, so the plugin is registered nowhere. Register `local-decide/opencode`
@@ -175,49 +176,59 @@ init-order violation fails closed.
 > code (`packages/opencode/src/config/plugin.ts`, `resolvePluginSpec`) explicitly supports relative
 > and absolute paths — resolved relative to the config file's directory. This is confirmed working.
 
-### Calculator discipline (`calc` / `calc_probe`)
+### Calculator rules (calc / calc_probe)
 
-`general-skills` injects a standing system rule (`[calc-discipline]`, same
-mechanism as the STE-100 rule above) and registers two tools:
+`general-skills` puts a permanent system rule (`[calc-discipline]`) in the
+system prompt of every session — the same mechanism as the STE-100 rule above —
+and registers two tools:
 
 | Tool | Args | Returns |
 |------|------|---------|
-| `calc` | `expr`, `engine?` (`auto`/`qalc`/`numbat`/`bc`/`python`/`sympy`/`maxima`) | `engine=… expr=…` + result + re-runnable `command:`; on failure `FAILED …` and an explicit instruction not to report any number from that attempt |
-| `calc_probe` | — | engine availability table +, for every MISSING engine, the install command for this OS family |
+| `calc` | `expr`, `engine?` (`auto`/`qalc`/`numbat`/`bc`/`python`/`sympy`/`maxima`) | `engine=… expr=…`, the result, and a `command:` you can run again. On failure: `FAILED …` plus an explicit instruction not to report any number from that attempt. |
+| `calc_probe` | — | engine availability table, and for every MISSING engine the install command for this OS family |
 
-Rule the injection enforces: **every number a session reports is computed by a
-calculator in that session, with provenance** — no mental arithmetic, no
-fluent-but-unverified digits. Engines are declared data in
-`general-skills/opencode/calc-tool.ts` (argv + stdin per engine), execution is
-injected, so the registry, picker, output cleaners, and the install proposals
-are all host-free and tested in `index.test.ts`.
+The injected rule enforces this: a session reports only numbers that a
+calculator computed in that session, with the engine and the expression. Do not
+report numbers from estimation. Do not report output that only looks correct.
 
-Missing engine → **propose the install, never silently skip the computation.**
-OS detection reads `/etc/os-release` (`ID=`, then `ID_LIKE=`) and emits the
-family's command; NixOS proposals name `users/common-hm.nix` because that module
-is imported by every user on every host (and by the standalone home-manager
-deployment). The packages are `pkgs.libqalculate` (the `qalc` binary is
-`libqalculate`'s output; `qalculate-qt`/`qalculate-gtk` are GUIs that do not
-ship it), `pkgs.numbat`, `pkgs.bc`, `pkgs.maxima`, `pkgs.gnuplot`.
+`calc-tool.ts` declares each engine as data (argv + stdin per engine). The
+plugin supplies execution. The registry, the picker (the function that chooses
+the engine), the output cleaners (the functions that strip qalc's echo), and the
+install proposals contain no host-specific data, so `index.test.ts` tests them
+without a host and without a network.
 
-Skill: `use-calculator` (self-registered with the plugin's other skills).
+Missing engine → propose the install. Do not skip the computation. OS detection
+reads `/etc/os-release`: `ID=`, then `ID_LIKE=`. It prints the command for that
+OS family. Every host configuration imports `users/common-hm.nix`, and the
+standalone home-manager deployment imports it too, so NixOS proposals give that
+path. The packages are `pkgs.libqalculate` (the `qalc` binary is in
+`libqalculate`'s output; `qalculate-qt` and `qalculate-gtk` are graphical user
+interfaces (GUIs) that do not include it), `pkgs.numbat`, `pkgs.bc`,
+`pkgs.maxima`, `pkgs.gnuplot`.
+
+Skill: `use-calculator` (the plugin registers this skill with its other skills).
 Detail reference: `global-config/rules/calculations.md`.
 
-Verified live on the CachyOS dev host (`calc_probe` → arch family, qalc ready):
+Verified live on the CachyOS development host (`calc_probe` → arch family, qalc
+ready):
 
 ```
-engine=qalc  expr=110.5 lb to kg        → 50.12195689 kg
-engine=sympy expr=integrate(x**2*exp(x), (x,0,1)) → -2 + E
-engine=qalc  expr=stdev(12,17,23,29)    → 7.365459931   (statistics.stdev agrees)
-engine=numbat (missing)                 → install: sudo pacman -S numbat + proposal text
+engine=qalc  expr=110.5 lb to kg                    → 50.12195689 kg
+engine=sympy expr=integrate(x**2*exp(x), (x,0,1))   → -2 + E
+engine=qalc  expr=stdev(12,17,23,29)                → 7.365459931  (statistics.stdev gives the same value)
+engine=numbat (missing)                             → install: sudo pacman -S numbat + proposal text
 ```
 
-Two traps the live runs surfaced, documented in the skill and pinned by tests:
-`qalc` reads an **unknown function name as a product of units** — exit 0,
-plausible unit-laden output, no error (`simplify(...)` → `0 s·li`) — gate names
-with `qalc --list-functions <name>`; and `qalc`'s `int`/`integrate` return an
-unevaluated fragment, so integration goes to `maxima`/`sympy`. Sympy ≥ 1.13
-defines no symbols on `import *`, which is why the sympy engine routes through
+Runs on this host found two failure modes. Tests check both, and the skill
+documents both:
+
+- qalc reads an unknown function name as a product of units. It exits with
+  status 0, prints output with units, and raises no error (`simplify(...)` →
+  `0 s·li`). Check names with `qalc --list-functions <name>`.
+- qalc's `int`/`integrate` return an unevaluated fragment. Compute integrals
+  with `maxima`/`sympy`.
+
+Sympy ≥ 1.13 defines no symbols on `import *`. The sympy engine therefore uses
 `parse_expr`.
 
 ### Topic gate (context injection)

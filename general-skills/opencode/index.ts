@@ -63,7 +63,7 @@ function probeEnginesCached(): Promise<Availability> {
   if (probeCache && now - probeCache.at < PROBE_TTL_MS) return probeCache.value
   const value = probeEngines(spawnEngine)
   probeCache = { at: now, value }
-  // A failed probe must not poison later calls.
+  // A failed probe must not break later calls.
   value.catch(() => {
     if (probeCache?.value === value) probeCache = null
   })
@@ -112,7 +112,7 @@ async function calcImpl(expr: string, engine?: string): Promise<string> {
       `install: ${installPlan(id, family).join(" ")}`,
       `capabilities: ${spec.good}`,
       `limits: ${spec.limits}`,
-      "Propose this install to the user and ask which engine to run. Do not substitute a mental estimate, and do not quietly answer at a lower precision to dodge the tool.",
+      "Propose this install to the user and ask which engine to run. Do not use a mental estimate in its place, and do not lower the precision of your answer to avoid the tool.",
     ].join("\n")
   }
   const outcome = await runEngine(id, trimmed, spawnEngine)

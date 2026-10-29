@@ -1,12 +1,12 @@
 /**
  * Calculator backends for the `calc` / `calc_probe` tools (general-skills plugin).
  *
- * Why this exists: a language model's arithmetic is generated, not computed.
- * Multi-digit products, unit conversions, percentages, date spans and
- * statistics come out fluent and plausible, and are wrong often enough to
- * poison a report. The fix is mechanical, not aspirational: every number that
- * reaches the user is produced by a real calculator run in this session, and
- * the engine plus the expression is named alongside it.
+ * Why this exists: the model generates text; it does not compute. Multi-digit
+ * products, unit conversions, percentages, date spans and statistics come out
+ * fluent and plausible, and are wrong often enough to make a report incorrect.
+ * The fix is mechanical, not aspirational: a calculator run in the session
+ * produces every number in the answer, and the tool states the engine
+ * and the expression next to it.
  *
  * Design: engines are data (argv + stdin), execution is injected (`SpawnFn`),
  * so the registry, the availability probe, the engine picker, the output
@@ -101,7 +101,11 @@ export const ENGINES: Record<EngineId, EngineSpec> = {
   qalc: {
     id: "qalc",
     binary: "qalc",
-    argv: e => ["qalc", "-t", "-m", String(QALC_TIMEOUT_MS), e],
+    // `-t` prints the result only. `-m` bounds a currency request that stops
+    // responding. `-s "decimal_comma 0"` forces a dot decimal separator: qalc
+    // follows the system locale (decimal_comma=-1) and prints `93,20567884`
+    // under a comma locale, which breaks parsing of the returned line.
+    argv: e => ["qalc", "-t", "-m", String(QALC_TIMEOUT_MS), "-s", "decimal_comma 0", e],
     versionArgs: ["--version"],
     nix: "libqalculate",
     pacman: "libqalculate",
@@ -393,7 +397,7 @@ export async function runEngine(
   return { ok: true, engine: id, argv, output: output || "(no output)" }
 }
 
-/** Provenance line: every reported number names its engine and expression. */
+/** Source line: every reported number states its engine and expression. */
 export function formatOutcome(o: CalcOutcome, expr: string): string {
   const cmd = renderCommand(o.argv)
   if (!o.ok) {
@@ -403,9 +407,10 @@ export function formatOutcome(o: CalcOutcome, expr: string): string {
 }
 
 /**
- * Re-runnable form of the invocation. Multi-line argv members (the `-c` source
+ * Source line: every reported number states its engine and its expression, so
+ * a reader can run the command again. Multi-line argv members (the `-c` source
  * for python/sympy, the `--batch-string` for maxima) collapse to a size marker
- * so the provenance line stays one line; long sources are capped.
+ * so the line stays one line; long sources are limited in length.
  */
 export function renderCommand(argv: string[], maxLen = 240): string {
   const s = argv

@@ -125,11 +125,19 @@ describe("calc rule", () => {
     }
   })
 
-  test("CALC_RULE forbids mental arithmetic and requires provenance", () => {
-    expect(CALC_RULE).toContain("never in your head")
-    expect(CALC_RULE).toContain("Never state a specific number")
-    expect(CALC_RULE).toContain("engine + expression")
+  test("CALC_RULE forbids estimation and requires a stated source", () => {
+    expect(CALC_RULE).toContain("Do not compute them by estimation")
+    expect(CALC_RULE).toContain("Do not state a specific number")
+    expect(CALC_RULE).toContain("the engine and the expression")
     expect(CALC_RULE).toContain("propose the install")
+    expect(CALC_RULE).toContain("Report the difference")
+    expect(CALC_RULE).toContain("Do not combine them into one value")
+  })
+
+  test("CALC_RULE names the qalc name check and the no-integration limits", () => {
+    expect(CALC_RULE).toContain("qalc --list-functions")
+    expect(CALC_RULE).toContain("no integration")
+    expect(CALC_RULE).toContain("maxima or sympy")
   })
 
   test("v1 registers the calc and calc_probe tools", async () => {
@@ -141,7 +149,15 @@ describe("calc rule", () => {
 
 describe("calc engine registry", () => {
   test("qalc runs terse with a time cap; numbat uses -e; bc/maxima read via argv/stdin", () => {
-    expect(ENGINES.qalc.argv("2^10")).toEqual(["qalc", "-t", "-m", "5000", "2^10"])
+    expect(ENGINES.qalc.argv("2^10")).toEqual([
+      "qalc",
+      "-t",
+      "-m",
+      "5000",
+      "-s",
+      "decimal_comma 0",
+      "2^10",
+    ])
     expect(ENGINES.numbat.argv("150 km/h -> mph")).toEqual(["numbat", "-e", "150 km/h -> mph"])
     expect(ENGINES.bc.argv("1+1")).toEqual(["bc", "-l"])
     expect(ENGINES.bc.input!("1+1")).toBe("1+1;\n")
@@ -164,6 +180,13 @@ describe("calc engine registry", () => {
     expect(sympySource("integrate(x,x)")).toContain("from sympy.parsing.sympy_parser import parse_expr")
     expect(sympySource("integrate(x,x)")).toContain('print(parse_expr("integrate(x,x)", evaluate=True))')
     expect(sympySource('solve(x**2 == 4)')).toContain('"solve(x**2 == 4)"')
+  })
+
+  test("qalc argv forces a dot decimal separator (locale makes qalc print commas)", () => {
+    const argv = ENGINES.qalc.argv("1/8")
+    const i = argv.indexOf("-s")
+    expect(i).toBeGreaterThan(-1)
+    expect(argv[i + 1]).toBe("decimal_comma 0")
   })
 
   test("qalc is documented as having no integration", () => {
@@ -268,7 +291,7 @@ describe("calc execution", () => {
     const line = formatOutcome(out, "150 km/h to mph")
     expect(line).toContain("engine=qalc")
     expect(line).toContain("93.20567884 mph")
-    expect(line).toContain('command: qalc -t -m 5000 "150 km/h to mph"')
+    expect(line).toContain('command: qalc -t -m 5000 -s "decimal_comma 0" "150 km/h to mph"')
   })
 
   test("non-zero exit is a failure with no number to report", async () => {

@@ -4,87 +4,96 @@
 
 # Compute Externally
 
-Model arithmetic is generated text, not computation. ✗ No number reaches a
-deliverable that was not computed by a calculator in this session.
+The model generates text. It does not compute. ✗ Report only numbers that a
+calculator computed in this session.
 
-| Trigger — compute, never in-head | Engine |
+| Trigger — compute, do not estimate | Engine |
 |---|---|
 | multiply/divide/power/root/log/trig on 2+ significant digits | `qalc` |
-| unit, currency, timezone, date/duration arithmetic | `qalc` (`qalc -e` refreshes rates) |
-| percentage, ratio, growth, mean/variance/sd, sampling, combinatorics | `qalc` (`mean` `median` `var` `stdev` `stdevp`) → `python3` |
+| unit, currency, timezone, date, duration arithmetic | `qalc` (`qalc -e` gets new rates) |
+| percentage, ratio, growth, mean/variance/standard deviation, sampling, combinatorics | `qalc` (`mean` `median` `var` `stdev` `stdevp`) → `python3` |
 | token/byte/cost/quota arithmetic over many items | `qalc` / `bc -l` |
 | algebra: solve/factor/expand, matrices | `qalc` |
-| integration, limits, series, ODEs, distributions | `maxima` · `sympy` — **qalc cannot integrate** |
-| dimension-checked physics (unit errors as type errors) | `numbat` |
+| integration, limits, series, ODEs, distributions | `maxima` · `sympy` — qalc has no integration |
+| science with unit checking (a unit error is a type error) | `numbat` |
 | arithmetic inside a script/pipeline | `bc -l` |
-| plot of computed numbers | `gnuplot` (numbers still computed) |
+| plot of computed numbers | `gnuplot` (the numbers stay computed) |
 
 # Commands
 
 | Engine | Invocation | Notes |
 |---|---|---|
-| `qalc` | `qalc -t "150 km/h to mph"` | `-t` terse (result only), `-m 5000` ms cap, `-b 16` base, `-p` programmer mode, `-e` refresh rates, `-f FILE` batch |
-| `qalc` name gate | `qalc --list-functions <term>` | prints matches; empty output = not a function |
-| `numbat` | `numbat -e "150 km/h -> mph"` | `->` conversion; static dimensions; not a CAS |
-| `bc` | `echo 'scale=6; 22/7' \| bc -l` | `-l`: scale 20 + exp/ln/sin/atan |
-| `python3` | `python3 -c "import statistics as s; print(s.mean([3,4,9]))"` | stdlib math/stats/itertools/fractions/decimal/datetime |
-| `sympy` | `uv run --with sympy python -c "from sympy import *; from sympy.parsing.sympy_parser import parse_expr; print(parse_expr('integrate(x**2*exp(x),(x,0,1))', evaluate=True))"` → `-2 + E` | sympy ≥1.13 defines no `x` on `import *` — route through `parse_expr`; needs `uv` |
-| `maxima` | `maxima --very-quiet --suppress-input-echo --batch-string "integrate(x^2,x);"` | `;` terminators; `-Q` exits non-zero on error |
+| `qalc` | `qalc -t "150 km/h to mph"` | `-t`: result only · `-m 5000`: time limit in ms · `-s "decimal_comma 0"`: dot decimal separator, so the line parses (qalc follows the system locale, and a comma locale prints `93,20567884`) · `-b 16`: base · `-p`: programmer mode · `-e`: get new rates · `-f FILE`: batch |
+| `qalc` name check | `qalc --list-functions <term>` | prints matching names · prints nothing for a name that is not a function |
+| `numbat` | `numbat -e "150 km/h -> mph"` | `->` conversion · static dimensions · not a computer algebra system (CAS) |
+| `bc` | `echo 'scale=6; 22/7' \| bc -l` | `-l`: scale 20 + exp/ln/sin/atan · `bc` also includes `dc` |
+| `python3` | `python3 -c "import statistics as s; print(s.mean([3,4,9]))"` | standard library math/stats/itertools/fractions/decimal/datetime |
+| `sympy` | `uv run --with sympy python -c "from sympy import *; from sympy.parsing.sympy_parser import parse_expr; print(parse_expr('integrate(x**2*exp(x),(x,0,1))', evaluate=True))"` → `-2 + E` | sympy ≥ 1.13 defines no symbols on `import *`, so the call goes through `parse_expr` · needs `uv` · first run needs network |
+| `maxima` | `maxima --very-quiet --suppress-input-echo --batch-string "integrate(x^2,x);"` | `;` terminators · `-Q` exits non-zero on error |
 
-Plugin tools (general-skills): `calc` (engine + expression + result, bounded
-time, refuses to return a number on failure) · `calc_probe` (availability +
-install proposals). Prefer them over hand-built shell quoting.
+Prefer these plugin tools (general-skills) over shell quoting. `calc` returns
+the engine, the expression, and the result; it limits execution time; on failure
+it returns no number. `calc_probe` returns engine availability and install
+proposals.
 
 # qalc Failure Modes (live-verified)
 
 | Typed | What qalc does | Signal |
 |---|---|---|
-| `simplify(…)`, `std(…)`, `nCr(…)` | reads the name as a product of units, exits 0, prints unit-laden junk | units in the result that you did not ask for → name is wrong; gate with `--list-functions` |
-| `int(…)`, `integrate(…)`, `int_0^1 … dx` | returns an unevaluated fragment (`[int(x²) int(x)]`, `∫(…)`, `0 d`) | `int(`/`∫(` in the output → not a number; use maxima/sympy |
-| `3.7 GB to MB` vs `3.7 GiB to MiB` | 3700 MB vs 3788.8 MiB | prefixes change the answer — state the prefix |
+| `simplify(…)`, `std(…)`, `nCr(…)` | qalc reads the name as a product of units, exits with status 0, and prints output with the wrong units | units in the result that you did not ask for → the name is wrong; check the name with `--list-functions` |
+| `int(…)`, `integrate(…)`, `int_0^1 … dx` | qalc returns an unevaluated fragment (`[int(x²) int(x)]`, `∫(…)`, `0 d`) | `int(` or `∫(` in the output → not a number; use maxima/sympy |
+| `3.7 GB to MB` and `3.7 GiB to MiB` | 3700 MB and 3788.8 MiB | the prefix changes the answer — state the prefix |
 
-# Provenance
+# Source Information
 
-Load-bearing numbers carry their origin in the deliverable:
+Report a key number with the source that produced it, so a reader can run the
+command again:
 
 ```
 93.2 mph  (qalc "150 km/h to mph")
 ```
 
-- Quote engine + expression so the number is re-runnable.
-- Cross-check load-bearing numbers by an independent path (second engine,
-  algebraic rearrangement, magnitude bound). Report disagreement; ✗ never
-  average two methods into a quiet compromise.
-- Transcribed numbers (line counts, sizes, fields in tool output) are read, not
-  re-derived. Say which is which.
-- Ranges beat false precision when inputs are estimates; name the input precision.
+- State the engine and the expression.
+- Verify each key number with a second, independent method: a second engine, an
+  algebraic rearrangement, or a magnitude bound. Report the difference between
+  the two results. Do not combine them into one value.
+- Read transcribed numbers (line counts, file sizes, fields in tool output). Do
+  not recompute them. State which numbers are transcriptions and which are
+  computations.
+- Use ranges, not false precision, when the inputs are estimates. State the
+  input precision you have.
 
-# Missing Engine → Propose an Install
+# Missing-Engine Protocol
 
-Report the gap, quote the command, ask which to run. ✗ Never install silently.
-✗ Never fall back to mental arithmetic while waiting.
+1. Report the missing engine.
+2. Quote the install command.
+3. Ask the user which command to run.
+
+Do not install a package silently. Do not fall back to mental arithmetic while
+you wait.
 
 | OS family | Proposal |
 |---|---|
-| NixOS (this fleet) | add `pkgs.<attr>` to `home.packages` in `users/common-hm.nix` (all users, all hosts), then `sudo nixos-rebuild switch --flake ./` |
+| NixOS (these hosts) | add `pkgs.<attr>` to `home.packages` in `users/common-hm.nix` (all users, all hosts), then `sudo nixos-rebuild switch --flake ./` |
 | Arch / CachyOS | `sudo pacman -S <pkg>` |
 | Debian family | `sudo apt-get install -y <pkg>` |
-| Fedora/openSUSE | `sudo dnf install -y <pkg>` |
+| Fedora family | `sudo dnf install -y <pkg>` |
 
-| Need | nixpkgs | pacman | Named note |
+| Need | nixpkgs | pacman | Note |
 |---|---|---|---|
-| `qalc` CLI | `libqalculate` | `libqalculate` | `qalculate-qt`/`qalculate-gtk` are GUIs — they do **not** ship `qalc` |
-| unit-checked science | `numbat` | `numbat` | |
-| script arithmetic | `bc` | `bc` | ships `dc` too |
+| `qalc` CLI | `libqalculate` | `libqalculate` | `qalculate-qt` and `qalculate-gtk` are graphical user interfaces (GUIs); they do not include `qalc` |
+| science with unit checking | `numbat` | `numbat` | |
+| script arithmetic | `bc` | `bc` | `bc` also includes `dc` |
 | CAS | `maxima` | `maxima` | |
 | exact CAS via uv | `uv` + `uv run --with sympy` | `uv` | |
 | plotting | `gnuplot` | `gnuplot` | |
-| statistics | `R` / `python3Packages.scipy` | `r` / `python-numpy`+`python-scipy` | heavy: propose, do not auto-add |
+| statistics | `R` / `python3Packages.scipy` | `r` / `python-numpy`+`python-scipy` | large packages: propose them, do not add them automatically |
 
 # Scope
 
 Applies to: estimates reported as values, cost/token math, review findings that
-quote quantities, paper/draft figures, config-size math, date/price arithmetic.
+quote quantities, paper/draft figures, config-size math, date and price
+arithmetic.
 
 Exempt: exact integers transcribed from tool output, unit counts, single-digit
 facts (`2+3`), and numbers quoted verbatim with their source.
