@@ -3,7 +3,7 @@
 Author: Yannick Loth
 Status: Design document (current as of 2026-08-06)
 Projects: ivp-book-series (first), health-me-cfs (later)
-GraphRAG version pinned: 2.7.0 (via nixpkgs rev 68d8aa3d, flake.lock authority)
+GraphRAG version pinned: 2.7.0 (via dedicated `nixpkgs-graphrag` flake input → nixpkgs rev 8ce4ef6c, shared with health-me-cfs; flake.lock authority)
 
 ---
 
@@ -103,7 +103,7 @@ commits the exact GraphRAG version next to the index it built.
 |-------|------|
 | Consumer flake.nix devShell | Provides `graphrag` + `pandoc` (ivp-book-series: `pkgs.python312Packages.graphrag`) |
 | Consumer .envrc | `use flake`; direnv activates on cd; `.envrc` committed (project policy) |
-| Harness flake.nix + .envrc | Same nixpkgs rev as consumer → same graphrag version for plugin dev/test |
+| Harness flake.nix + .envrc | `nixpkgs-graphrag` input pinned to the same nixpkgs rev as health-me-cfs → both repos resolve byte-identical graphrag derivations (same 2.7.0 version as ivp-book-series' rev) |
 | home-manager install | Optional fallback for sessions outside any project dir. **Never the pinning authority.** direnv prepends devShell bin to PATH → project pin wins automatically when both exist |
 | manifest.json | Records `graphrag_binary` (resolved path) + `graphrag_version` at index time |
 
@@ -117,16 +117,25 @@ via PATH at session.created. Resolved path + version logged (one line). Absent �
 inject one line: `graphrag not on PATH — start opencode from the project terminal
 so direnv loads, or set graphrag_binary in config.`
 
-**Pinning note:** nixpkgs rev 68d8aa3d ships graphrag 2.7.0 for python3.12. The
-python3.13 attribute is broken at this rev (`future-1.0.0 not supported for
-interpreter python3.13`) — both flakes use `python312Packages.graphrag`.
+**Pinning note:** graphrag is supplied by the dedicated `nixpkgs-graphrag`
+flake input (nixpkgs rev 8ce4ef6c), pinned identically in this repo and
+health-me-cfs, so both resolve graphrag 2.7.0 with byte-identical derivations
+(one build shared across repos). The general `nixpkgs` input stays on rev
+68d8aa3d (ivp-book-series parity; supplies pandoc) — it also ships graphrag
+2.7.0, so the recorded manifest version stays comparable. Use
+`python312Packages.graphrag` (python3.13 was broken at the old rev:
+`future-1.0.0 not supported for interpreter python3.13`).
 
-**Packaging workaround (recorded):** at rev 68d8aa3d, `python312Packages.pot`
-fails its own test suite (5 failures — scipy removed `sokalmichener` etc. from
-`scipy.spatial.distance`; pot 0.9.6 tests still call them). pot is a transitive
-dep via graspologic. Both flakes carry a one-line overlay:
-`pot.overridePythonAttrs (_: { doCheck = false; })`. Remove once the pinned
-nixpkgs carries a fixed pot.
+**Packaging workaround (recorded):** at the pinned revs, test suites of
+several transitive graphrag deps fail (pot: scipy removed `sokalmichener`
+etc.; hyppo: hardcoded statistical expectations; graspologic: same risk class;
+inline-snapshot: black output assertions; fnllm: check imports numpy without
+declaring it). Both flakes carry an identical overlay:
+`overridePythonAttrs (_: { doCheck = false; })` for `pot`, `hyppo`,
+`graspologic`, `inline-snapshot`, `fnllm`, plus a `np.float_` → `np.float64`
+postPatch on graphrag itself. The overlay must stay in sync with
+health-me-cfs/flake.nix — that is what keeps the two repos' derivations
+hash-identical. Remove once the pinned nixpkgs carries fixed derivations.
 
 ---
 
