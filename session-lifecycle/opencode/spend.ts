@@ -160,6 +160,23 @@ export function createSpendReporter(opts: {
     }
   }
 
+  // Schema detection. V1 (and the stable channel) keep the classic tables:
+  // `message`, whose `data` JSON carries `role` and `cost`, and `session`.
+  // V2 moved on to `session_message` (role in the `type` column, `cost` in
+  // the assistant row's `data`) and `session_v2`. When both exist (a migrated
+  // or stable-channel DB), `message` is the live one, so prefer it.
+  const hasTable = (name: string) =>
+    main.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name) != null
+  const v1 = hasTable("message")
+  const v2 = !v1 && hasTable("session_message")
+  if (!v1 && !v2) {
+    opts.log("warn", "cost accounting disabled: no message table in the OpenCode DB (schema drift?)")
+    close()
+    return null
+  }
+  const MSG = v1 ? "message" : "session_message"
+  const SESSION = v1 ? "session" : "session_v2"
+
   const getMeta = cache.query("SELECT v FROM meta WHERE k=?")
   const setMeta = cache.query("INSERT OR REPLACE INTO meta(k,v) VALUES(?,?)")
   // REPLACE everywhere: a paged bootstrap that is interrupted can leave
@@ -172,15 +189,24 @@ export function createSpendReporter(opts: {
   let booted = getV("boot") === "1"
   // A recreated source DB restarts `rowid` at 1, so the cached watermark would
   // point past every row and nothing would ever sync again. Rebuild instead.
-  // `max(rowid)` is O(1) on the primary key.
-  const srcMax = Number((main.query("SELECT max(rowid) AS r FROM message").get() as any)?.r ?? 0)
+  // `max(rowid)` is O(1) on the primary key. Fail soft on drift: a missing
+  // summary must never break the plugin load.
+  let srcMax: number
+  try {
+    srcMax = Number((main.query(`SELECT max(rowid) AS r FROM ${MSG}`).get() as any)?.r ?? 0)
+  } catch (e) {
+    opts.log("warn", `cost cache unavailable: ${e}`)
+    close()
+    return null
+  }
   if (booted && srcMax < Number(getV("rid") ?? -1)) {
     cache.exec("DELETE FROM spend")
     cache.exec("DELETE FROM meta")
     booted = false
   }
 
-  /** Only assistant messages carry `cost`; malformed rows are skipped. */
+  /** Only assistant messages carry `cost`; malformed rows are skipped. V1 keeps
+   * the role inside the `data` JSON; V2 keeps it in the `type` column. */
   const toRow = (r: any): Row | null => {
     let d: any
     try {
@@ -188,7 +214,7 @@ export function createSpendReporter(opts: {
     } catch {
       return null
     }
-    if (d.role !== "assistant") return null
+    if (v1 ? d.role !== "assistant" : r.type !== "assistant") return null
     return { rid: r.rid, sid: r.session_id, tc: r.time_created, tu: r.time_updated, cost: Number(d.cost) || 0 }
   }
 
@@ -200,7 +226,11 @@ export function createSpendReporter(opts: {
       let rid = -1
       while (true) {
         const rows = main
-          .query("SELECT rowid AS rid, session_id, time_created, time_updated, data FROM message WHERE rowid > ? ORDER BY rowid LIMIT 5000")
+          .query(
+            `SELECT rowid AS rid, session_id, time_created, time_updated, data${v2 ? ", type" : ""} FROM ${MSG} WHERE rowid > ?${
+              v2 ? " AND type='assistant'" : ""
+            } ORDER BY rowid LIMIT 5000`,
+          )
           .all(rid) as any[]
         if (rows.length === 0) break
         const out: Row[] = []
@@ -232,7 +262,7 @@ export function createSpendReporter(opts: {
   // forever (and a reused rowid could be overwritten with a stale cost).
   const prune = () => {
     const live = new Set<number>()
-    for (const r of main.query("SELECT rowid AS rid FROM message").all() as any[]) live.add(r.rid)
+    for (const r of main.query(`SELECT rowid AS rid FROM ${MSG}`).all() as any[]) live.add(r.rid)
     const stale: number[] = []
     for (const r of cache.query("SELECT rid FROM spend").all() as any[]) if (!live.has(r.rid)) stale.push(r.rid)
     if (stale.length === 0) return 0
@@ -248,7 +278,7 @@ export function createSpendReporter(opts: {
   const repairZeroCost = () => {
     const zeros = cache.query("SELECT rid FROM spend WHERE cost=0").all() as any[]
     if (zeros.length === 0) return 0
-    const fetch = main.query("SELECT session_id, time_created, time_updated, data FROM message WHERE rowid=?")
+    const fetch = main.query(`SELECT session_id, time_created, time_updated, data${v2 ? ", type" : ""} FROM ${MSG} WHERE rowid=?`)
     const changed: Row[] = []
     for (const z of zeros) {
       const r = fetch.get(z.rid) as any
@@ -292,17 +322,17 @@ export function createSpendReporter(opts: {
     const touched = new Set<number>()
     if (rid >= 0) {
       const tail = main
-        .query("SELECT rowid AS rid FROM message WHERE rowid > ? AND time_updated > ?")
+        .query(`SELECT rowid AS rid FROM ${MSG} WHERE rowid > ? AND time_updated > ?`)
         .all(rid - TAIL_ROWS, syncedAt) as any[]
       for (const r of tail) touched.add(r.rid)
     }
     let maxRid = rid
-    for (const r of main.query("SELECT rowid AS rid FROM message WHERE rowid > ? ORDER BY rowid").all(rid) as any[]) {
+    for (const r of main.query(`SELECT rowid AS rid FROM ${MSG} WHERE rowid > ? ORDER BY rowid`).all(rid) as any[]) {
       touched.add(r.rid)
       maxRid = Math.max(maxRid, r.rid)
     }
     if (touched.size > 0) {
-      const fetch = main.query("SELECT session_id, time_created, time_updated, data FROM message WHERE rowid=?")
+      const fetch = main.query(`SELECT session_id, time_created, time_updated, data${v2 ? ", type" : ""} FROM ${MSG} WHERE rowid=?`)
       const rows: Row[] = []
       for (const id of touched) {
         const r = fetch.get(id) as any
@@ -331,12 +361,12 @@ export function createSpendReporter(opts: {
     try {
       // Subagent sessions idle too; their cost is already counted under the
       // parent's `subs`, so reporting them would double the noise.
-      const row = main.query("SELECT parent_id FROM session WHERE id=?").get(sessionID) as { parent_id: string | null } | undefined
+      const row = main.query(`SELECT parent_id FROM ${SESSION} WHERE id=?`).get(sessionID) as { parent_id: string | null } | undefined
       if (!row || row.parent_id) return
       // A summary before the first bootstrap finishes would read an empty cache.
       if (!booted) return
       sync()
-      const kids = main.query("SELECT id FROM session WHERE parent_id=?").all(sessionID) as { id: string }[]
+      const kids = main.query(`SELECT id FROM ${SESSION} WHERE parent_id=?`).all(sessionID) as { id: string }[]
       let subs = 0
       for (const k of kids) subs += sum("session_id=?", k.id)
       const today = new Date(nowMs()).setHours(0, 0, 0, 0)
