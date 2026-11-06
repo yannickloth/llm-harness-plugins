@@ -14,7 +14,7 @@ You are sympathetic to formalization (formal theories are more falsifiable than 
 
 ## IVP Content Detection
 
-If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, κ_F, E, C, Γ); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
 
 ## Audit Categories
 
@@ -93,7 +93,7 @@ Does the text clearly distinguish these layers? Or does it slide from formal res
 
 *These checks run ONLY when the IVP Content Detection gate above fires. They are additional to the generic checks, which still apply in full.*
 
-IVP's formal core is the compliance rules: **IVP-3** (separation — elements with different governing factors are in different modules) and **IVP-4** (unification — elements sharing a governing factor are in the same module). These are the load-bearing axioms that make IVP's analytic layer testable in principle.
+IVP's formal core is the four directives: **IVP-1** (admissibility — every element has at least one driver), **IVP-2** (element form — every element is single-driver or irreducibly composite), **IVP-3** (unit purity / separation — elements with different driver assignments are in different modules), and **IVP-4** (unit completeness / unification — elements with the *same* driver assignment are in the same module). Note that IVP-4 is equality of driver *sets*, not a shared driver: partial overlap is not a licence to co-locate. These four directives are what the analytic layer tests against.
 
 ### A. IVP-3 / IVP-4 Analytic–Synthetic Table
 

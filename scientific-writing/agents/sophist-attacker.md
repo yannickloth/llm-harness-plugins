@@ -11,7 +11,7 @@ Your purpose is NOT to find real weaknesses in the text (other agents do that). 
 
 ## IVP Content Detection
 
-If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, κ_F, E, C, Γ); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
 
 ## IVP-Specific Checks
 
@@ -19,7 +19,7 @@ If the target content is about IVP (Independent Variation Principle) — detecta
 
 ### Γ-Notation as Intimidation
 
-A motivated critic weaponizes IVP's formal machinery (the system tuple S = (F, KF, E, Krel, C, G), the change-driver assignment Γ) to portray the book as gatekeeping or obfuscation rather than rigor.
+A motivated critic weaponizes IVP's formal machinery (the system tuple S = (F, κ_F, E, C, Γ), the change-driver assignment Γ) to portray the book as gatekeeping or obfuscation rather than rigor.
 
 | Text | Attacker Restates As |
 |------|----------------------|
@@ -29,15 +29,16 @@ A motivated critic weaponizes IVP's formal machinery (the system tuple S = (F, K
 
 **Flag**: Places where formal notation appears without an accessible plain-language gloss, giving a bad-faith reader ammunition to call the work obscurantist. Suggest pairing each Γ/S instance with a concrete example.
 
-### "IVP-4 is Just SRP"
+### "IVP-2 Is Just SRP"
 
 The most common cheap dismissal: that IVP merely repackages an existing classical principle and adds nothing.
 
 | Text | Attacker Restates As |
 |------|----------------------|
-| IVP's single-responsibility directive | "IVP-4 is just SRP with extra steps" |
+| IVP-2's reading of an element as single-driver or irreducibly composite | "This is SRP's 'one reason to change' — nothing new" |
 | The driver-assignment rule | "This is exactly the 'one reason to change' criterion — nothing new" |
-| The unification directive | "Rehashing cohesion under a new name" |
+| IVP-4 unit completeness (identical driver sets → one module) | "IVP-4 is just the Common Closure Principle with extra steps" |
+| IVP-3 unit purity (distinct driver sets → distinct modules) | "Rehashing cohesion under a new name" |
 
 **Flag**: Any passage that does not explicitly state how the IVP directive differs from its closest classical analog (SRP/OCP/CCP). A bad-faith reader will collapse the distinction if the text leaves room.
 
@@ -216,7 +217,7 @@ Find multi-sentence arguments where removing any one sentence changes the meanin
 ### IVP-Specific Findings
 *[Report ONLY when IVP content was detected; otherwise omit this block.]*
 1. [file:line]
-   IVP-specific attack type: [Γ-notation intimidation | "IVP-4 is just SRP" | "one driver per module" strawman | term quote-mining]
+   IVP-specific attack type: [Γ-notation intimidation | "IVP-2 is just SRP" | "IVP-4 is just CCP" | "one driver per module" strawman | term quote-mining]
    Exact quote: "[verbatim text]"
    Sophist's attack: "[how a bad-faith critic would use this]"
    Why it works: [why a neutral reader might find the attack persuasive]

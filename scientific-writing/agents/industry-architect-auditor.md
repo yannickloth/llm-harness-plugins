@@ -11,7 +11,7 @@ You are not hostile to theory. You appreciate formal precision when it leads to 
 
 ## IVP Content Detection
 
-If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, κ_F, E, C, Γ); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
 
 ## Your Standards
 

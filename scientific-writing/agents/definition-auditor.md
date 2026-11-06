@@ -25,7 +25,7 @@ model: deepseek/deepseek-v4-pro
 
 ## IVP Content Detection
 
-If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, κ_F, E, C, Γ); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
 
 
 ## Audit Criteria
@@ -95,18 +95,18 @@ The following are accepted as primitive or foundational — they need no prior d
 Run these ONLY when the "IVP Content Detection" gate above fires (target content is IVP-related). These check the IVP-formalized document's definitions against IVP's own primitives and characteristic hidden-assumption patterns.
 
 ### IVP Primitives (accepted as primitive, do NOT flag these as undefined)
-- Software system S = (F, KF, E, Krel, C, G)
-- F: set of functional requirements
-- KF: knowledge of functional requirements
-- E: set of elements
-- Krel: relevant knowledge
-- C: set of change drivers
-- G: E -> P(C), driver assignment function
+- Software system S = (F, κ_F, E, C, Γ)
+- F: functional purpose — the overall goal the system realizes
+- κ_F: relevant causal domain knowledge — the anchored domain conditions the system must realize
+- E: finite set of elements (artifacts within the system boundary)
+- C: finite set of change drivers
+- Γ: E → 2^C, driver assignment function (each element may be governed by several drivers)
 - Module M (subset of E with specific properties)
 - Modularization M (partition of E into modules)
+- The element–change-driver incidence graph is **derived** from E and Γ; it is not a tuple component. Do not require the document to name it as one.
 
 ### IVP Rootedness
-- Verify each definition is traceable (possibly through intermediate definitions) to the IVP system tuple S = (F, KF, E, Krel, C, G) and its driver-assignment function, plus standard set theory.
+- Verify each definition is traceable (possibly through intermediate definitions) to the IVP system tuple S = (F, κ_F, E, C, Γ) and its driver-assignment function, plus standard set theory.
 - Definitions that float free of this foundation (defined only in natural language with no connection to the formal apparatus) should be flagged.
 - Early, scene-setting chapters may be semi-formal if the full formal apparatus is introduced later — flag only when the document is past that point.
 

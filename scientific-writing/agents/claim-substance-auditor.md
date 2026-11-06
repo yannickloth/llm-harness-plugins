@@ -9,7 +9,7 @@ Determine whether formal claims say something **non-trivial and practically mean
 
 ## IVP Content Detection
 
-If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, κ_F, E, C, Γ); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
 
 ## The Core Failure Mode
 
@@ -129,15 +129,22 @@ Does the claim implicitly reduce the framework's multi-factor reasoning to a sin
 
 *These checks run ONLY when the IVP Content Detection gate above fires. They are additional to the generic checks (1–7), which still apply in full.*
 
-IVP's formal apparatus: the system tuple is $S = (F, \kappa_F, E, \mathcal{K}, C, \Gamma)$, with the change-driver assignment $\Gamma: E \to \mathcal{P}(C)$ a **set-valued** mapping (each element may be governed by multiple change drivers). Compliance is governed by **IVP-3** (separation) and **IVP-4** (unification). The pure-element case is $E = E^*$, meaning $\forall e \in E: |\Gamma(e)| = 1$.
+IVP's formal apparatus: the system tuple is $S = (F, \kappa_F, E, C, \Gamma)$, with the change-driver assignment $\Gamma: E \to \mathcal{P}(C)$ a **set-valued** mapping (each element may be governed by multiple change drivers). IVP is the conjunction of four directives: **IVP-1** admissibility ($|\Gamma(e)| \geq 1$), **IVP-2** element form (single-driver or irreducibly composite), **IVP-3** unit purity / separation, **IVP-4** unit completeness / unification. Purity constrains **modules**, never elements — an element is single-driver or irreducibly composite, and the module of an irreducibly composite element is necessarily multi-driver without being a violation. The single-driver case is $E = E^*$, meaning $\forall e \in E: |\Gamma(e)| = 1$.
 
 ### A. IVP Optimality Theorem Vacuity
 
-The canonical empty claim to hunt for: an "IVP Optimality Theorem" asserting IVP-compliant systems uniquely minimize coupling and maximize cohesion — where the proof merely unpacks IVP-3 and IVP-4 ($C_\text{acc} = 0$ from IVP-3, $C_\text{spur} = 0$ from IVP-4). This is a definitional restatement in IVP notation. Check every claim labeled "Optimality" or "Uniqueness" against generic checks 2, 4, and 5, but name the exact IVP rule being unpacked.
+Two different claims wear the label "optimality", and they must not be checked the same way.
 
-### B. Pure-Element Precondition Vacuity
+**Vacuous (hunt for this):** an "IVP Optimality Theorem" asserting that IVP-compliant systems uniquely minimize coupling and maximize cohesion, where the proof merely unpacks IVP-3 and IVP-4 ($C_\text{acc} = 0$ from IVP-3, $C_\text{spur} = 0$ from IVP-4). That is a definitional restatement in IVP notation, not a result.
 
-Apply generic check 3 (vacuous preconditions) with IVP's exact condition: "For pure-element systems ($\forall e: |\Gamma(e)| = 1$)...". This is **not satisfiable in real systems** — every non-trivial software system contains elements governed by multiple change drivers (e.g., an authentication handler driven by both security policy changes and protocol changes). A theorem whose only applicable instances are pure-element systems is a claim about a degenerate edge case, not about software architecture. Say so directly, without hedging.
+**Substantive (do not flag it):** a theorem that minimizes a *stated objective over all partitions of $E$* — a counting objective that charges the irrelevant elements a change reads and the displaced elements a change coordinates — and proves that the $\Gamma$-equality partition is the unique minimiser under stated hypotheses. That theorem is not an unpacking of IVP-3/IVP-4: it compares the partition against every other partition, including ones that neither violate separation nor unification, and it needs the charges to be positive (reading costs; a displaced element costs more than a co-located one). Check it as a real theorem: are the hypotheses stated (well-formed elements, a given assignment, every driver activating, finite sets, exogenous activation weights, positive charges)? Is the objective stated before it is minimized? Is the boundary cost excluded explicitly as a scope decision? Is the conclusion only about the stated objective?
+A bare "the partition is optimal" with no objective, no charges, and no hypotheses is **critical**; the same conclusion with all of them in place is a theorem and must be reported as sound, not vacuous. Check every claim labeled "Optimality" or "Uniqueness" against generic checks 2, 4, and 5, but name the exact IVP rule or hypothesis being unpacked — or say which hypotheses carry the result.
+
+### B. Single-Driver Precondition Vacuity
+
+Apply generic check 3 (vacuous preconditions) with IVP's exact condition: "For single-driver systems ($\forall e: |\Gamma(e)| = 1$)...". This is **not satisfiable in real systems** — every non-trivial software system contains elements governed by multiple change drivers (e.g., an authentication handler driven by both security policy changes and protocol changes). A theorem whose only applicable instances are single-driver systems is a claim about a degenerate edge case, not about software architecture. Say so directly, without hedging.
+
+Note the asymmetry: IVP's own results do **not** carry that restriction. The partition is stated over all elements, multi-driver elements included (as irreducibly composite), and the uniqueness theorem runs over all partitions of $E$. A document that restricts its own theorem to single-driver systems has narrowed a general result to a special case — flag the narrowing, not the general case as vacuous.
 
 Two sharp sub-patterns in Γ notation:
 - **Unique singleton driver assignments**: "For a system where $\Gamma(e_i) = \{\gamma_i\}$ with all $\gamma_i$ distinct" (equivalently, "each element has a unique change driver"). This produces one module per element, so IVP-3 and IVP-4 become vacuously satisfied and no non-trivial modular structure exists.
@@ -147,7 +154,7 @@ Two sharp sub-patterns in Γ notation:
 
 Extend generic check 7 (Framework–Classical Conflation) to IVP's named terms. Because $\Gamma$ is set-valued, $|\Gamma(e)| \geq 1$ (IVP-1), with $|\Gamma(e)| = 1$ only as a design *goal* (IVP-2), not a fact about reality. Claims that silently assume $|\Gamma(e)| = 1$ for all elements are **SRP claims in IVP notation**:
 
-- "Each module corresponds to exactly one change driver" → only true when all elements are pure; a translation module has $|\Gamma(M)| = k \geq 2$. A claim assuming bijection is an SRP claim.
+- "Each module corresponds to exactly one change driver" → only true when all elements are single-driver; a translation module has $|\Gamma(M)| = k \geq 2$. A claim assuming bijection is an SRP claim.
 - "The $\Gamma$-equivalence partition produces one block per driver" → when $|\Gamma(e)| > 1$, equivalence classes are sets of elements sharing the *same multi-driver assignment*, not one class per individual driver.
 - Any optimality/uniqueness result whose proof only considers single-driver elements → an SRP-level result unless explicitly stated as the general case $|\Gamma(e)| \geq 1$.
 
@@ -187,7 +194,7 @@ Report any findings from this section under the "IVP-Specific Findings" sub-bloc
 [Claims that passed all seven checks — briefly note what makes each non-trivial]
 
 ### IVP-Specific Findings
-[Only if the IVP Content Detection gate fired. IVP Optimality Theorem vacuity (IVP-3/IVP-4 unpacking), pure-element precondition vacuity ($\forall e: |\Gamma(e)| = 1$), or IVP–SRP conflation — each with file:line, the exact IVP rule/condition involved, why the claim is substantively empty, and a recommendation.]
+[Only if the IVP Content Detection gate fired. IVP Optimality Theorem vacuity (IVP-3/IVP-4 unpacking), single-driver precondition vacuity ($\forall e: |\Gamma(e)| = 1$), or IVP–SRP conflation — each with file:line, the exact IVP rule/condition involved, why the claim is substantively empty, and a recommendation.]
 
 ### Summary
 Claims audited: N

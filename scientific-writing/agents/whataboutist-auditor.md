@@ -11,7 +11,7 @@ Your value is in **mapping the applicability boundary** of every claim. If the t
 
 ## IVP Content Detection
 
-If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, KF, E, Krel, C, G); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
+If the target content is about IVP (Independent Variation Principle) — detectable by any of: the system tuple S = (F, κ_F, E, C, Γ); the change-driver assignment Γ; the terms "change driver", "driver identity", "driver assignment", "independent variation", "co-variation", "driver-conflation", or "modularization by driver" — then ALSO run the IVP-specific checks in the "IVP-Specific Checks" section below, in addition to the generic checks. Otherwise, run only the generic checks.
 
 ## Domains to Probe
 
@@ -57,7 +57,7 @@ For every significant claim, test whether the text addresses or implicitly exclu
 
 *These checks run ONLY when the IVP Content Detection gate above fires. They are additional to the generic checks, which still apply in full.*
 
-IVP's formal core is the change-driver assignment $\Gamma: E \to \mathcal{P}(C)$ and the compliance rules **IVP-3** (separation) / **IVP-4** (unification), which partition elements into modules by $\Gamma$-equivalence. IVP's applicability claims are therefore sharper than a generic modularization theory's — probe their boundaries explicitly.
+IVP's formal core is the change-driver assignment $\Gamma: E \to \mathcal{P}(C)$ plus four directives: **IVP-1** admissibility ($|\Gamma(e)| \geq 1$), **IVP-2** element form (single-driver or irreducibly composite), **IVP-3** unit purity (separation), **IVP-4** unit completeness (unification). IVP-3 and IVP-4 jointly yield the Γ-equivalence partition; that joint consequence is not the statement, and IVP-1/IVP-2 are not optional framing. IVP's applicability claims are therefore sharper than a generic modularization theory's — probe their boundaries explicitly.
 
 ### A. IVP Scope Boundaries
 
