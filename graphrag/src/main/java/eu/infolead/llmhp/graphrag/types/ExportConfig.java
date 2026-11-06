@@ -12,8 +12,41 @@ public record ExportConfig(
     boolean autoUpdate,
     int debounceSeconds,
     String graphragBinary,
-    String indexRoot
+    String indexRoot,
+    int reindexThreshold,
+    int chatConcurrentRequests,
+    int embeddingConcurrentRequests,
+    String chatReasoningEffort,
+    int chatMaxTokens,
+    int chatRequestTimeout,
+    int chatTokensPerMinute,
+    int chatRequestsPerMinute
 ) {
+
+    /**
+     * Full-reindex trigger: a dirty set larger than this rebuilds the whole corpus
+     * instead of taking the incremental path.
+     */
+    public static final int DEFAULT_REINDEX_THRESHOLD = 400;
+
+    /** In-flight model calls. A single-slot local server needs 1 — extra requests only wait. */
+    public static final int DEFAULT_CONCURRENT_REQUESTS = 10;
+
+    /**
+     * Batch extraction wants the shortest thinking trace: reasoning models otherwise
+     * spend their whole output budget "thinking" and return no content at all.
+     */
+    public static final String DEFAULT_REASONING_EFFORT = "low";
+
+    /** Legacy nine-field view; keeps callers that predate {@code reindex_threshold} working. */
+    public ExportConfig(String projectName, Path projectRoot, String latexRoot,
+                        List<String> excludeDirs, Models models, boolean autoUpdate,
+                        int debounceSeconds, String graphragBinary, String indexRoot) {
+        this(projectName, projectRoot, latexRoot, excludeDirs, models, autoUpdate,
+            debounceSeconds, graphragBinary, indexRoot, DEFAULT_REINDEX_THRESHOLD,
+            DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS,
+            DEFAULT_REASONING_EFFORT, 0, 0, 0, 0);
+    }
 
     public record Models(
         String chatModel,
@@ -41,6 +74,14 @@ public record ExportConfig(
         int debounce = 300;
         String graphragBinary = "graphrag";
         String indexRoot = "graph-index";
+        int reindexThreshold = DEFAULT_REINDEX_THRESHOLD;
+        int chatConcurrentRequests = DEFAULT_CONCURRENT_REQUESTS;
+        int embeddingConcurrentRequests = DEFAULT_CONCURRENT_REQUESTS;
+        String chatReasoningEffort = DEFAULT_REASONING_EFFORT;
+        int chatMaxTokens = 0;
+        int chatRequestTimeout = 0;
+        int chatTokensPerMinute = 0;
+        int chatRequestsPerMinute = 0;
 
         String section = "";
         boolean inProjects = false;
@@ -77,6 +118,14 @@ public record ExportConfig(
                 case "debounce_seconds" -> debounce = Integer.parseInt(value);
                 case "graphrag_binary" -> graphragBinary = value;
                 case "index_root" -> indexRoot = value;
+                case "reindex_threshold" -> reindexThreshold = Integer.parseInt(value);
+                case "chat_concurrent_requests" -> chatConcurrentRequests = Integer.parseInt(value);
+                case "embedding_concurrent_requests" -> embeddingConcurrentRequests = Integer.parseInt(value);
+                case "chat_reasoning_effort" -> chatReasoningEffort = value;
+                case "chat_max_tokens" -> chatMaxTokens = Integer.parseInt(value);
+                case "chat_request_timeout" -> chatRequestTimeout = Integer.parseInt(value);
+                case "chat_tokens_per_minute" -> chatTokensPerMinute = Integer.parseInt(value);
+                case "chat_requests_per_minute" -> chatRequestsPerMinute = Integer.parseInt(value);
                 case "chat_model" -> chatModel = value;
                 case "chat_api_key_env" -> chatApiKeyEnv = value;
                 case "chat_api_base" -> chatApiBase = value;
@@ -105,7 +154,10 @@ public record ExportConfig(
             List.copyOf(excludeDirs),
             new Models(chatModel, chatApiKeyEnv, chatApiBase, embeddingProvider, embeddingModel,
                 embeddingApiBase, embeddingApiKeyEnv),
-            autoUpdate, debounce, graphragBinary, indexRoot
+            autoUpdate, debounce, graphragBinary, indexRoot, reindexThreshold,
+            chatConcurrentRequests, embeddingConcurrentRequests,
+            chatReasoningEffort, chatMaxTokens, chatRequestTimeout,
+            chatTokensPerMinute, chatRequestsPerMinute
         );
     }
 

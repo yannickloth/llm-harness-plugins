@@ -63,6 +63,23 @@ public final class ExportCli {
     public record ExportStats(int exported, int typstDocs, int latexDocs,
                               int dedupSkipped, int totalBlocks) {}
 
+    /**
+     * GraphRAG names entities from the text it reads, so LaTeX control sequences
+     * survive into entity names ("PRINCIPLE~\ref{prc:ivp}") and split the graph
+     * into near-duplicate entities. Drop the cross-reference noise; keep the words.
+     */
+    static String stripLatexNoise(String text) {
+        return text
+            .replaceAll("\\\\label\\{[^}]*}", "")
+            .replaceAll("\\\\(?:auto|c|eq|page|name)?ref\\{[^}]*}", "")
+            .replaceAll("\\\\cite[a-zA-Z]*\\{[^}]*}", "")
+            .replaceAll("\\\\index\\{[^}]*}", "")
+            .replace("~", " ")
+            .replaceAll("[ \\t]{2,}", " ")
+            .replaceAll("\\s+\\n", "\n")
+            .strip();
+    }
+
     public static ExportStats export(ExportConfig config, Path outDir, List<String> onlyFiles)
             throws IOException {
         var inputDir = outDir.resolve("input");
@@ -108,7 +125,7 @@ public final class ExportCli {
                     continue;
                 }
                 if (chunk.latexBody().isBlank()) continue;
-                var md = latex.toMarkdown(chunk.latexBody());
+                var md = stripLatexNoise(latex.toMarkdown(chunk.latexBody()));
                 var block = latex.toBlock(chunk, md);
                 var provisional = new ExportedDocument("", doc, "latex", "legacy", block);
                 var d = new ExportedDocument(DocumentWriter.docId(provisional),
@@ -227,7 +244,10 @@ public final class ExportCli {
     static List<Path> findFiles(ExportConfig config, String ext, List<String> onlyFiles)
             throws IOException {
         var root = config.projectRoot();
-        var latexRoot = root.resolve(config.latexRoot());
+        // Normalize: a configured root such as "." otherwise keeps a literal "."
+        // component, and Path.startsWith() then rejects every file under it —
+        // producing an empty export with no error.
+        var latexRoot = root.resolve(config.latexRoot()).normalize();
         var result = new ArrayList<Path>();
 
         if (onlyFiles != null) {
