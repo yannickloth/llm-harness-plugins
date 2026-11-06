@@ -113,8 +113,8 @@ An explicit `agent` entry in a repo's `opencode.json` always wins: both paths
 skip a name that is already declared, so per-repo overrides (pinned model,
 reasoning effort) are preserved.
 
-Eleven plugins ship agents and self-register: `agentmem`, `scientific-writing`,
-`general-skills`, `typst-toolkit`, `latex-toolkit`, `ivp`, `tier-router`,
+Ten plugins ship agents and self-register: `agentmem`, `scientific-writing`,
+`general-skills`, `typst-toolkit`, `latex-toolkit`, `tier-router`,
 `natural-prose`, `sdlc-guardrails`, `premium-read-offload`, `context-toolkit`.
 
 `bun test shared/agents.test.ts` covers the parsing and both registration paths.

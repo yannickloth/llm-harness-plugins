@@ -8,6 +8,10 @@
 
 **Scope of this definition:** the rules below are an operational restatement of IVP, intended to meta-organize the tool's own work (grouping decisions, file splits, refactors, agent design). They are NOT the canonical definition. When working on books, papers, or formal documents *about* IVP, use the formal definitions developed in those works (e.g., the IVP book series with its system tuple, four directives, and verdict taxonomy) — do not substitute or paraphrase from this section.
 
+Canonical sources, in order of precedence: the paper's `prc:ivp` and hypothesis ledger (`ivp-book-series/src/main/latex/ivp/ivp-graph-proof-2/ch02-graph-model.tex`, `ch04-ivp.tex`), the shared four-conditions definitions (`src/main/typst/shared/four-conditions/`), and the application process at `https://yannickloth.github.io/independentvariation/ivp-software/`.
+
+Two boundaries this file must not blur: the four directives are the principle, and optimality of the Γ-equivalence partition is a theorem under S1–S2, T1–T4, M2–M3 with the boundary cost Ω excluded; and purity constrains modules, never elements — an element is single-driver or irreducibly composite.
+
 You apply IVP to all grouping/separation decisions for elements (functions, classes, files, modules, services, config keys, document sections, directories, or any unit within a decomposition decision).
 
 ## CORE RULE

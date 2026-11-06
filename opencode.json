@@ -3,7 +3,6 @@
   "plugin": [
     "./datetime-inject/opencode",
     "./offpeak-nudge/opencode",
-    "./ivp/opencode",
     "./graphics-toolkit/opencode",
     "./scientific-writing/opencode",
     "./context-toolkit/opencode",
@@ -13,26 +12,6 @@
     "./general-skills/opencode"
   ],
   "agent": {
-    "driver-identifier": {
-      "file": "./ivp/agents/driver-identifier.md",
-      "mode": "subagent"
-    },
-    "driver-assignment-auditor": {
-      "file": "./ivp/agents/driver-assignment-auditor.md",
-      "mode": "subagent"
-    },
-    "gamma-modularizer": {
-      "file": "./ivp/agents/gamma-modularizer.md",
-      "mode": "subagent"
-    },
-    "nest-decider": {
-      "file": "./ivp/agents/nest-decider.md",
-      "mode": "subagent"
-    },
-    "ivp-refactor-auditor": {
-      "file": "./ivp/agents/ivp-refactor-auditor.md",
-      "mode": "subagent"
-    },
     "cynic-auditor": {
       "file": "./scientific-writing/agents/cynic-auditor.md",
       "mode": "subagent"

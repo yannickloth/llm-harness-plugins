@@ -148,7 +148,7 @@ describe("registerAgentDirV1", () => {
 
 describe("readAgentRecords", () => {
   test("reads every agent file in the repo's agent directories", () => {
-    for (const plugin of ["agentmem", "general-skills", "scientific-writing", "typst-toolkit", "ivp"]) {
+    for (const plugin of ["agentmem", "general-skills", "scientific-writing", "typst-toolkit"]) {
       const records = readAgentRecords(join(root, plugin, "agents"))
       expect(records.length).toBeGreaterThan(0)
       for (const rec of records) {
@@ -160,7 +160,7 @@ describe("readAgentRecords", () => {
 
   test("every plugin that ships agents wires both registration paths", () => {
     const plugins = [
-      "agentmem", "context-toolkit", "general-skills", "ivp", "latex-toolkit",
+      "agentmem", "context-toolkit", "general-skills", "latex-toolkit",
       "natural-prose", "premium-read-offload", "scientific-writing",
       "sdlc-guardrails", "tier-router", "typst-toolkit",
     ]

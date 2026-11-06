@@ -151,24 +151,31 @@ java --class-path "$GFX_CP" eu.infolead.llmhp.graphics.GraphicsSvgCheck \
   && echo "graphics svg-selfcheck: PASSED" \
   || echo "graphics svg-selfcheck: FAILED"
 
-echo "--- Running scientific-writing agent registration check ---"
-SW_AGENTS="$SCRIPT_DIR/scientific-writing/agents"
-if [ -d "$SW_AGENTS" ]; then
-  SW_PASS=1
-  for f in "$SW_AGENTS"/*.md; do
+check_agent_registration() {
+  local NAME="$1"
+  local AGENTS_DIR="$SCRIPT_DIR/$NAME/agents"
+  echo "--- Running $NAME agent registration check ---"
+  if [ ! -d "$AGENTS_DIR" ]; then
+    echo "  $NAME agent registration: FAILED (agents dir missing)"
+    return 1
+  fi
+  local PASS=1
+  for f in "$AGENTS_DIR"/*.md; do
+    local fname fmeta
     fname=$(basename "$f" .md)
     fmeta=$(grep -m1 "^name:" "$f" | awk '{print $2}')
     if [ "$fname" != "$fmeta" ]; then
-      echo "  scientific-writing agent name mismatch: $fname vs $fmeta"
-      SW_PASS=0
+      echo "  $NAME agent name mismatch: $fname vs $fmeta"
+      PASS=0
     fi
   done
   # Verify every agent file in the plugin is registered in opencode.json.
-  python3 - "$SCRIPT_DIR/opencode.json" "$SW_AGENTS" <<'PY' || SW_PASS=0
+  python3 - "$SCRIPT_DIR/opencode.json" "$AGENTS_DIR" "$NAME" <<'PY' || PASS=0
 import json, os, sys
 cfg=json.load(open(sys.argv[1]))
 agents=cfg.get("agent",{})
 agents_dir=sys.argv[2]
+plugin=sys.argv[3]
 root=os.path.dirname(sys.argv[1])
 missing=[]
 for fn in sorted(os.listdir(agents_dir)):
@@ -182,12 +189,12 @@ for fn in sorted(os.listdir(agents_dir)):
     if not os.path.isfile(os.path.join(root, spec["file"])):
         missing.append(name)
 if missing:
-    print("  unregistered or missing agent files:", missing); sys.exit(1)
+    print(f"  {plugin} unregistered or missing agent files:", missing); sys.exit(1)
 PY
-  if [ "$SW_PASS" -eq 1 ]; then echo "scientific-writing agent registration: PASSED"; else echo "scientific-writing agent registration: FAILED"; fi
-else
-  echo "scientific-writing agent registration: FAILED (agents dir missing)"
-fi
+  if [ "$PASS" -eq 1 ]; then echo "$NAME agent registration: PASSED"; else echo "$NAME agent registration: FAILED"; return 1; fi
+}
+
+check_agent_registration "scientific-writing" || true
 
 echo "--- Running context-editing TS tests ---"
 bun test "$SCRIPT_DIR/context-editing/opencode/helpers.test.ts" || echo "context-editing helpers tests: FAILED (bun not available?)"
