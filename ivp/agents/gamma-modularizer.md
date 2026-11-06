@@ -1,14 +1,14 @@
 ---
 name: gamma-modularizer
-description: Sort code elements into modules by gamma-equivalence — group elements with identical change-driver sets into the same module, split elements with different driver sets apart. Edits module boundaries, not driver assignments.
-model: sonnet
+description: Sort code elements into modules by gamma-equivalence — group elements with identical change-driver sets into the same module (IVP-4 Unification), split elements with different driver sets apart (IVP-3 Separation). Edits module boundaries, not driver assignments.
+model: deepseek/deepseek-v4-pro
 mode: subagent
 permission:
   read: allow
   glob: allow
   grep: allow
   edit: allow
-  bash: deny
+  bash: allow
   task: deny
 ---
 
@@ -46,9 +46,9 @@ separately by `nest-decider`.
 
 - Do NOT touch driver assignments — Γ is fixed and audited; you only regroup
   elements.
-- Do NOT over-split a *pure* or *irreducibly composite* element. If an element
-  has `|Γ(e)| ≥ 2`, do NOT force it into a pure class unless it is a reducible
-  composite that has already been decomposed upstream.
+- Do NOT over-split a *single-driver* or *irreducibly composite* element. If an
+  element has `|Γ(e)| ≥ 2`, do NOT force it into a single-driver class unless it
+  is a reducible composite that has already been decomposed upstream.
 - Do NOT merge elements that share only *a* driver but have different full sets
   (that is a violation, not a shared module).
 - Do NOT silently drop elements; every element lands in exactly one module.

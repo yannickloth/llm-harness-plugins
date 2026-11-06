@@ -1,40 +1,52 @@
 ---
 name: review-ivp-to-convergence
-description: Review IVP output to convergence — run adversarial IVP auditors over the change-driver registry/assignments (step 2) OR the post-refactor module structure (step 4), fixing all findings each round until 2 consecutive clean rounds. Reuses the review-convergence meta-skill for the fix loop.
+description: Review IVP output to convergence — run adversarial IVP auditors over the change-driver registry/assignments (gate A) OR the post-refactor module structure (gate B), fixing all findings each round until 2 consecutive clean rounds. Reuses the review-convergence meta-skill for the fix loop.
 argument-hint: <drivers|refactor> [<scope>]
 ---
 
 # IVP — Review to Convergence
 
-Meta-skill. Applies the review-fix loop (via the reusable `review-convergence`
-meta-skill) to either of the two IVP phases, using the IVP-specific auditors as
-the adversary. Fixes all findings each round until 2 consecutive zero-finding
-rounds or max 10 rounds.
+The convergence gate for the two IVP steps that change a persistent artifact:
+Gate A around the driver registry (steps 1–3), Gate B around the module
+structure (step 5). Applies the review-fix loop (via the reusable
+`review-convergence` meta-skill) with the IVP-specific auditors as the adversary.
+Fixes all findings each round until 2 consecutive zero-finding rounds or max 10
+rounds.
+
+Assessment of an existing structure is **not** a target here — it is
+report-only, and lives in `/assess-ivp` (`current-modularization-auditor`). Do
+not run the fix loop over the as-is state: you would be refactoring without a
+target.
 
 ## Parameters
 
 `$ARGUMENTS` = `<target>` [<scope>]
 
 - `<target>` — which artifact to converge:
-  - `drivers`  → the driver registry + Γ-assignments (step 2).
-  - `refactor` → the post-modularization module structure (step 4).
+  - `drivers`  → Gate A: the driver registry + Γ-assignments (steps 1–3).
+  - `refactor` → Gate B: the post-modularization module structure (step 5).
 - `[<scope>]` — files/glob to restrict review. Default: full registry/codebase.
 
 ## Reviewer sets (chosen by target)
 
-**`drivers`** (step 2) — reviewers under the convergence loop:
+**`drivers`** (Gate A) — reviewers under the convergence loop:
 - `driver-assignment-auditor` — ADVISORY core: proxy grounding, counterfactual
   failure, driver conflation, missed drivers, admissibility.
 - `logic-auditor` — circularity / hidden assumptions in the driver pathways
   (reused from `general-skills`).
-- `proof-soundness-auditor` — if any irreducible/irreducibility claims are made.
+- `proof-soundness-auditor` — if any irreducibility claims are made.
 - Scope: the module docblock + `@ivpDrivers` tags + artifact dir.
 
-**`refactor`** (step 4) — reviewers under the convergence loop:
-- `ivp-refactor-auditor` — ADVISORY core: Separation, Unification, Admissibility,
-  Element Form, nesting soundness.
+**`refactor`** (Gate B) — reviewers under the convergence loop:
+- `ivp-refactor-auditor` — ADVISORY core: IVP-1 Admissibility, IVP-2 Element
+  Form, IVP-3 Separation, IVP-4 Unification, nesting soundness.
 - `logic-auditor` — hidden assumptions in the module mapping.
 - `proof-soundness-auditor` — if composite/irreducibility claims are made.
+
+Neither set audits optimality. The auditors check compliance with the four
+directives; an optimality claim is a separate statement that needs S1–S2,
+T1–T4, M2–M3 and the `Ω` exclusion (`ivp-knowledge.md` §3 "What is a theorem, not a statement"). Do not let a review
+round add one.
 
 ## Protocol (driven by review-convergence)
 
@@ -63,8 +75,19 @@ Per round, for each target:
 
 ## Checkpoint
 
-Every 3 rounds → `tmp/review-ivp-checkpoint.md`: target, round, cumulative
-findings, stranded issues, resume steps.
+Every 3 rounds → write a checkpoint with: target, round, cumulative findings,
+stranded issues, resume steps. Put it in the target repository's `tmp/` (create
+the directory if needed; add nothing that the repository would track). If the
+repository has no `tmp/` convention and must stay clean, use the session's
+temporary directory instead and report the path.
+
+## Guards (target selection)
+
+- Gate B runs only after Phase C of `/sort-into-modules` passes. Converging a
+  half-applied structure wastes rounds on moves that are not finished.
+- Gate A runs before step 4. Assessing a structure against an unaudited `Γ` only
+  produces a confident wrong diagnosis.
+- Neither gate audits the as-is state; `/assess-ivp` does, and it is report-only.
 
 ```
 === IVP REVIEW (target: <drivers|refactor>) ===
