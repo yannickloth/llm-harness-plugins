@@ -162,10 +162,15 @@ export function readAgentRecords(dir: string): AgentRecord[] {
  * are skipped (transforms replay). Rules are appended, so the runtime defaults
  * (including the `read *.env -> ask` guards) survive.
  *
+ * `options.preamble` is prepended to every agent's system prompt. A subagent runs
+ * with the *target project* as cwd, so a plugin that ships shared reference files
+ * must state their absolute paths at registration — its agent files cannot.
+ *
  * Synchronous on purpose: V2 transforms must edit domain state synchronously.
  */
-export function registerAgentDirV2(editor: any, dir: string): number {
+export function registerAgentDirV2(editor: any, dir: string, options: { preamble?: string } = {}): number {
   let registered = 0
+  const preamble = options.preamble ? `${options.preamble.trimEnd()}\n\n` : ""
   for (const rec of readAgentRecords(dir)) {
     try {
       if (editor.get(rec.id)) continue
@@ -180,7 +185,7 @@ export function registerAgentDirV2(editor: any, dir: string): number {
           const m = rec.model.match(/^([^/]+)\/(.+?)(?:#(.+))?$/)
           if (m) agent.model = { providerID: m[1], id: m[2], ...(m[3] ? { variant: m[3] } : {}) }
         }
-        agent.system = rec.system
+        agent.system = preamble + rec.system
         for (const rule of rec.permissions) agent.permissions.push(rule)
       })
       registered++

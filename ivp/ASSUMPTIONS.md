@@ -1,7 +1,8 @@
 # ivp — Assumptions
 
-This plugin registers 6 IVP agents (`agents/*.md`) and 5 skills
-(`skills/{identify-change-drivers,apply-ivp,assess-ivp,sort-into-modules,review-ivp-to-convergence}/`)
+This plugin registers 5 skills
+(`skills/{identify-change-drivers,apply-ivp,assess-ivp,sort-into-modules,review-ivp-to-convergence}/`),
+6 IVP agents (`agents/*.md`), and 5 commands (`commands/*.md`, one per skill)
 that apply the Independent Variation Principle to a target codebase.
 `prompts/ivp-knowledge.md` holds the working restatement the agents read on
 demand. Mark fragile assumptions with ⚠.
@@ -10,13 +11,28 @@ demand. Mark fragile assumptions with ⚠.
 
 - The entrypoint (`opencode/index.ts`) exports a v2 plugin object
   `{ id: "ivp", setup(ctx) }` and serves the v1 plugin via `server(input)`.
-- v1 path: appends the skill directory to `config.skills.paths` and registers
-  agent files on `config.agent` (shared/agents.ts, `registerAgentDirV1`).
-- ⚠ The v2 agent transform is a no-op in this repo: all 6 agent ids are
-  declared under `agent` in the repo `opencode.json` with
-  `mode: subagent`, and shared/agents.ts skips ids already present.
-  OpenCode's own frontmatter parsing of the `file:` entries is the effective
-  agent registration.
+- v1 path: appends the skill directory to `config.skills.paths`, registers
+  agents on `config.agent` (`registerAgentRecordsV1`), and has no command
+  registry hook — commands are a v2-only channel.
+- v2 path: `ctx.skill.transform` (5 skills), `ctx.agent.transform` (6 agents,
+  create-by-`update`), `ctx.command.transform` (5 commands, `add`).
+- ⚠ The two v2 editors have **different** shapes: the agent editor creates by
+  `update(id, fn)` and has no `add`; the command editor has `add` only and no
+  `update`/`get`. Verified against the running server. Writing the command
+  registry with `update` silently registers nothing (it fails inside a `try`
+  and the transform reports success).
+- ⚠ `GET /api/command` returns `{ name, description }` only. The `template`,
+  `agent`, `model`, and `subtask` fields are stored by the registry but are not
+  re-readable through the API, so a live check can confirm *presence* of a
+  command but not its payload.
+- ⚠ The npm `@opencode-ai/plugin` + `@opencode-ai/sdk` types (1.19.3) lag the
+  running server (v2.2.5): the types describe `SkillV2Source`/`CommandV2Info`
+  while the server implements the `Skill.Info`/`Command.Info` editors this
+  entrypoint uses. Trust the live probe, not the installed d.ts, when they
+  disagree.
+- ⚠ `node_modules` can drift from the lockfile. `package.json` pins
+  `@opencode-ai/plugin` 1.19.3; an install without a sync leaves 1.18.18 on
+  disk with different types. Run `bun install` before reading those types.
 
 ## Environment
 
@@ -47,17 +63,22 @@ demand. Mark fragile assumptions with ⚠.
   tree. The registry is the single authoritative driver list.
 - Scope: when the scope argument is empty, the target repository root is the
   current working directory of the session.
-- ⚠ Every `ivp-knowledge.md` reference is relative (`ivp-knowledge.md` §N, or
-  repo-root-relative `ivp/prompts/ivp-knowledge.md`). Subagents run with the
-  target codebase as cwd, so the path does not resolve from there; the README
-  states where the pack lives. Each skill carries its load-bearing rules inline
-  (gates, proxy prohibitions, directive checks), so no step depends on resolving
-  the file. Section titles are quoted beside the numbers to survive renumbering.
+- ⚠ `ivp-knowledge.md` references are bare (`ivp-knowledge.md` §N) in the agent
+  and skill files. Subagents run with the target codebase as cwd, so the bare
+  path does not resolve from there. The entrypoint fixes this at registration:
+  every agent system prompt gets a preamble with the **absolute** path of
+  `prompts/ivp-knowledge.md` and the canonical checkout, computed from the
+  plugin's own location (`knowledgePreamble()` in `opencode/index.ts`). Skills
+  and commands carry the same note in prose, and each carries its load-bearing
+  rules inline (gates, proxy prohibitions, directive checks), so no step depends
+  on resolving the file. Section titles are quoted beside the numbers to survive
+  renumbering. A moved `prompts/` directory therefore breaks no reference — the
+  preamble is computed, not written down.
 - `review-ivp-to-convergence` writes its checkpoint to
   `tmp/review-ivp-checkpoint.md`, resolved against the target codebase cwd,
   not this plugin tree.
-- The plugin reads only its own `agents/`, `skills/`, and `prompts/`
-  directories. It writes nothing into its own tree.
+- The plugin reads only its own `agents/`, `skills/`, `commands/`, and
+  `prompts/` directories. It writes nothing into its own tree.
 
 ## External services
 
@@ -76,6 +97,14 @@ demand. Mark fragile assumptions with ⚠.
 - Agent permission blocks (`read/glob/grep/edit: allow`, `bash: deny`,
   `task: deny`) parse under OpenCode's own frontmatter parser, which maps
   `bash` → shell and `task` → subagent permissions.
+- Command frontmatter (`description`, `agent`, `model`, `subtask`) is read by
+  `shared/v2-commands.ts` and carried on the `add` record. `subtask: true` makes
+  the invocation run in a child session with its own context budget.
+- ⚠ A command's `agent:` must name an agent the host resolves. The pack pins
+  `assess-ivp` to `current-modularization-auditor` (report-only) and
+  `sort-into-modules` to `gamma-modularizer`; if a plugin agent is renamed, the
+  command silently falls back to the session agent. `shared/v2-commands.test.ts`
+  pins the mapping.
 - ⚠ `build.sh` verifies agent registration for `scientific-writing` and `ivp`
   (name/filename match, and every agent file declared in `opencode.json`). Other
   plugins' agent dirs are still unchecked; a rename there breaks silently.

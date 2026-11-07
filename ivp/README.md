@@ -28,22 +28,31 @@ Two boundaries to keep straight:
 - **Purity constrains modules, never elements** (`def:separation`). An element is
   single-driver or irreducibly composite.
 
-## Six-step process → skill → agents
+## Six-step process → skill → command → agents
 
-| Step | Skill | Agents |
-|---|---|---|
-| 0. Grain and scope | `/apply-ivp` | — |
-| 1. Identify the elements | `/identify-change-drivers` | `driver-identifier` |
-| 2. Identify the change drivers | `/identify-change-drivers` | `driver-identifier` |
-| 3. Map drivers to elements (Γ) | `/identify-change-drivers` | `driver-identifier` |
-| **Gate A** — driver convergence | `/review-ivp-to-convergence drivers` | `driver-assignment-auditor` |
-| 4. Assess the current modularization | `/assess-ivp` | `current-modularization-auditor` |
-| 5. Refactor toward compliance | `/sort-into-modules` | `gamma-modularizer`, `nest-decider` |
-| **Gate B** — structure convergence | `/review-ivp-to-convergence refactor` | `ivp-refactor-auditor` |
-| 6. Verify and iterate | `/apply-ivp` | — |
+| Step | Skill | Command | Agents |
+|---|---|---|---|
+| 0. Grain and scope | `/apply-ivp` | `/apply-ivp` | — |
+| 1. Identify the elements | `/identify-change-drivers` | `/identify-change-drivers` | `driver-identifier` |
+| 2. Identify the change drivers | `/identify-change-drivers` | `/identify-change-drivers` | `driver-identifier` |
+| 3. Map drivers to elements (Γ) | `/identify-change-drivers` | `/identify-change-drivers` | `driver-identifier` |
+| **Gate A** — driver convergence | `/review-ivp-to-convergence drivers` | `/review-ivp-to-convergence drivers` | `driver-assignment-auditor` |
+| 4. Assess the current modularization | `/assess-ivp` | `/assess-ivp` | `current-modularization-auditor` |
+| 5. Refactor toward compliance | `/sort-into-modules` | `/sort-into-modules` | `gamma-modularizer`, `nest-decider` |
+| **Gate B** — structure convergence | `/review-ivp-to-convergence refactor` | `/review-ivp-to-convergence refactor` | `ivp-refactor-auditor` |
+| 6. Verify and iterate | `/apply-ivp` | `/apply-ivp` | — |
 
-`/apply-ivp` runs all six steps with both gates. Run the per-step skills when a
-single step needs to be re-run.
+Two ways in, same procedure:
+
+- **Skill** (`@assess-ivp` in a prompt, or the model loading it when the task
+  fits) — reaches for the procedure from any session, no argument handling.
+- **Command** (`/assess-ivp src/`) — user-invoked, so `$ARGUMENTS` is
+  substituted, and the command can pin an agent and a session type: `/assess-ivp`
+  runs read-only in a child session, `/identify-change-drivers` and
+  `/sort-into-modules` run under their owning agent.
+
+`/apply-ivp` runs all six steps with both gates. Run the per-step skills or
+commands when a single step needs to be re-run.
 
 ### Two review modes, not one
 
@@ -119,9 +128,25 @@ Rules:
 
 ## Registration and models
 
-`opencode/index.ts` self-registers `skills/` and `agents/` with OpenCode when a
-consuming project loads it. `prompts/` is not registered — agents read
-`prompts/ivp-knowledge.md` on demand.
+`opencode/index.ts` self-registers three channels with OpenCode when a consuming
+project loads it:
+
+| Directory | Registered via | Invoked as |
+|---|---|---|
+| `skills/` | `ctx.skill.transform` (v2), `config.skills.paths` (v1) | `@skill-id`, or the model loading it |
+| `commands/` | `ctx.command.transform` → `add` (v2 only) | `/name` |
+| `agents/` | `ctx.agent.transform` → `update` (v2), `config.agent` (v1) | spawned as a subagent |
+
+`prompts/` is not registered — agents read `ivp-knowledge.md` on demand. Because
+a subagent runs with the *target* codebase as cwd, the entrypoint prepends a
+preamble to every agent system prompt that states the **absolute** path of
+`prompts/ivp-knowledge.md` and of the canonical `ivp-book-series/` checkout (or
+says the checkout is absent). The preamble is computed from the plugin's own
+location, so moving the pack breaks no reference.
+
+Rules are deliberately **not** injected: IVP is an activity, not a standing
+invariant. A rule costs its full text on every request; a skill or command costs
+nothing until used.
 
 Each agent pins `model: deepseek/deepseek-v4-pro` in frontmatter. A bare alias
 such as `sonnet` also resolves, through the host's alias map, to whatever that

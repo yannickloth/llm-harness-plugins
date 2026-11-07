@@ -113,9 +113,16 @@ An explicit `agent` entry in a repo's `opencode.json` always wins: both paths
 skip a name that is already declared, so per-repo overrides (pinned model,
 reasoning effort) are preserved.
 
-Ten plugins ship agents and self-register: `agentmem`, `scientific-writing`,
-`general-skills`, `typst-toolkit`, `latex-toolkit`, `tier-router`,
+Eleven plugins ship agents and self-register: `agentmem`, `scientific-writing`,
+`general-skills`, `typst-toolkit`, `latex-toolkit`, `ivp`, `tier-router`,
 `natural-prose`, `sdlc-guardrails`, `premium-read-offload`, `context-toolkit`.
+
+`ivp` ships all three channels — 5 skills, 6 agents, and 5 commands — and is the
+reference implementation for command self-registration
+(`shared/v2-commands.ts`). Plugins register commands through
+`ctx.command.transform`'s editor, which has **`add` only** (no `update`, no
+`get`); the agent editor is the opposite (`update`, no `add`). Guarded by
+`bun test shared/ivp-registration.test.ts`.
 
 `bun test shared/agents.test.ts` covers the parsing and both registration paths.
 
@@ -134,6 +141,7 @@ Ten plugins ship agents and self-register: `agentmem`, `scientific-writing`,
 | 9 | `typst-toolkit` | — | Format-bound skills |
 | 10 | `latex-toolkit` | — | Format-bound skills |
 | 11 | `general-skills` | — | Generic audit agents, the STE-100 + `[calc-discipline]` system rules, the `calc`/`calc_probe` tools, and the `use-calculator` skill; load last |
+| 11h | `ivp` | `general-skills` | IVP pack: 5 skills, 6 agents, 5 commands. A skill provider, so it loads before `general-skills`; its skills delegate to `general-skills` auditors |
 | 11d | `systemone` | — | Skill + `systemone_deep` (escalation to a larger CPU decision checkpoint); independent of other plugins |
 | 11g | `context-editing` | `session-lifecycle`, `datetime-inject` | Context management; reuses `session-lifecycle` for trace retention; edits the message array after `datetime-inject` has added its per-message context |
 | 11b | `premium-read-offload` | — | Premium-session read/generation offload; independent of other plugins |

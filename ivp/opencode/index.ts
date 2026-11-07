@@ -1,20 +1,31 @@
-// ivp — self-registers the IVP skill pack (skills/*/SKILL.md).
+// ivp — self-registers the IVP skill pack (skills/*/SKILL.md),
+// the six auditor agents (agents/*.md), and the five user-invoked
+// commands (commands/*.md).
 //
 // Dual-version entrypoint (harness idiom): `server(input)` is the v1 path,
 // `setup(ctx)` the v2 path. v1 appended the skills directory to
 // `config.skills.paths` in a config hook; v2 has no config hook, so the same
 // directory is replayed into `ctx.skill.transform` via shared/v2-skills.ts.
+//
+// The agents read `prompts/ivp-knowledge.md` on demand, and a subagent's cwd is
+// the *target* codebase, not this plugin — so every agent prompt gets an
+// absolute-path preamble prepended at registration. Without it the bare
+// `ivp-knowledge.md` references resolve to nothing from any other project.
 import type { Config, Plugin } from "@opencode-ai/plugin"
 import { createLogger } from "../../shared/plugin-logger"
 import { moduleDir } from "../../shared/module-dir"
 import { writeLoadCanary } from "../../shared/load-canary"
 import { registerSkillDir } from "../../shared/v2-skills"
-import { registerAgentDirV1, registerAgentDirV2 } from "../../shared/agents"
+import { registerCommandDirV2 } from "../../shared/v2-commands"
+import { readAgentRecords, registerAgentDirV1, registerAgentDirV2 } from "../../shared/agents"
 import fs from "fs"
 import path from "path"
 
-const skillsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "skills")
-const agentsDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..", "agents")
+const pluginDir = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..")
+const skillsDir = path.join(pluginDir, "skills")
+const agentsDir = path.join(pluginDir, "agents")
+const commandsDir = path.join(pluginDir, "commands")
+const knowledgePath = path.join(pluginDir, "prompts", "ivp-knowledge.md")
 
 function skillCount(dir: string): number {
   if (!fs.existsSync(dir)) return 0
@@ -26,6 +37,39 @@ function skillCount(dir: string): number {
     }).length
 }
 
+/**
+ * Absolute-path preamble for every agent system prompt.
+ *
+ * Agents run with the target codebase as cwd and cite `ivp-knowledge.md` by bare
+ * name. Resolve it here, where the plugin's own location is known. The canonical
+ * sources live in a sibling checkout (`ivp-book-series/`); when that checkout is
+ * not present beside the plugins repo, say so instead of letting the agent
+ * report a resolved reference that is not on disk.
+ */
+function knowledgePreamble(): string {
+  const canonical = path.resolve(pluginDir, "..", "..", "ivp-book-series")
+  const canonicalNote = fs.existsSync(canonical)
+    ? `Canonical sources: ${canonical}`
+    : `Canonical sources: NOT CHECKED OUT (expected at ${canonical}). Treat any claim that needs the canonical text as unverified and say so.`
+  return [
+    "# IVP pack — reference locations",
+    "",
+    `- Working restatement: ${knowledgePath}`,
+    "- Read that file on demand. It is the working restatement used by this pack,",
+    "  not the canonical text.",
+    `- ${canonicalNote}`,
+    "",
+    "---",
+    "",
+  ].join("\n")
+}
+
+/** Agent records with the path preamble prepended to each system prompt. */
+function agentRecordsWithPreamble() {
+  const preamble = knowledgePreamble()
+  return readAgentRecords(agentsDir).map(rec => ({ ...rec, system: preamble + rec.system }))
+}
+
 // ---------------------------------------------------------------------------
 // v1 entrypoint.
 // ---------------------------------------------------------------------------
@@ -33,7 +77,11 @@ const v1Factory: Plugin = async ({ client }) => {
   writeLoadCanary("ivp")
   const logger = createLogger(client, "ivp")
   const count = skillCount(skillsDir)
-  logger.info(`plugin active — IVP skill self-registration (${count} skills in ${skillsDir})`)
+  const agents = agentRecordsWithPreamble()
+  logger.info(
+    `plugin active — IVP pack (${count} skills, ${agents.length} agents, ` +
+      `${readdirSyncSafe(commandsDir).length} commands in ${pluginDir})`,
+  )
 
   return {
     config: async (input: Config) => {
@@ -42,9 +90,53 @@ const v1Factory: Plugin = async ({ client }) => {
       if (count > 0 && !paths.includes(skillsDir)) paths.push(skillsDir)
       ;(input as any).skills = { ...skills, paths }
 
-      registerAgentDirV1(input, agentsDir)
+      // v1 has no command registry hook and no agent create-by-update: replay
+      // the records inline. The preamble is already applied to each prompt.
+      registerAgentRecordsV1(input, agents)
     },
   }
+}
+
+function readdirSyncSafe(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir).filter(e => e.endsWith(".md"))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * v1 inline agent registration. Same rules as shared/agents.ts
+ * `registerAgentDirV1`, but over records the caller has already augmented (the
+ * path preamble), so the shared reader is not re-run.
+ */
+function registerAgentRecordsV1(config: any, records: ReturnType<typeof agentRecordsWithPreamble>): number {
+  if (!config) return 0
+  const agents = ((config as any).agent ??= {}) as Record<string, unknown>
+  let registered = 0
+  for (const rec of records) {
+    if (agents[rec.id]) continue
+    const entry: Record<string, unknown> = { mode: rec.mode }
+    if (rec.description) entry.description = rec.description
+    if (rec.system) entry.prompt = rec.system
+    if (rec.steps) entry.maxSteps = rec.steps
+    if (rec.model) entry.model = rec.model
+    if (rec.color) entry.color = rec.color
+    if (rec.hidden) entry.disable = true
+
+    const permission: Record<string, string> = {}
+    const tools: Record<string, boolean> = {}
+    for (const [verb, effect] of Object.entries(rec.permissionMap)) {
+      if (["edit", "bash", "webfetch", "doom_loop", "external_directory"].includes(verb)) permission[verb] = effect
+      else if (effect === "deny") tools[verb] = false
+    }
+    if (Object.keys(permission).length) entry.permission = permission
+    if (Object.keys(tools).length) entry.tools = tools
+
+    agents[rec.id] = entry
+    registered++
+  }
+  return registered
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +148,8 @@ export default {
   async setup(ctx: any) {
     writeLoadCanary("ivp")
     await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
-    await ctx.agent.transform((editor: any) => registerAgentDirV2(editor, agentsDir))
+    await ctx.agent.transform((editor: any) => registerAgentDirV2(editor, agentsDir, { preamble: knowledgePreamble() }))
+    await ctx.command.transform((editor: any) => registerCommandDirV2(editor, commandsDir))
   },
 
   async server(input: any, options?: any) {
