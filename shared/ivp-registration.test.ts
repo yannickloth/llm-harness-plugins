@@ -140,4 +140,28 @@ describe("ivp file layout", () => {
   test("prompts/ivp-knowledge.md exists (the preamble points at it)", () => {
     expect(existsSync(join(ivp, "prompts", "ivp-knowledge.md"))).toBe(true)
   })
+
+  test("imports no symbol it does not use", async () => {
+    const src = await Bun.file(join(ivp, "opencode", "index.ts")).text()
+    const names: string[] = []
+    for (const line of src.split("\n")) {
+      if (!line.startsWith("import ")) continue
+      const braced = line.match(/\{([^}]+)\}/)
+      if (!braced) continue
+      for (const part of braced[1].split(",")) {
+        const name = part.trim().split(/\s+as\s+/).pop()?.trim()
+        if (name) names.push(name)
+      }
+    }
+    expect(names.length).toBeGreaterThan(0)
+    for (const name of names) {
+      // Count references outside the import statement itself.
+      const uses = src
+        .split("\n")
+        .filter(l => !l.startsWith("import "))
+        .filter(l => new RegExp(`\\b${name}\\b`).test(l))
+        .filter(l => !/^\s*(\*|\/\/)/.test(l)) // comments mentioning a name do not count
+      expect({ name, used: uses.length > 0 }).toEqual({ name, used: true })
+    }
+  })
 })

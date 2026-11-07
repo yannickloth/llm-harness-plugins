@@ -203,12 +203,23 @@ export function registerAgentDirV2(editor: any, dir: string, options: { preamble
  * V1's schema does not model are expressed as `tools: { <verb>: false }` when
  * the effect is `deny` (V1's `tools` map is open-ended); `allow`/`ask` for those
  * verbs fall back to V1's defaults.
+ *
+ * `options.records` replaces the directory read — a caller that already
+ * augmented the records (for example, prepending a path preamble) passes them
+ * here rather than re-implementing this function. `options.preamble` is
+ * prepended to each prompt and is ignored when `records` is supplied.
  */
-export function registerAgentDirV1(config: any, dir: string): number {
+export function registerAgentDirV1(
+  config: any,
+  dir: string,
+  options: { preamble?: string; records?: AgentRecord[] } = {},
+): number {
   if (!config) return 0
   const agents = ((config as any).agent ??= {}) as Record<string, unknown>
+  const preamble = options.preamble ? `${options.preamble.trimEnd()}\n\n` : ""
+  const records = options.records ?? readAgentRecords(dir).map(rec => ({ ...rec, system: preamble + rec.system }))
   let registered = 0
-  for (const rec of readAgentRecords(dir)) {
+  for (const rec of records) {
     if (agents[rec.id]) continue
     const entry: Record<string, unknown> = { mode: rec.mode }
     if (rec.description) entry.description = rec.description

@@ -92,7 +92,7 @@ const v1Factory: Plugin = async ({ client }) => {
 
       // v1 has no command registry hook and no agent create-by-update: replay
       // the records inline. The preamble is already applied to each prompt.
-      registerAgentRecordsV1(input, agents)
+      registerAgentDirV1(input, agentsDir, { records: agents })
     },
   }
 }
@@ -103,40 +103,6 @@ function readdirSyncSafe(dir: string): string[] {
   } catch {
     return []
   }
-}
-
-/**
- * v1 inline agent registration. Same rules as shared/agents.ts
- * `registerAgentDirV1`, but over records the caller has already augmented (the
- * path preamble), so the shared reader is not re-run.
- */
-function registerAgentRecordsV1(config: any, records: ReturnType<typeof agentRecordsWithPreamble>): number {
-  if (!config) return 0
-  const agents = ((config as any).agent ??= {}) as Record<string, unknown>
-  let registered = 0
-  for (const rec of records) {
-    if (agents[rec.id]) continue
-    const entry: Record<string, unknown> = { mode: rec.mode }
-    if (rec.description) entry.description = rec.description
-    if (rec.system) entry.prompt = rec.system
-    if (rec.steps) entry.maxSteps = rec.steps
-    if (rec.model) entry.model = rec.model
-    if (rec.color) entry.color = rec.color
-    if (rec.hidden) entry.disable = true
-
-    const permission: Record<string, string> = {}
-    const tools: Record<string, boolean> = {}
-    for (const [verb, effect] of Object.entries(rec.permissionMap)) {
-      if (["edit", "bash", "webfetch", "doom_loop", "external_directory"].includes(verb)) permission[verb] = effect
-      else if (effect === "deny") tools[verb] = false
-    }
-    if (Object.keys(permission).length) entry.permission = permission
-    if (Object.keys(tools).length) entry.tools = tools
-
-    agents[rec.id] = entry
-    registered++
-  }
-  return registered
 }
 
 // ---------------------------------------------------------------------------
