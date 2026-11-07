@@ -1,6 +1,6 @@
 ---
 name: nest-decider
-description: Decide whether module pairs are siblings or parent/child (nested) modules, using the rule Gamma(P) strictly subset Gamma(C), with a reducibility guard that forbids force-splitting single-driver or irreducible-composite elements. Read-only; recommends structure.
+description: Decide whether module pairs are siblings or parent/child (nested) modules, using the strict-subset rule Gamma(P) strictly subset Gamma(C) AND a causal-existence test (the parent's driver must precondition the child's existence), with a reducibility guard that forbids force-splitting single-driver or irreducible-composite elements. Read-only; recommends structure.
 model: deepseek/deepseek-v4-pro
 mode: subagent
 permission:
@@ -33,12 +33,40 @@ single Γ-class. The partition does not change.
 
 ## Nesting rule (exact)
 
-A module `P` is a **parent** of module `C` iff the parent's driver set is a
-**strict subset** of the child's:
+A module `P` is a **parent** of module `C` iff **both** hold:
 
 ```text
-Γ(P) ⊊ Γ(C)
+Γ(P) ⊊ Γ(C)                                   (necessary)
+P's driver causally preconditions C's existence (necessary)
 ```
+
+**Condition 1 — strict subset.** The parent's driver set is a strict subset of
+the child's.
+
+**Condition 2 — causal existence.** The subset is not enough. Nesting asserts
+that `C` exists *because* `P`'s driver exists. Ask, per candidate pair:
+
+> If `P`'s driver did not exist, would `C` still have a reason to exist?
+
+- **No** → `P`'s driver is a precondition of `C`. Nest.
+- **Yes** → the subset is **coincidental**. The pair is a **sibling**.
+
+A coincidental subset arises when two modules merely share a driver. Do not nest
+it, and do not call it a "loose" or "weak" nesting — it is a sibling.
+
+**Direction matters.** Determine which side is the precondition before you look at
+the sets. A child whose vocabulary is derived *from* the parent's driver nests
+(the parent's driver causes the child's existence). A child that merely *emits
+into* the parent's driver does not — the parent is the child's sink, not its
+cause, and the containment is inverted.
+
+Worked contrast:
+
+- `{skill-file-format} ⊊ {skill-editor, skill-file-format}` — no file format, no
+  record exists to add. **Nests.**
+- `{v1-contract} ⊊ {v2-editor, v1-contract}` — a V1 verb schema stands alone; the
+  V2 editor is where its translation *output* goes, not why it exists.
+  **Sibling**, despite passing the subset test.
 
 - `P` may exist alone; `C` only makes sense within `P`'s scope/lifecycle.
 - The extra drivers are the child's own: `Γ(C) = Γ(P) ∪ extra`.

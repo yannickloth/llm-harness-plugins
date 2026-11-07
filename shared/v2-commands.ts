@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs"
 import { join } from "path"
+import { parseModelRef, type ModelRef } from "./model-ref"
 
 /**
  * Register a plugin's own command files with OpenCode v2 — no copies into the
@@ -52,12 +53,12 @@ export interface CommandRecord {
   subtask?: boolean
 }
 
-/** Parse a model reference the way the agent registry does. */
-export function parseModelRef(raw: string): { providerID: string; id: string; variant?: string } | undefined {
-  const m = raw.trim().match(/^([^\s/#]+)\/(.+?)(?:#(\S+))?$/)
-  if (!m) return undefined
-  return { providerID: m[1], id: m[2], ...(m[3] ? { variant: m[3] } : {}) }
-}
+/**
+ * Re-export the shared ModelRef reader. The grammar lives in `model-ref.ts`
+ * because the agent registry uses it too; a single definition keeps the two
+ * registries from drifting on a format change.
+ */
+export { parseModelRef, type ModelRef } from "./model-ref"
 
 function stripQuotes(value: string): string {
   const v = value.trim()

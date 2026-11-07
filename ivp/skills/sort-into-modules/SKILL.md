@@ -1,6 +1,6 @@
 ---
 name: sort-into-modules
-description: Step 5 of IVP — refactor code elements into modules by gamma-equivalence (same change-driver sets together, different apart), then decide sibling vs parent/child (nested) modules by the strict-subset driver rule Gamma(P) ⊊ Gamma(C) with a reducibility guard. Runs AFTER the driver registry has converged and the current modularization has been assessed.
+description: Step 5 of IVP — refactor code elements into modules by gamma-equivalence (same change-driver sets together, different apart), then decide sibling vs parent/child (nested) modules by the strict-subset driver rule Gamma(P) ⊊ Gamma(C) together with a causal-existence test (the parent's driver must precondition the child's existence), plus a reducibility guard. Runs AFTER the driver registry has converged and the current modularization has been assessed.
 argument-hint: <scope>
 ---
 
@@ -48,9 +48,18 @@ is **namespace containment**, not element merging: the parent module and the
 child module stay distinct, each one Γ-class, and purity is checked per module,
 never per namespace (`ivp-knowledge.md` §7 "Nesting — engineering extension").
 
-- **Nest** iff `Γ(parent) ⊊ Γ(child)` **and** the child is a valid reducible
-  composite (Case 2) — its extra drivers are separable while preserving purpose.
-- **Siblings / top-level** otherwise: equal, partial-overlap, or disjoint sets.
+- **Nest** iff **both** conditions hold:
+  1. `Γ(parent) ⊊ Γ(child)` — a strict subset. Necessary, not sufficient.
+  2. The parent's driver **causally preconditions** the child's existence. Test:
+     *if the parent's driver did not exist, would the child still have a reason
+     to exist?* No → nest. Yes → **sibling** (the subset is coincidental).
+  Also require the child to be a valid reducible composite (Case 2) — its extra
+  drivers are separable while preserving purpose.
+- **Siblings / top-level** otherwise: equal, partial-overlap, disjoint sets, **and
+  coincidental subsets** (subset holds, causal test fails).
+- Determine direction before comparing sets: a child whose vocabulary is derived
+  *from* the parent's driver nests; a child that merely *emits into* the parent's
+  driver does not — the parent is its sink, not its cause.
 - **Never nest** a single-driver element or an irreducible composite. The
   containment would assert a decomposition that does not exist.
 - Apply the decisions to the tree: child may import parent; parent must not
@@ -65,8 +74,10 @@ Verify every placed element is in the right module before reporting success:
 - **IVP-1** — every placed element has `|Γ(e)| ≥ 1`; none is missing.
 - **IVP-2** — no reducible composite kept whole; no irreducible composite
   force-split.
-- **Nesting** — every parent/child edge satisfies `Γ(parent) ⊊ Γ(child)`; no
-  single-driver or irreducible-composite child nested.
+- **Nesting** — every parent/child edge satisfies `Γ(parent) ⊊ Γ(child)` **and**
+  the causal-existence condition (the parent's driver preconditions the child's
+  existence); no single-driver or irreducible-composite child nested; no
+  coincidental subset nested.
 
 Fix every violation here. Do not declare the sort complete while any element is
 in the wrong module.

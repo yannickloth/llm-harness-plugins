@@ -82,6 +82,7 @@ Run `/sort-into-modules`:
   equality only; a shared subset is not a shared module.
 - **Phase B** — `nest-decider` decides siblings vs parent/child. Nesting is a
   harness extension, not part of `prc:ivp`: nest iff `Γ(P) ⊊ Γ(C)` **and** the
+  parent's driver causally preconditions the child's existence **and** the
   child is a reducible composite (Case 2). Never force-split a single-driver
   element or an irreducible composite.
 - **Phase C** — placement verification with `ivp-refactor-auditor`. No element

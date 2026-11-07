@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs"
 import { join } from "path"
+import { isModelRef, parseModelRef } from "./model-ref"
 
 /**
  * Register a plugin's own agent files with OpenCode — no symlinks, no copies.
@@ -114,7 +115,7 @@ export function parseAgent(raw: string, fallbackId: string): AgentRecord {
   const mode = MODES.has(scalars.mode) ? (scalars.mode as AgentRecord["mode"]) : "subagent"
   const steps = Number(scalars.steps)
   const rawModel = scalars.model ?? ""
-  const model = /^[^\s/#]+\/[^\s#]+(#\S+)?$/.test(rawModel) ? rawModel : undefined
+  const model = isModelRef(rawModel) ? rawModel : undefined
   const color = /^#[0-9a-fA-F]{6}$/.test(scalars.color ?? "") ? scalars.color : undefined
 
   const permissions: PermissionRule[] = Object.entries(permissionMap).map(([verb, effect]) => ({
@@ -182,8 +183,8 @@ export function registerAgentDirV2(editor: any, dir: string, options: { preamble
         if (rec.color) agent.color = rec.color
         if (rec.hidden) agent.hidden = true
         if (rec.model) {
-          const m = rec.model.match(/^([^/]+)\/(.+?)(?:#(.+))?$/)
-          if (m) agent.model = { providerID: m[1], id: m[2], ...(m[3] ? { variant: m[3] } : {}) }
+          const ref = parseModelRef(rec.model)
+          if (ref) agent.model = ref
         }
         agent.system = preamble + rec.system
         for (const rule of rec.permissions) agent.permissions.push(rule)

@@ -1,9 +1,11 @@
 # Change-driver registry — `shared/` v2 registry helpers
 
 Grain: **function** (exported functions and module-level constants). Scope:
-`shared/v2-skills.ts`, `shared/v2-commands.ts`, `shared/agents.ts`.
-Status: **PROVISIONAL** — Gate A ran once and returned UNSOUND; the four criticals
-are corrected below and a re-audit is required.
+`shared/v2-skills.ts`, `shared/v2-commands.ts`, `shared/model-ref.ts`,
+`shared/agents.ts`.
+Status: **PROVISIONAL** — Gate A returned UNSOUND on the first draft; the criticals
+are corrected and the element set has since changed (γ₆ added, `model-ref.ts`
+extracted). A re-audit is required.
 
 Produced by an IVP steps 1–3 pass. Every driver below is an amendment unit of a
 governing artifact that is **external** to this repository.
@@ -17,6 +19,7 @@ governing artifact that is **external** to this repository.
 | A2 | OpenCode agent registry (`ctx.agent.transform`) | the editor surface: `update`-only creation; the `Agent.Info` record shape; permission-verb mapping |
 | A3 | OpenCode command registry (`ctx.command.transform`) | the editor surface: `add`-only; the `CommandV2Info` record shape |
 | A5 | Opencode V1 config/hook contract | the `config` hook, `skills.paths`, the V1 `agent` map, V1 permission verbs |
+| A6 | The ModelRef format (`provider/model[#variant]`) | the grammar itself — shared by the agent and command record shapes |
 
 A4 (the consumer-side `opencode.json` plugin array) is **removed from `C`**: no
 element in these three files reads or writes it, so it governs nothing in scope.
@@ -38,6 +41,7 @@ The initial registry folded them into one `γ₁`; the audit caught that.
 | γ₂ | A2 | The agent editor or `Agent.Info` changes, incl. the V2 permission action names |
 | γ₃ | A3 | The command editor or `CommandV2Info` changes |
 | γ₅ | A5 | The V1 config/hook contract changes (`skills.paths`, V1 `agent` map, V1 permission verbs) |
+| γ₆ | A6 | The `provider/model[#variant]` grammar changes — one unit, shared by both registries |
 
 Note γ₂ ≠ γ₅: the V2 agent editor and the V1 config hook are amended by
 different units of different artifacts. They are not one driver even though both
@@ -49,20 +53,21 @@ concern agents.
 |---|---|---|---|---|
 | 1 | `parseFrontmatter` | `v2-skills.ts:47` | {γ₁f} | single |
 | 2 | `registerSkillDir` | `v2-skills.ts:22` | {γ₁,γ₁f} | **irreducible composite** — reads the directory convention and emits an editor record in one loop |
-| 3 | `parseModelRef` | `v2-commands.ts:56` | {γ₃} | single — see the ModelRef note |
-| 4 | `stripQuotes` (commands) | `v2-commands.ts:62` | {γ₃} | **follower** of `parseCommand` |
-| 5 | `parseCommand` | `v2-commands.ts:71` | {γ₃} | single |
-| 6 | `readCommandRecords` | `v2-commands.ts:96` | {γ₃} | **follower** — see the follower rule |
-| 7 | `registerCommandDirV2` | `v2-commands.ts:122` | {γ₃} | single |
-| 8 | `MODES` | `agents.ts:63` | {γ₂} | **follower**, but not a pure one — see note |
-| 9 | `V2_ACTION` | `agents.ts:52` | {γ₂,γ₅} | **irreducible composite** — the V1→V2 verb bridge |
-| 10 | `V1_PERMISSION` | `agents.ts:61` | {γ₅} | single |
-| 11 | `stripQuotes` (agents) | `agents.ts:65` | {γ₂,γ₅} | follower of `parseAgent` |
-| 12 | `asEffect` | `agents.ts:73` | {γ₂,γ₅} | follower of `parseAgent` |
-| 13 | `parseAgent` | `agents.ts:82` | {γ₂,γ₅} | **irreducible composite** |
-| 14 | `readAgentRecords` | `agents.ts:141` | {γ₂} | single — delegates to `parseAgent`, holds no V1 logic |
-| 15 | `registerAgentDirV2` | `agents.ts:171` | {γ₂} | single |
-| 16 | `registerAgentDirV1` | `agents.ts:212` | {γ₅} | single |
+| 3 | `parseModelRef` | `model-ref.ts:25` | {γ₆} | single — see the ModelRef section |
+| 4 | `isModelRef` | `model-ref.ts:33` | {γ₆} | single |
+| 5 | `stripQuotes` (commands) | `v2-commands.ts:63` | {γ₃} | **follower** of `parseCommand` |
+| 6 | `parseCommand` | `v2-commands.ts:72` | {γ₃,γ₆} | composite — validates a model ref while parsing a command record |
+| 7 | `readCommandRecords` | `v2-commands.ts:97` | {γ₃} | single |
+| 8 | `registerCommandDirV2` | `v2-commands.ts:123` | {γ₃} | single |
+| 9 | `MODES` | `agents.ts:64` | {γ₂} | **follower**, but not a pure one — see note |
+| 10 | `V2_ACTION` | `agents.ts:53` | {γ₂,γ₅} | **irreducible composite** — the V1→V2 verb bridge |
+| 11 | `V1_PERMISSION` | `agents.ts:62` | {γ₅} | single |
+| 12 | `stripQuotes` (agents) | `agents.ts:66` | {γ₂,γ₅} | follower of `parseAgent` |
+| 13 | `asEffect` | `agents.ts:74` | {γ₂,γ₅} | follower of `parseAgent` |
+| 14 | `parseAgent` | `agents.ts:83` | {γ₂,γ₅,γ₆} | **irreducible composite** |
+| 15 | `readAgentRecords` | `agents.ts:142` | {γ₂} | single — delegates to `parseAgent`, holds no V1 logic |
+| 16 | `registerAgentDirV2` | `agents.ts:172` | {γ₂,γ₆} | composite — the model ref is converted to `Agent.Info.model` here |
+| 17 | `registerAgentDirV1` | `agents.ts:213` | {γ₅} | single |
 
 ## The follower rule (stated once, applied uniformly)
 
@@ -80,14 +85,41 @@ own γ₂ dependency and is recorded as `{γ₂}` rather than `parseAgent`'s
 `parseCommand`, so it stands as its own element rather than folding into it; its
 γ₃ is not derived, and it is not a follower in the strict sense.
 
-## ModelRef note (open question, not resolved)
+## ModelRef — γ₆, resolved by extraction
 
-`parseModelRef` (`v2-commands.ts:56`) and the two inline ModelRef regexes in
-`agents.ts:117` and `agents.ts:185` encode the same `provider/model[#variant]`
-convention. If OpenCode defines ModelRef once, as a single amendment unit shared
-by both registries, then `γ_modelref` is a real driver currently folded into γ₂
-and γ₃, and these three sites are mis-grounded. The registry leaves it as
-assigned to γ₃ pending that determination — **flagged, not settled.**
+The ModelRef grammar (`provider/model[#variant]`) is used by **both** the agent
+registry (`Agent.Info.model`) and the command registry
+(`CommandV2Info.model`). The first revision of this registry folded it into γ₂ and
+γ₃ and flagged the question as open.
+
+**Resolved: it is one amendment unit, so it is one driver.** The evidence is that
+the format is a property of the reference itself, not of either registry: a
+change to it (`provider:model`, a new separator, a variant syntax) requires the
+same edit in every consumer regardless of which registry the consumer serves. That
+is the definition of one amendment unit.
+
+The code was changed to match the model rather than the other way round:
+
+- `shared/model-ref.ts` now holds the single definition
+  (`parseModelRef`, `isModelRef`, `ModelRef`).
+- The three former copies are gone: `agents.ts` (two inline regexes) and
+  `v2-commands.ts` (one) now import it.
+- `shared/model-ref.test.ts` fails if the grammar is re-inlined anywhere else in
+  `shared/`.
+
+| γ | Anchor | Condition |
+|---|---|---|
+| γ₆ | A6 — the ModelRef format | The `provider/model[#variant]` grammar changes |
+
+Reassignment that follows: `parseModelRef` is `{γ₆}`, not `{γ₃}`. The agent-side
+sites (`agents.ts` model validation and `Agent.Info.model` construction) change
+from `{γ₂}` to `{γ₂,γ₆}` — where element 13 (`parseAgent`) is composite either
+way, so its set gains a member: `{γ₂,γ₅,γ₆}`.
+
+**This is a driver change the audit could not have found**, because the three
+copies were a code fact the registry described but did not treat as a modelling
+constraint. Recorded here as the resolution; a full re-audit at the new element
+set is still required.
 
 ## Γ-equivalence classes → modules
 
@@ -95,43 +127,95 @@ assigned to γ₃ pending that determination — **flagged, not settled.**
 |---|---|---|---|
 | M₁ | {γ₁f} | 1 | `v2-skills.ts` |
 | M₂ | {γ₁,γ₁f} | 2 | `v2-skills.ts` |
-| M₃ | {γ₃} | 3, 4, 5, 6, 7 | `v2-commands.ts` — **complete** |
-| M₄ | {γ₂} | 8, 14, 15 | part of `agents.ts` |
-| M₅ | {γ₂,γ₅} | 9, 11, 12, 13 | part of `agents.ts` |
-| M₆ | {γ₅} | 10, 16 | part of `agents.ts` |
+| M₃ | {γ₆} | 3, 4 | `model-ref.ts` — **complete** |
+| M₄ | {γ₃} | 5, 7, 8 | `v2-commands.ts` |
+| M₅ | {γ₃,γ₆} | 6 | `v2-commands.ts` |
+| M₆ | {γ₂} | 9, 15 | `agents.ts` |
+| M₇ | {γ₂,γ₅} | 10, 12, 13 | `agents.ts` |
+| M₈ | {γ₂,γ₅,γ₆} | 14 | `agents.ts` |
+| M₉ | {γ₂,γ₆} | 16 | `agents.ts` |
+| M₁₀ | {γ₅} | 11, 17 | `agents.ts` |
 
-`P_Γ` has **6** classes over 16 elements. The current tree has **3** files.
+`P_Γ` has **10** classes over 17 elements. The current tree has **4** files.
 
-Driver coverage (`|{e : γ ∈ Γ(e)}|`): γ₁f → 2, γ₁ → 1, γ₂ → 7, γ₃ → 5, γ₅ → 6.
-Every driver governs at least one element (the γ₄ defect from the audit is fixed).
+Driver coverage (`|{e : γ ∈ Γ(e)}|`): γ₁f → 2, γ₁ → 1, γ₂ → 6, γ₃ → 4, γ₅ → 5,
+γ₆ → 6. Every driver governs at least one element.
+
+**File grain** — each file's Γ is the union of its elements' sets:
+
+| Module | Γ | Elements |
+|---|---|---|
+| `v2-skills.ts` | {γ₁,γ₁f} | 2 |
+| `model-ref.ts` | {γ₆} | 2 |
+| `v2-commands.ts` | {γ₃,γ₆} | 4 |
+| `agents.ts` | {γ₂,γ₅,γ₆} | 9 |
+
+Four distinct sets over four files: pure at file grain, nothing scattered.
 
 ## Findings (step 4, as-is vs `P_Γ`)
 
-- **IVP-4, `v2-skills.ts`** — M₁ and M₂ are two classes in one file. M₂'s set is a
-  strict superset of M₁'s. Under the nesting extension this is a valid
-  parent/child pair (`Γ(M₁) ⊊ Γ(M₂)`), so no split is prescribed; the
-  single-driver `parseFrontmatter` is reducible into `registerSkillDir`'s concern
-  only if the directory convention and the editor record keep changing together.
-- **IVP-3, `agents.ts`** — one file holds three classes (M₄, M₅, M₆). At **file
-  grain** this is not a violation: the module's Γ is `{γ₂,γ₅}`, and the other
-  members' sets are strict subsets of it, which is exactly the §7 nesting
-  relation. At **function grain** it is three classes sharing a container, and
-  separation is a placement preference.
+- **`v2-skills.ts`** — M₁ and M₂ are two classes in one file. M₂'s set is a strict
+  superset of M₁'s **and** the causal test holds (no file format → no record), so
+  this is a sound parent/child pair. No split is prescribed.
+- **`agents.ts`, function grain** — five classes (M₆, M₇, M₈, M₉, M₁₀) in one
+  container, **none nesting**. All five are siblings. This is the real finding at
+  this grain — independent concerns sharing a file, not a hierarchy.
+- **`v2-commands.ts`, function grain** — two classes (M₄, M₅), neither nesting.
+- **File grain** — `Γ(agents.ts) = {γ₂,γ₅,γ₆}`, `Γ(v2-commands.ts) = {γ₃,γ₆}`, both
+  pure; no violation, nothing to separate. Do not use file-grain purity to excuse
+  the function-grain finding; they are different element sets.
 - **IVP-4 (scattered classes)** — none. Every class sits wholly inside one file.
-- **IVP-1/IVP-2** — no `|Γ(e)| = 0`; M₂, M₅, and element 9 are claimed
-  irreducibly composite (see the audit's verification of element 11).
+- **IVP-1/IVP-2** — no `|Γ(e)| = 0`; M₂, M₅, M₇, M₈, M₉ and elements 10, 14 are
+  claimed irreducibly composite (element 14 verified by the audit).
 
-## Grain note (required for a correct reading)
+## Nesting: subset is necessary, causality decides
 
-At **function grain** the partition is the six classes above; `agents.ts` is a
-container holding three of them (M₄, M₅, M₆), and separateness is a placement
-preference under this grain. At **file grain** `agents.ts` is one module with
-`Γ = {γ₂,γ₅}` — pure, because the composite elements (9, 11, 12, 13) carry exactly
-that set and the other members are strict subsets of it (`{γ₂} ⊊ {γ₂,γ₅}`,
-`{γ₅} ⊊ {γ₂,γ₅}`). This is the nesting relation of §7 (`Γ(P) ⊊ Γ(C)`), and any
-move must respect the reducibility guard.
+`Γ(P) ⊊ Γ(C)` alone does **not** establish nesting. It is a set relation that a
+stale or coincidental overlap can satisfy. Nesting also asserts a causal claim:
+`P`'s driver must be a **precondition of `C`'s existence** — `C` exists to extend
+a concern that `P`'s driver already creates. Fail the causal test and the pair is
+**sibling**, not "loosely nested".
 
-`v2-skills.ts` is the same shape at two classes: `{γ₁f} ⊊ {γ₁,γ₁f}`.
+**Twelve pairs** in this partition satisfy the strict-subset test. **One** passes
+the causal test.
+
+| Parent | Child | Causal verdict |
+|---|---|---|
+| M₁ `{γ₁f}` | M₂ `{γ₁,γ₁f}` | **NEST.** No `SKILL.md` format → no record exists for the editor to add. The file format preconditions every `Skill.Info` emission. |
+| M₃ `{γ₆}` | M₅, M₈, M₉ | **sibling.** The ModelRef grammar is a shared *vocabulary*. It does not cause a command parser or an agent parser to exist; those read it because a model field happens to be present. |
+| M₄ `{γ₃}` | M₅ `{γ₃,γ₆}` | **sibling.** The command editor does not precondition ModelRef; ModelRef is used by the parser, not produced by the editor. |
+| M₆ `{γ₂}` | M₇, M₈, M₉ | **sibling.** The V2 agent editor is the *sink* for the V1-derived permissions and the model ref, not their cause. |
+| M₇ `{γ₂,γ₅}` | M₈ | **sibling.** γ₆ is an extra vocabulary, not an extension of the V1 bridge's concern. |
+| M₉ `{γ₂,γ₆}` | M₈ | **sibling.** Same reason on the γ₅ axis. |
+| M₁₀ `{γ₅}` | M₇, M₈ | **sibling.** `V1_PERMISSION` (`agents.ts:62`) is consumed only at `agents.ts:236`, inside `registerAgentDirV1`. The V1 verb schema stands alone. |
+
+**Every subset pair inside `agents.ts` and `v2-commands.ts` is coincidental.** They
+hold because those files serve two registries that share two vocabularies (the
+V1 permission verbs and the ModelRef format). A subset is not a concern
+hierarchy — it is what you get when two independent concerns consume the same
+shared grammar.
+
+An earlier revision of this file called the `agents.ts` pairs "the nesting
+relation of §7". That was subset reasoning wearing a nesting claim, and it made
+the status quo look better than it is. Corrected here.
+
+## Grain note
+
+At **file grain** `agents.ts` is one module with `Γ = {γ₂,γ₅,γ₆}`. It is pure: the
+file's set is the union of its elements' sets, and no element carries a driver
+outside it. File-grain purity needs no nesting claim — a file is one module with
+one driver set.
+
+At **function grain** the partition is ten classes. `agents.ts` holds five of them
+(M₆, M₇, M₈, M₉, M₁₀) and **none nests**. They are siblings sharing a container.
+Separateness is therefore not merely a placement preference: without nesting, they
+are independent concerns that happen to live in one file.
+
+`v2-skills.ts` is the one file where nesting is sound (M₁ in M₂).
+
+Which grain governs is a modelling decision — at what grain do the change
+decisions actually occur — and both partitions are valid. They yield different
+verdicts; state the grain with every claim.
 
 ## Counterfactual tests (per edge, abridged)
 
@@ -162,16 +246,15 @@ by exactly one artifact's amendment.
 ## Revisit conditions
 
 - A3 gains `update`/`get` (the docs already describe an `add`+`execute` shape):
-  re-run element 7. If the two editors converge, γ₂ and γ₃ may collapse — a
+  re-run element 8. If the two editors converge, γ₂ and γ₃ may collapse — a
   single amendment unit would then cover both.
-- **ModelRef is determined to be one shared amendment unit** → split
-  `γ_modelref` out of γ₂ and γ₃; elements 3 and 15 are re-grounded. Open question;
-  see the ModelRef note.
-- The V1 path is retired → γ₅ disappears, elements 9, 10, 11, 12, 16 lose a
-  member of their sets, and 10/16 have no set left. **This is the most likely
-  collapse**; M₆ then has no members and M₅ shrinks to `{γ₂}`.
+- The ModelRef grammar changes → γ₆ fires on elements 3, 4, 6, 14, 16. Already
+  resolved as one unit and extracted to `model-ref.ts`; keep it extracted.
+- The V1 path is retired → γ₅ disappears. Elements 11 and 17 lose their whole set
+  and leave `E`; 10, 12, 13, 14 drop a member. **Most likely collapse**: M₁₀ has no
+  members and M₇/M₈ shrink.
 - The skill file format and the editor record are determined to co-vary → γ₁ and
-  γ₁f collapse to one unit, and M₁/M₂ merge.
+  γ₁f collapse to one unit, and M₁/M₂ merge (removing the only sound nesting).
 
 ## Unanchored candidates (not drivers)
 
@@ -180,10 +263,17 @@ Churn, file co-location, and "these are all v2 helpers" were rejected as proxies
 
 ## Audit record
 
-Gate A run: `driver-assignment-auditor`, verdict **UNSOUND** on the first draft
-(4 critical, 3 warnings). All four criticals were verified against the code and
-fixed — γ₄ removed, `γ₁f` split out, `readAgentRecords` re-grounded, follower rule
-stated uniformly. Findings 5 and 6 are recorded as the two open items above
-(ModelRef, and the omitted-constants enumeration, now listed as elements 9 and 10).
-Status after fixes: **PROVISIONAL pending re-audit.**
+Gate A run 1: `driver-assignment-auditor`, verdict **UNSOUND** (4 critical,
+3 warnings). All four criticals were verified against the code and fixed — γ₄
+removed, `γ₁f` split out, `readAgentRecords` re-grounded, follower rule stated
+uniformly. Warnings 5 and 6 are resolved in this revision: the omitted constants
+are now elements (10, 11), and ModelRef is extracted as γ₆.
+
+Revision 2 (after Gate A): the nesting rule gained its **causal-existence
+condition**, which the pack had omitted. Applying it changed the verdict for every
+`agents.ts` pair from "nested" to **sibling**. The ModelRef question was resolved
+as one amendment unit and the code was extracted to `model-ref.ts` to match.
+
+Status: **PROVISIONAL pending re-audit.** The element set changed after the first
+audit (17 elements, 10 classes), so the earlier verdict does not carry forward.
 

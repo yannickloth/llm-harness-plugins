@@ -69,8 +69,8 @@ describe("IVP registry", () => {
   const classes = declaredClasses()
 
   test("registry parses", () => {
-    expect(rows.length).toBe(16)
-    expect(classes.length).toBeGreaterThan(0)
+    expect(rows.length).toBe(17)
+    expect(classes.length).toBe(10)
   })
 
   test("every element has a non-empty Γ (IVP-1 admissibility)", () => {

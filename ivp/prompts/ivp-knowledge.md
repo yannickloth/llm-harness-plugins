@@ -248,12 +248,22 @@ merge element sets:
   and more", never "the child's elements joined the parent's module".
 
 ```text
-C may be nested inside P  only if  Γ(P) ⊊ Γ(C)
+C may be nested inside P  only if  Γ(P) ⊊ Γ(C)  AND  γ(P) causally preconditions C
 ```
 
 - `P` stands alone without `C`; `C` is authored inside `P`'s scope.
 - Equality → same class, so the same module: not a nesting. Partial overlap or
   disjoint → siblings; there is no containment rationale.
+- **Causal-existence condition (mandatory).** The strict-subset test is necessary
+  and **not sufficient**. Nesting asserts that `C` exists *because* `P`'s driver
+  exists: `C` extends a concern that `P`'s driver already creates, so removing
+  `P`'s driver would remove `C`'s reason to exist. A subset that holds only
+  because two sets happen to line up is a **coincidental subset** — the pair is
+  then a **sibling**, not a loose nesting. Test per edge: *if `P`'s driver did not
+  exist, would `C` still have a reason to exist?* Yes → sibling.
+- Direction matters. Ask which side is the precondition. A child whose vocabulary
+  is derived *from* the parent's driver nests; a child that merely *emits into*
+  the parent's driver does not — the parent is its sink, not its cause.
 - **Rationale guard:** nest only a child that is a reducible composite (Case 2).
   The containment asserts that the child's extra drivers are separable additions
   to the parent's concern. For a single-driver element there are no extras; for
@@ -263,6 +273,10 @@ C may be nested inside P  only if  Γ(P) ⊊ Γ(C)
 - **Dependency direction:** the child may import the parent; the parent must not
   import the child's core. A parent that calls into a nested child has inverted
   the containment and re-coupled the two concerns.
+
+Without the causal clause the subset test degenerates: any two modules sharing a
+driver get bundled, and the tree accretes instead of expressing the domain. The
+subset relation then means *subsetness*, not *subsumption*.
 
 Do not present nesting as a consequence of the partition theorem, and do not
 charge a namespace with a purity violation.

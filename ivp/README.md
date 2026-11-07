@@ -89,9 +89,13 @@ Assess first, then converge.
 
 ## Nesting is an extension
 
-`prc:ivp` partitions `E`; it prescribes no containment tree. The rule
-`Γ(P) ⊊ Γ(C)` with the reducibility guard is this pack's extension for code
-trees. Nesting is **namespace containment**: the parent and child remain distinct
+`prc:ivp` partitions `E`; it prescribes no containment tree. This pack's
+extension for code trees requires **two** conditions for a parent/child edge:
+`Γ(P) ⊊ Γ(C)` **and** a causal-existence condition — the parent's driver must
+precondition the child's existence. The subset test alone is necessary but not
+sufficient: a pair that passes it by coincidence (two modules merely sharing a
+driver) is a **sibling**, not a loose nesting. A reducibility guard applies on top.
+Nesting is **namespace containment**: the parent and child remain distinct
 modules, each one Γ-class. Label it as such in every report; never present it as
 a consequence of the partition theorem, and never charge a namespace with a
 purity violation.

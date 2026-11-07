@@ -59,7 +59,10 @@ split but was not. Distinguish:
   element-form defect; do not report it here
 
 ### Nesting soundness (harness extension — not part of `prc:ivp`)
-- Every parent/child relationship satisfies `Γ(parent) ⊊ Γ(child)`.
+- Every parent/child relationship satisfies `Γ(parent) ⊊ Γ(child)` **and** the
+  causal-existence condition: the parent's driver preconditions the child's
+  existence. A pair that passes the subset test but fails the causal test is a
+  sibling that was wrongly nested — report it as a finding, not a warning.
 - No nesting was applied to a single-driver or irreducible-composite child.
 - No packaging/dependency cycle was introduced by the nesting (child importing
   parent is allowed; parent importing child core violates the composition).

@@ -80,7 +80,9 @@ impure. Purity quantifies over modules; never call an element impure.
 `prc:ivp` partitions `E` and says nothing about containment. Where the tree is
 nested, check the harness extension and label it as such:
 
-- every parent/child edge satisfies `Γ(parent) ⊊ Γ(child)`;
+- every parent/child edge satisfies `Γ(parent) ⊊ Γ(child)` **and** the parent's
+  driver preconditions the child's existence (a coincidental subset is a wrongly
+  nested pair, not a sound edge);
 - no single-driver or irreducible-composite child was nested to manufacture a
   relation;
 - no parent imports a child's core.
@@ -89,7 +91,7 @@ nested, check the harness extension and label it as such:
 of different classes is compliant. Report an IVP-3 violation only when a single
 *module* holds elements of two classes.
 
-Report a breach of the strict-subset rule as a warning, not as an IVP violation —
+Report a breach of the nesting rule as a warning, not as an IVP violation —
 nesting is not part of the principle.
 
 ### 5. Price the propagation
