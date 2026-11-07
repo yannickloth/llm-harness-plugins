@@ -2,48 +2,36 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs"
 import { join } from "path"
 
 /**
- * Register a skills directory with an OpenCode v2 skill editor.
+ * Register a plugin's skills directory with an OpenCode v2 skill editor.
  *
- * v1 plugins appended their skills directory to `config.skills.paths` in a
- * `config` hook. v2 has no config hook: the only entry point is
- * `ctx.skill.transform(editor)`, and the editor takes fully-formed records
- * (`{ id, name, description, path, content }` — the shape `ctx.skill.list()`
- * returns) rather than directory paths. So the directory is enumerated here and
- * every `<dir>/<name>/SKILL.md` is added individually, parsing the frontmatter
- * `name`/`description` when present.
+ * ## Two elements, two drivers
  *
- * Returns the number of skills registered. Duplicate ids are ignored by the
- * host; failures on individual entries never abort the others.
+ * This module deliberately keeps the two halves apart, because they change for
+ * different reasons:
  *
- * Synchronous on purpose: V2 transforms must edit domain state synchronously in
- * the callback (the runtime ignores a returned promise), and the draft's `add`
- * is synchronous, so there is no async work to await here.
+ * - `readSkillRecords` is governed by the **SKILL.md format** (γ₁f): the
+ *   `<dir>/<name>/SKILL.md` convention and the frontmatter keys.
+ * - `registerSkillRecords` is governed by the **skill editor API** (γ₁): the
+ *   `editor.add` record shape.
+ *
+ * An earlier version fused them into one readdir→add loop. That was a reducible
+ * composite (IVP-2): the data flow is unidirectional and either half can change
+ * without the other, so fusing them made the module claim an indivisibility it
+ * did not have. Keeping them separate also means a change to the on-disk format
+ * touches only the reader, and a change to `Skill.Info` touches only the writer.
  */
-export function registerSkillDir(editor: any, dir: string): number {
-  if (!dir || !existsSync(dir)) return 0
-  let registered = 0
-  for (const entry of readdirSync(dir)) {
-    const skillFile = join(dir, entry, "SKILL.md")
-    if (!existsSync(skillFile) || !statSync(skillFile).isFile()) continue
-    const raw = readFileSync(skillFile, "utf8")
-    const { name, description } = parseFrontmatter(raw)
-    try {
-      editor.add({
-        id: entry,
-        name: name ?? entry,
-        description: description ?? "",
-        path: skillFile,
-        content: raw,
-      })
-      registered++
-    } catch {
-      // already registered, or rejected by the host — skip
-    }
-  }
-  return registered
+
+export interface SkillRecord {
+  /** Directory name — also the skill id. */
+  id: string
+  name: string
+  description?: string
+  path: string
+  /** Raw file contents, frontmatter included. */
+  content: string
 }
 
-/** Minimal YAML frontmatter reader for the `name`/`description` keys. */
+/** Parse the `name`/`description` keys of a SKILL.md frontmatter block. */
 export function parseFrontmatter(raw: string): { name?: string; description?: string } {
   if (!raw.startsWith("---")) return {}
   const end = raw.indexOf("\n---", 3)
@@ -54,4 +42,55 @@ export function parseFrontmatter(raw: string): { name?: string; description?: st
     if (m) out[m[1] as "name" | "description"] = m[2].trim().replace(/^["']|["']$/g, "")
   }
   return out
+}
+
+/**
+ * Enumerate `<dir>/<name>/SKILL.md` and read each one. Governed by the SKILL.md
+ * format only — no editor involved.
+ */
+export function readSkillRecords(dir: string): SkillRecord[] {
+  if (!dir || !existsSync(dir)) return []
+  const out: SkillRecord[] = []
+  for (const entry of readdirSync(dir).sort()) {
+    const skillFile = join(dir, entry, "SKILL.md")
+    if (!existsSync(skillFile) || !statSync(skillFile).isFile()) continue
+    let raw: string
+    try {
+      raw = readFileSync(skillFile, "utf8")
+    } catch {
+      continue
+    }
+    const { name, description } = parseFrontmatter(raw)
+    out.push({ id: entry, name: name ?? entry, description, path: skillFile, content: raw })
+  }
+  return out
+}
+
+/**
+ * Push records into a skill editor. Governed by the editor API only — no file
+ * access. Returns the number added.
+ */
+export function registerSkillRecords(editor: any, records: readonly SkillRecord[]): number {
+  if (typeof editor?.add !== "function") return 0
+  let registered = 0
+  for (const rec of records) {
+    try {
+      editor.add({
+        id: rec.id,
+        name: rec.name,
+        description: rec.description ?? "",
+        path: rec.path,
+        content: rec.content,
+      })
+      registered++
+    } catch {
+      // already registered, or rejected by the host — skip
+    }
+  }
+  return registered
+}
+
+/** Convenience composition of the two elements above. */
+export function registerSkillDir(editor: any, dir: string): number {
+  return registerSkillRecords(editor, readSkillRecords(dir))
 }
