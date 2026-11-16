@@ -1,6 +1,6 @@
 # general-skills — Assumptions
 
-Provides the `calc` and `calc_probe` tools, injects the `[calc-discipline]` and `[STE-100 Simplified Technical English]` rules into every session's system prompt, and self-registers 16 skills and 12 audit agents. Also ships two standalone Java helpers (`tools/`).
+Provides the `calc` and `calc_probe` tools, injects the `[calc-discipline]` and `[STE-100 Simplified Technical English]` rules into every session's system prompt, and self-registers 16 skills and 21 agents (12 audit agents + 9 routing/coordination agents). Also ships two standalone Java helpers (`tools/`).
 
 ## OpenCode API (hooks used, v1 vs v2, version sensitivity)
 - Dual entrypoint: v2 default export `{ id, setup(ctx), server(input, options) }`; v1 path returns a plugin factory from `server()`. ⚠ `id` + `setup` must match the running binary (2.2.5); a hook rename fails load silently (the load canary is the only signal).
@@ -23,7 +23,7 @@ Provides the `calc` and `calc_probe` tools, injects the `[calc-discipline]` and 
 
 ## Filesystem & layout (paths read/written, where anchored — cwd / repo root / XDG; formats; encodings)
 - `skills/` and `agents/` anchored at the plugin directory via `moduleDir(import.meta.url)` — independent of cwd.
-- Read: `skills/<name>/SKILL.md` (16 dirs), `agents/*.md` (12 files), `/etc/os-release` (per calc call). UTF-8 assumed.
+- Read: `skills/<name>/SKILL.md` (16 dirs), `agents/*.md` (21 files), `/etc/os-release` (per calc call). UTF-8 assumed.
 - Write: none, except the load canary marker (only when `LLMHP_CANARY_DIR` and `LLMHP_CANARY_NONCE` are both set — i.e., under `shared/canary_preflight.sh`; no-op otherwise).
 - ⚠ `skillCount` runs `fs.statSync` on every skills-dir entry without a guard; a broken symlink there throws during `setup` and kills plugin load.
 - ⚠ `tools/ProsePatternAnalyzer*.class` (3 files) are locally compiled artifacts — `*.class` is gitignored, and **no build.sh step compiles general-skills** (root `build.sh` only runs its `bun test`). Runners of `java -cp tools ProsePatternAnalyzer` must compile first. `tools/TypstIncludeResolver.java` has no `.class` at all. Neither class is stale-by-tracking; freshness is unmanaged.
@@ -47,5 +47,5 @@ Provides the `calc` and `calc_probe` tools, injects the `[calc-discipline]` and 
 ## Data & LLM behavior (formats trusted from the model; model assumptions)
 - ⚠ The model is trusted to: write each expression in the target engine's syntax; not report numbers from `FAILED` runs; re-verify key numbers with a second independent method; interpret qalc unit-product output (rule text only — no mechanical enforcement).
 - `calc_probe` output and `calc` output are plain text the model parses; the `engine=… expr=… command: …` source-line format is a contract the injected rule relies on.
-- Agent prompts (12 auditor files) are trusted instructions; permissions are read-mostly (`edit: deny` except `style-naturalizer`; `bash: allow` only for `bibliography-auditor`, `math-verifier`, `xref-checker`).
+- Agent prompts (21 files) are trusted instructions; permissions are read-mostly (`edit: deny` except `style-naturalizer`; `bash: allow` only for `bibliography-auditor`, `math-verifier`, `xref-checker`; `bash: allow` for `temporal-scheduler` and `work-coordinator`).
 - Maxima `maximaFailure` treats "printed result identical to the input" as failure (catches unknown functions like `foobar(2)`). ⚠ This also rejects legitimate exact/symbolic results maxima prints unchanged — verified live: `calc("1/3", engine="maxima")` and `calc("x^2", engine="maxima")` both return FAILED, while the use-calculator skill's own table documents `1/3` printing the exact `1/3` as the expected result.
