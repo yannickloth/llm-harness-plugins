@@ -1,17 +1,22 @@
+// opencode.jsonc — plugins parcelled out for measurement, 2026-11-07.
+//
+// WHY: a token-cost review found every project loading 15-27 plugins, none of
+// them measured. opencode averages 33.5 model calls/trial vs pi's 18.5, and
+// several of these plugins inject context on every message. This is the
+// baseline: NO harness plugins. Re-enable one at a time and compare tokens.
+//
+// graphrag is disabled for every project permanently (user decision).
+//
+// To re-enable: move one line out of the commented block into "plugin".
+// Precedence note: opencode.jsonc wins over opencode.json in the same dir,
+// but the .json was removed here so there is only one source of truth.
+
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "./datetime-inject/opencode",
-    "./offpeak-nudge/opencode",
-    "./graphics-toolkit/opencode",
-    "./scientific-writing/opencode",
-    "./context-toolkit/opencode",
-    "./codify-first/opencode",
-    "./context-editing/opencode",
-    "./system-message-merge/opencode",
-    "./general-skills/opencode"
+    "../llm-harness-plugins/agentmem/opencode"
   ],
-  "agent": {
+  "agent":   {
     "cynic-auditor": {
       "file": "./scientific-writing/agents/cynic-auditor.md",
       "mode": "subagent"
@@ -112,5 +117,22 @@
       "file": "./scientific-writing/agents/theory-devil-advocate.md",
       "mode": "subagent"
     }
-  }
+  },
+
+  // ---- Disabled plugins (re-enable individually) ----------------------
+  //  "./datetime-inject/opencode"
+  //  "./offpeak-nudge/opencode"  — time-of-day nudge only, not needed while testing
+  //  "./graphics-toolkit/opencode"
+  //  "./scientific-writing/opencode"
+  //  "./context-toolkit/opencode"
+  //  "./codify-first/opencode"
+  //  "./context-editing/opencode"
+  //  "./system-message-merge/opencode"
+  //  "./general-skills/opencode"
+  //  "./typst-toolkit/opencode"
+  //  "./knowledge-graph/opencode"  — overlaps graphrag/agentmem; unproven value
+  //  "./natural-prose/opencode"
+  //  "./agentmem/opencode"  — stale writes (MEMORY.md unchanged since 2026-08); injects per-session anyway
+  //  "./agentfeed/opencode"
+  //  "./semantic-router/opencode"  — routing unproven with a single local model
 }

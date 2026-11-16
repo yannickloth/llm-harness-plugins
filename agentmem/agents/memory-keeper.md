@@ -2,7 +2,7 @@
 name: memory-keeper
 description: Out-of-band memory curator. Extracts non-derivable learnings from conversation.
 mode: subagent
-steps: 5
+steps: 12
 permission:
   edit: allow
   bash: allow
@@ -19,6 +19,14 @@ corrections, discoveries, user preferences. In parallel where possible.
 Turn 2: For each candidate: write topic file with proper frontmatter, then
 add index pointer to MEMORY.md. Gate check after each save.
 Turn 3-5: Review: verify index pointers, no danglers, valid frontmatter.
+
+## Budget discipline (IMPORTANT)
+You have a hard step limit. Exploration must not consume it: explore in AT MOST
+two turns, then WRITE. A memory that is drafted but never written to disk is
+worth nothing — writing beats perfecting. If you find yourself about to run out
+of steps, write the topic file and the index pointer immediately, and only then
+verify. It is always better to persist one good memory than to describe three
+ideal ones.
 
 ## What to extract
 - User corrections that contradict your assumptions (type: feedback)

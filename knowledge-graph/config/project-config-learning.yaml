@@ -1,0 +1,24 @@
+project:
+  name: learning
+  description: >-
+    Multi-book Typst study notes — PostgreSQL beginner's guide, web frameworks,
+    certifications, language learning
+
+label_rules:
+  - regex: '#\(?([a-zA-Z][a-zA-Z0-9_:-]+)\)?'
+    type: label_raw
+  - regex: '== ([\w\s-]+)'
+    type: heading
+  - regex: '<([a-zA-Z][a-zA-Z0-9_:-]+)>'
+    type: def
+
+structural_prefixes:
+  - prj
+  - vol
+  - part
+  - ch
+  - sec
+  - subsec
+  - file
+  - fig
+  - tab

@@ -13,7 +13,14 @@ import { writeLoadCanary } from "../../shared/load-canary"
 
 const agentmemDir = path.join(moduleDir(import.meta.url, import.meta.dir), "..")
 const agentsDir = path.join(agentmemDir, "agents")
-const classesDir = path.join(agentmemDir, "build", "classes")
+// MemoryStore runs guardrail-chain's GuardrailPipeline at write time; those
+// compiled classes live in the sibling plugin's build tree, so the runtime
+// classpath must span both dirs (a missing entry fails every save with
+// NoClassDefFoundError: eu/infolead/llmhp/guardrails/GuardrailPipeline).
+const classesDir = [
+  path.join(agentmemDir, "build", "classes"),
+  path.join(agentmemDir, "..", "guardrail-chain", "build", "classes"),
+].join(path.sep)
 const mainClass = "eu.infolead.llmhp.memory.MemorySystemCli"
 
 const DREAM_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -94,9 +101,25 @@ async function injectBudgetedMem(client: ReturnType<Parameters<Plugin>[0]["clien
   const raw = proc.stdout
   const context = await parseFrontmatterOutput(raw)
   if (!context) return
-  // Keep the chat window lean: persist the full memory context to a markdown
-  // file and inject only a one-line pointer. The model reads the file on demand
-  // (mirrors the lazy-loaded AGENTS.md rule pattern), so the chat stays short.
+  // Two delivery modes, chosen by size. A pointer to a file is only worth its
+  // extra read-tool round-trip when the content is genuinely large; below
+  // INLINE_MAX we send the memory itself so the model does not have to decide
+  // whether a file is worth opening (observed failure: with a 2 KB memory the
+  // model never opened the pointer file, so the injection bought nothing but
+  // a wasted turn).
+  const INLINE_MAX = 8000
+  if (context.length <= INLINE_MAX) {
+    try {
+      await client.session.prompt({
+        path: { id: sessionId },
+        body: { noReply: true, parts: [{ type: "text", text: header + context }] },
+      })
+    } catch (e) {
+      logger.error(`memory injection failed: ${(e as Error).message}`)
+    }
+    return
+  }
+  // Too large to inline: persist it and point at it.
   const detailFile = path.join(mdir, "injections", `${sanitize(sessionId)}.md`)
   try {
     mkdirSync(path.dirname(detailFile), { recursive: true })
@@ -116,7 +139,7 @@ async function injectBudgetedMem(client: ReturnType<Parameters<Plugin>[0]["clien
 }
 
 async function reinjectMemory(client: ReturnType<Parameters<Plugin>[0]["client"]>, sessionId: string, root: string) {
-  await injectBudgetedMem(client, sessionId, root, "# Persistent Project Memory\n**UPDATED** — new memories just saved. Details below; read the file if you need them.\n\n", true)
+  await injectBudgetedMem(client, sessionId, root, "# Persistent Project Memory\n**UPDATED** — new memories just saved.\n\n", true)
 }
 
 async function injectMemoryAtStartup(client: ReturnType<Parameters<Plugin>[0]["client"]>, sessionId: string, root: string) {
@@ -129,7 +152,7 @@ async function injectMemoryAtStartup(client: ReturnType<Parameters<Plugin>[0]["c
   await injectBudgetedMem(client, sessionId, root, [
     "# Persistent Project Memory",
     "",
-    "These memories persist across sessions. Full content is in the details file — read it on demand.",
+    "These memories persist across sessions.",
     "Use `save-memory` to persist new learnings.",
     "",
   ].join("\n"), false)
@@ -282,7 +305,7 @@ Answer (YES/NO):`
   try {
     proc = spawnDetached(
       ["opencode", "run", "--model", "deepseek/deepseek-flash",
-       "--agent", "memory-keeper", "--format", "json", "--title", "Memory maintenance (classifier)", "--",
+       "--agent", "memory-classifier", "--format", "json", "--title", "Memory maintenance (classifier)", "--",
        "Answer YES or NO only, based on the prompt in stdin."],
       { stdin: "pipe", stdout: "pipe", stderr: "ignore" }
     )
@@ -301,7 +324,11 @@ Answer (YES/NO):`
     // it never shows up in the user's session list.
     if (out != null) {
       await deleteMaintenanceSession(client, extractOpencodeSessionId(out), "classifier")
-      return extractOpencodeText(out).toUpperCase() === "YES"
+      // A 1-step classifier should emit a bare YES/NO, but a model may still
+      // wrap it ("**YES**", "Answer: YES"). Look for the first standalone token.
+      const verdict = extractOpencodeText(out).toUpperCase()
+      const m = verdict.match(/\b(YES|NO)\b/)
+      return m ? m[1] === "YES" : false
     }
     return false
   } catch {

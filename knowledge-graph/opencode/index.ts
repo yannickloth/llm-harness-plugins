@@ -1,7 +1,7 @@
 import { type Plugin, type Config, tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
-import { existsSync } from "fs"
+import { existsSync, readFileSync, statSync } from "fs"
 import { SectionRegistry } from "../../shared/section-registry"
 import { buildPromptWithBoundary, uncachedSection } from "../../shared/cache-boundary"
 import { createLogger, type PluginLogger } from "../../shared/plugin-logger"
@@ -17,8 +17,74 @@ const skillsDir = path.join(pluginDir, "skills")
 const MAX_INJECT = 6000
 const FILE_TOOLS = new Set(["read", "grep", "glob", "edit", "write", "find", "ls"])
 
+// Graph building is opt-in per project via two markers, because the parser walks
+// the whole project root and a repo full of vendored .typ files costs minutes:
+//   1. a .typ file within TYPST_PROBE_DEPTH of the root (cheap gate), and
+//   2. <root>/.kgrc.json  {"config": "project-config-ivp.yaml"}  (explicit opt-in).
+// Without .kgrc.json the plugin stays inert; with it, a missing or stale graph is
+// rebuilt automatically on first session so `kg-query` never says "run parse first".
+const TYPST_PROBE_DEPTH = 3
+const KGRC = ".kgrc.json"
+const GRAPH_STALE_MS = 6 * 60 * 60 * 1000
+
 function graphFile(dir: string): string {
   return path.join(dir, "graph.json")
+}
+
+function kgrc(dir: string): { config: string } | null {
+  const f = path.join(dir, KGRC)
+  if (!existsSync(f)) return null
+  try {
+    const parsed = JSON.parse(readFileSync(f, "utf8")) as { config?: unknown }
+    if (typeof parsed.config !== "string" || !parsed.config) return null
+    return { config: parsed.config }
+  } catch {
+    return null
+  }
+}
+
+/** Cheap check: does the project look like a Typst project at all? */
+async function hasTypst(dir: string): Promise<boolean> {
+  const out = await $`find ${dir} -maxdepth ${TYPST_PROBE_DEPTH} -name ${'*.typ'}
+    -not -path ${'*/node_modules/*'} -not -path ${'*/.git/*'}
+    -not -path ${'*/.direnv/*'} -not -path ${'*/target/*'}
+    -not -path ${'*/build/*'} -print -quit`.nothrow().text()
+  return out.trim().length > 0
+}
+
+/** Rebuild graph.json if it is missing or older than GRAPH_STALE_MS. Best effort. */
+async function ensureGraph(
+  logger: PluginLogger,
+  root: string
+): Promise<void> {
+  const rc = kgrc(root)
+  if (!rc) return
+  const gf = graphFile(root)
+  if (existsSync(gf)) {
+    try {
+      const st = statSync(gf)
+      if (Date.now() - st.mtimeMs < GRAPH_STALE_MS) return
+      logger.info(`graph.json is stale — rebuilding`)
+    } catch {
+      /* fall through to rebuild */
+    }
+  } else {
+    if (!(await hasTypst(root))) {
+      logger.info(`no .typ under ${root} — knowledge-graph inactive here`)
+      return
+    }
+    logger.info(`no graph.json — building it now`)
+  }
+  const cfgPath = path.join(pluginDir, "config", rc.config)
+  if (!existsSync(cfgPath)) {
+    logger.error(`config not found: ${cfgPath} (check ${KGRC})`)
+    return
+  }
+  const out = await $`java --class-path ${classesDir} ${mainClass} parse ${root} ${cfgPath} ${gf}`.nothrow()
+    .text()
+  const line = out.trim().split("\n").filter(Boolean).pop() ?? ""
+  if (line.toLowerCase().includes("parsed:")) logger.info(`graph built: ${line}`)
+  else logger.error(`graph build failed: ${line || "(no output)"}`)
 }
 
 function extractFilePathFromToolInput(input: Record<string, unknown>): string | null {
@@ -252,6 +318,11 @@ export default {
 
     await ctx.skill.transform((editor: any) => registerSkillDir(editor, skillsDir))
 
+    // Build/refresh the graph once at load, so the first session already has one.
+    await ensureGraph(logger, root).catch((e: unknown) =>
+      logger.error(`ensureGraph failed: ${(e as Error).message}`)
+    )
+
     const controller = new AbortController()
     void (async () => {
       try {
@@ -269,6 +340,9 @@ export default {
             registry.section("kg-header", buildHeader)
 
             const gf = graphFile(root)
+            await ensureGraph(logger, root).catch((e: unknown) =>
+              logger.error(`ensureGraph failed: ${(e as Error).message}`)
+            )
             if (existsSync(gf)) {
               try {
                 const ctxText = await $`java --class-path ${classesDir} ${mainClass} overview ${gf}`.nothrow().text()
