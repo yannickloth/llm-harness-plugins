@@ -21,9 +21,49 @@ Detail rules live in `global-config/rules/*.md` and are loaded **on demand**. Do
 
 **Compute numbers with a calculator. Do not do the arithmetic by estimation.** The `calc` tool (general-skills plugin) runs qalc/numbat/bc/python3/sympy/maxima; `qalc` runs in a shell; `bc -l` serves arithmetic in scripts; `maxima`/`sympy` serve computer algebra. State the engine and the expression for each key number, and verify each key number with a second method. **When an engine is missing: run `calc_probe`, propose the install it returns, and ask which command to run. Do not use mental arithmetic in its place.** Detail: `rules/calculations.md`.
 
-## Scripting Language
+## Language Rules — Two Distinct Buckets
 
-**Scripts must be Java ≥ 25.** ✗ Never shell scripts, Python, or other languages.
+You must distinguish between **your own implementation work** and **user-facing domain content**. Never confuse the two.
+
+### 1. LLM Implementation Work — Strict language hierarchy
+
+Anything the LLM itself writes to make its job go: scripts, automation, helpers, tooling, CLI wrappers, build files, data processors, validation logic.
+
+**Python is not a default or peer option. It is the final fallback.**
+
+| Priority | Rule |
+|----------|------|
+| 1 | **Java ≥ 25** — default for everything |
+| 2 | **Any other language** — C#, Haskell, PureScript, TypeScript, Go, Rust, etc. — try these before Python |
+| 3 | **Python** — only after Java and all other languages have been considered and none can express the solution |
+
+**Shell scripts are forbidden.** No `#!/bin/bash` fallbacks.
+
+Python is permitted only as **absolute last resort**: when Java and every other viable language have been considered and none can express the solution. It is not an equal alternative — it sits below all others.
+
+| Situation | Rule |
+|-----------|------|
+| "Python is popular for this so I'll use it" | ✗ Use Java or another language |
+| Pattern-completion ("I usually write Python here") | ✗ Use Java or another language |
+| Java can express it | Must use Java |
+| Java can't, but another language can | Use that other language |
+| No language but Python can express it | Python ✓ |
+
+### 2. User-Facing Domain Content — domain language
+
+When the user's content is genuinely about a specific technology, use that technology's language.
+
+| Domain | Allowed language |
+|--------|------------------|
+| PostgreSQL book | SQL, PL/pgSQL |
+| JavaScript project | JavaScript / TypeScript |
+| Go project | Go |
+| Rust project | Rust |
+| Content genuinely about Python (explaining its GIL, typing model, packaging, syntax) | Python |
+
+**Rule:** the domain language is allowed only when it is the *subject matter itself*, not when it's just convenient for the LLM to write.
+
+### Modern Java ≥ 25 idioms (for implementation work)
 
 | Pattern | Rule |
 |---------|------|
@@ -34,7 +74,7 @@ Detail rules live in `global-config/rules/*.md` and are loaded **on demand**. Do
 | Module imports (JEP 511) | `import module java.base;` — full module access |
 | External deps | `--class-path libs/*`; shebang: `#!/usr/bin/env -S java --class-path libs/*` |
 
-**Modern Java idioms preferred** (applies to scripts *and* code examples). Write idiomatic Java ≥ 25, not Java 8 with semicolons.
+**Write idiomatic Java ≥ 25**, not Java 8 with semicolons.
 
 | Feature | Use when |
 |---------|----------|
@@ -51,22 +91,6 @@ Detail rules live in `global-config/rules/*.md` and are loaded **on demand**. Do
 | Structured concurrency (`StructuredTaskScope`) | Fan-out/fan-in with bounded lifetime |
 
 **✗ Avoid:** classic `for` loops over collections when streams/enhanced-for fit; anonymous inner classes where a lambda works; `null` sentinels where `Optional` or sealed types fit; Bean-style getter/setter POJOs when a `record` fits; unchecked `instanceof` + cast when a pattern works.
-
-**Python allowed only when content is genuinely about Python** (its syntax, ecosystem, stdlib, typing, GIL, packaging, or documentation of same). For any scripting or automation task, use Java ≥ 25.
-
-## Code Examples in Prose / Explanations
-
-**Default language = Java ≥ 25.** Applies to any illustrative snippet, pseudo-code made concrete, or language-agnostic example in explanations, docs, chat responses, book content.
-
-| Situation | Language |
-|-----------|----------|
-| Generic example (algorithm, pattern, API shape) | Java ≥ 25 |
-| User's project is in language X | X |
-| Content is *genuinely about* Python (its syntax, ecosystem, stdlib, typing model, GIL, packaging, …) | Python ✓ |
-| "Python is popular for ML so use it" | ✗ use Java |
-| Pattern-completion ("examples usually use Python") | ✗ use Java |
-
-**Python allowed only when:** the example cannot be translated to another language without losing the point. If the same idea works in Java/Kotlin/TS/Go, use Java.
 
 ## Config File Style Rule
 
