@@ -1,12 +1,7 @@
 ---
 description: "Handles routing decisions when router is uncertain. Analyzes edge cases with deeper reasoning, determines the appropriate agent, and spawns it directly."
 mode: subagent
-model: hetzner/Qwen/Qwen3.8-27B
-options:
-  thinking:
-    type: enabled
-    clear_thinking: false
-  reasoningEffort: max
+model: proxy/lieutenant
 permission:
   edit: deny
   bash: deny

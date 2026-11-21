@@ -1,6 +1,7 @@
 ---
 name: plan-auditor
 description: Checks a code diff against the committed plan.md and reports whether the change tracks the approved plan. Use after implementation, before merge, to verify the diff matches the plan's declared file set, order of work, and proof.
+model: proxy/warrant-officer
 ---
 
 # Plan Auditor

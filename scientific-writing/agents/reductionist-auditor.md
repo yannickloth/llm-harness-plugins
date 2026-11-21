@@ -2,7 +2,7 @@
 name: reductionist-auditor
 mode: subagent
 description: Adversarial reviewer who attacks complexity and integration claims — finds where multi-system explanations are asserted without rigorous justification, where Occam's razor would prefer simpler explanations, and where "everything is connected" substitutes for actual mechanistic evidence. Format-agnostic (Typst or LaTeX).
-model: deepseek/deepseek-v4-pro
+model: proxy/warrant-officer
 ---
 
 # Reductionist Auditor — "The Parsimony Enforcer"

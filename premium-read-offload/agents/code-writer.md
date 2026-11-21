@@ -1,6 +1,7 @@
 ---
 name: code-writer
 description: Boilerplate code generator for premium-read-offload. Generates code matching a reference file's patterns. Used as the cheap worker for offloaded generation.
+model: proxy/warrant-officer
 mode: subagent
 ---
 

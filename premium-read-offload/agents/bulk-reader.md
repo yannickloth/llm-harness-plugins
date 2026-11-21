@@ -1,6 +1,7 @@
 ---
 name: bulk-reader
 description: Bulk file reader for premium-read-offload. Reads a corpus of files and answers a focused question with cited structured bullets. Used as the cheap worker for offloaded reads.
+model: proxy/warrant-officer
 mode: subagent
 ---
 

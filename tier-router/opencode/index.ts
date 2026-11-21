@@ -165,7 +165,7 @@ async function classifyViaOpencode(dataDir: string | null, prompt: string): Prom
   let proc: Bun.Subprocess<"pipe", "pipe", "ignore"> | null = null
   try {
     proc = spawnDetached(
-      ["opencode", "run", "--model", process.env.TIER_ROUTER_CLASSIFY_MODEL ?? "deepseek/deepseek-flash",
+      ["opencode", "run", "--model", process.env.TIER_ROUTER_CLASSIFY_MODEL ?? "proxy/sergeant",
        "--format", "json", "--title", "Tier classification", "--",
        "Classify the task in stdin per the system prompt. Reply with ONE word only."],
       { stdin: "pipe", stdout: "pipe", stderr: "ignore", env: { ...routerEnv, XDG_DATA_HOME: dataDir } },

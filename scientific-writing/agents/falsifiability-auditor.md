@@ -2,7 +2,7 @@
 name: falsifiability-auditor
 mode: subagent
 description: Audit hypothesis/speculation environments for falsifiable predictions, claim-registry consistency, competing hypotheses, and overclaiming language. Use when checking the intellectual rigor of scientific claims. Format-agnostic (Typst or LaTeX).
-model: deepseek/deepseek-v4-pro
+model: proxy/warrant-officer
 ---
 
 # Falsifiability Auditor

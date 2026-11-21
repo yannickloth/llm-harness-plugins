@@ -3,7 +3,7 @@ name: latex-notation-consistency-checker
 description: Audit LaTeX source files for notation consistency against a notation reconciliation document. Catch symbol drift across files.
 mode: subagent
 tools: [Read, Glob, Grep]
-model: haiku
+model: proxy/sergeant
 ---
 
 LaTeX notation consistency auditor. Verify notation matches the project's canonical notation document.

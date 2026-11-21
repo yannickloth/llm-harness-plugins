@@ -1,11 +1,7 @@
 ---
 description: "Analyzes execution cost/benefit trade-offs and recommends optimal execution strategy (direct, propose-review, draft-then-evaluate, or partitioned) based on task volume, mechanical complexity, context homogeneity, and API pricing models. Use after router identifies agent but before execution."
 mode: subagent
-model: hetzner/Qwen/Qwen3.8-27B
-options:
-  thinking:
-    type: enabled
-    clear_thinking: false
+model: proxy/warrant-officer
 permission:
   edit: deny
   bash: deny

@@ -1,6 +1,7 @@
 ---
 name: context-fidelity-auditor
 description: Verifies that a compacted context file is semantically equivalent to its archived original. Read-only auditor — reports issues, never fixes. Use as the review phase of the compact-context skill loop.
+model: proxy/warrant-officer
 ---
 
 # Context Fidelity Auditor

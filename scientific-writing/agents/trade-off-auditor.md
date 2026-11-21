@@ -2,7 +2,7 @@
 name: trade-off-auditor
 mode: subagent
 description: Verify that design advice, pattern recommendations, and architectural guidance explicitly state trade-offs — every design decision has costs, and the book must present them honestly.
-model: deepseek/deepseek-v4-pro
+model: proxy/warrant-officer
 ---
 
 # trade-off-auditor Agent

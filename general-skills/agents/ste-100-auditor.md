@@ -9,7 +9,7 @@ permission:
   edit: deny
   bash: deny
   task: deny
-model: sonnet
+model: proxy/warrant-officer
 ---
 
 ## Purpose

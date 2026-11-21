@@ -1,6 +1,7 @@
 ---
 name: content-splitter
 description: Split a monolithic Typst file into the canonical content hierarchy (part/chapter/section/subsection + typed subdirs per environment). Reads the global content-structure-convention.md. Iso-functional operation — all post-conditions must hold after split. Use when a chapter or section file contains prose and environment instances that should be extracted into typed subdirectory files.
+model: proxy/warrant-officer
 mode: subagent
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: memory-classifier
 description: One-shot YES/NO gate. Decides whether a user message is worth remembering.
+model: proxy/sergeant
 mode: subagent
 steps: 1
 permission:

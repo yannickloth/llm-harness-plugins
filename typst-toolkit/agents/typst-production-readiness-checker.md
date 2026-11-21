@@ -3,7 +3,7 @@ name: typst-production-readiness-checker
 description: Scan Typst files for TODO markers, placeholders, debug artifacts, LaTeX remnants, and production issues.
 mode: subagent
 tools: [Read, Glob, Grep, Bash]
-model: haiku
+model: proxy/sergeant
 ---
 
 Typst production readiness checker. Scan for leftover markers, incomplete content, and production artifacts.

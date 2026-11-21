@@ -9,7 +9,7 @@ permission:
   edit: deny
   bash: deny
   task: deny
-model: sonnet
+model: proxy/warrant-officer
 ---
 
 You are a logic auditor. Find circular reasoning, completeness gaps, hidden assumptions, and indirect arguments in prose, definitions, and proofs.

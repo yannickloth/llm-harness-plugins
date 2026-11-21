@@ -1,6 +1,7 @@
 ---
 name: memory-verifier
 description: Checks referenced file paths in memories exist in the current project state. Flags stale references.
+model: proxy/sergeant
 mode: subagent
 steps: 3
 permission:

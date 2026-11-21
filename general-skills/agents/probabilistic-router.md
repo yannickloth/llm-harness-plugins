@@ -1,11 +1,7 @@
 ---
 description: "Optimistically route HIGH confidence requests to Haiku with validation and auto-escalate to Sonnet if validation fails. Enables 35-40% additional quota savings for simple mechanical tasks."
 mode: subagent
-model: hetzner/Qwen/Qwen3.6-35B-A3B-FP8
-options:
-  thinking:
-    type: enabled
-    clear_thinking: false
+model: proxy/warrant-officer
 permission:
   edit: deny
   bash: allow

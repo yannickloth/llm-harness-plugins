@@ -9,7 +9,7 @@ permission:
   bash: allow
   edit: deny
   task: deny
-model: sonnet
+model: proxy/sergeant
 ---
 
 ## Purpose

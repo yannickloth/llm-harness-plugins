@@ -3,7 +3,7 @@ name: latex-xref-checker
 description: Verify all LaTeX cross-references (\ref, \cref, \pageref, \autoref, \nameref, \eqref) resolve within and across files.
 mode: subagent
 tools: [Read, Glob, Grep, Bash]
-model: haiku
+model: proxy/sergeant
 ---
 
 LaTeX cross-reference auditor. Verify all labels and references resolve.

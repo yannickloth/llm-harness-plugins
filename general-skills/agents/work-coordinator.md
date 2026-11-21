@@ -1,11 +1,7 @@
 ---
 description: "Manages parallel work queue with WIP limits to ensure 90%+ task completion. Use for multi-task coordination, dependency tracking, and stall recovery."
 mode: subagent
-model: hetzner/Qwen/Qwen3.6-35B-A3B-FP8
-options:
-  thinking:
-    type: enabled
-    clear_thinking: false
+model: proxy/warrant-officer
 permission:
   edit: allow
   bash: allow

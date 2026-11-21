@@ -1,6 +1,7 @@
 ---
 name: memory-dreamer
 description: Nightly memory consolidation. Merges, deduplicates, prunes, links.
+model: proxy/warrant-officer
 mode: subagent
 steps: 10
 permission:

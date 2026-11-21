@@ -16,108 +16,135 @@
   "plugin": [
     "../llm-harness-plugins/agentmem/opencode"
   ],
+  "model": "proxy/lieutenant",
+  "small_model": "proxy/sergeant",
   "agent":   {
     "cynic-auditor": {
       "file": "./scientific-writing/agents/cynic-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "sophist-auditor": {
       "file": "./scientific-writing/agents/sophist-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "strawman-auditor": {
       "file": "./scientific-writing/agents/strawman-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "reductionist-auditor": {
       "file": "./scientific-writing/agents/reductionist-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "devil-advocate-auditor": {
       "file": "./scientific-writing/agents/devil-advocate-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "falsifiability-auditor": {
       "file": "./scientific-writing/agents/falsifiability-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "definition-auditor": {
       "file": "./scientific-writing/agents/definition-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "definition-use-checker": {
       "file": "./scientific-writing/agents/definition-use-checker.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "trade-off-auditor": {
       "file": "./scientific-writing/agents/trade-off-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "scope-qualifier-checker": {
       "file": "./scientific-writing/agents/scope-qualifier-checker.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "misconception-auditor": {
       "file": "./scientific-writing/agents/misconception-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "document-health-monitor": {
       "file": "./scientific-writing/agents/document-health-monitor.md",
+      "model": "proxy/sergeant",
       "mode": "subagent"
     },
     "backward-reader-auditor": {
       "file": "./scientific-writing/agents/backward-reader-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "skimmer-auditor": {
       "file": "./scientific-writing/agents/skimmer-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "undergraduate-reader-auditor": {
       "file": "./scientific-writing/agents/undergraduate-reader-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "tone-auditor": {
       "file": "./scientific-writing/agents/tone-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "industry-architect-auditor": {
       "file": "./scientific-writing/agents/industry-architect-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "functional-paradigm-auditor": {
       "file": "./scientific-writing/agents/functional-paradigm-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "falsificationist-auditor": {
       "file": "./scientific-writing/agents/falsificationist-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "claim-substance-auditor": {
       "file": "./scientific-writing/agents/claim-substance-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "whataboutist-auditor": {
       "file": "./scientific-writing/agents/whataboutist-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "common-error-claim-auditor": {
       "file": "./scientific-writing/agents/common-error-claim-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "scenario-validity-auditor": {
       "file": "./scientific-writing/agents/scenario-validity-auditor.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "sophist-attacker": {
       "file": "./scientific-writing/agents/sophist-attacker.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "theory-devil-advocate": {
       "file": "./scientific-writing/agents/theory-devil-advocate.md",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     }
-  },
+  }
 
   // ---- Disabled plugins (re-enable individually) ----------------------
   //  "./datetime-inject/opencode"

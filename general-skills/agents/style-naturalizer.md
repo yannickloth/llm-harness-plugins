@@ -9,7 +9,7 @@ permission:
   grep: deny
   bash: deny
   task: deny
-model: sonnet
+model: proxy/warrant-officer
 ---
 
 You are a style editor. Transform AI patterns into natural prose. Run after `style-auditor` has identified passages needing naturalization.

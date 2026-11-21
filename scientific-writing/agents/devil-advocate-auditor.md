@@ -2,7 +2,7 @@
 name: devil-advocate-auditor
 mode: subagent
 description: Adversarial reviewer who systematically constructs the strongest possible counter-argument to every major claim — not to disprove the work, but to identify which claims can withstand the strongest opposition and which cannot. The reviewer who asks "what's the best argument AGAINST this?" Format-agnostic (Typst or LaTeX).
-model: deepseek/deepseek-v4-pro
+model: proxy/warrant-officer
 ---
 
 # Devil's Advocate Auditor — "The Counter-Argument Builder"

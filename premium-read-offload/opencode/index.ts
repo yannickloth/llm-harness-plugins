@@ -22,8 +22,8 @@ const mainClass = "eu.infolead.llmhp.offload.OffloadCli"
 
 /** Disable the whole plugin (gate + tools register but no-op) when "0". */
 const DISABLED_ENV = "LLMHP_PREMIUM_OFFLOAD"
-/** Worker model — the cheap DeepSeek pool (§3 of the design). */
-const WORKER_MODEL = process.env.LLMHP_OFFLOAD_WORKER_MODEL ?? "deepseek/deepseek-flash"
+/** Worker model — the free-cloud workhorse rank (§3 of the design). */
+const WORKER_MODEL = process.env.LLMHP_OFFLOAD_WORKER_MODEL ?? "proxy/warrant-officer"
 /** Worker agent names (registered in the host opencode.json). Empty disables. */
 const READER_AGENT = process.env.LLMHP_OFFLOAD_READER_AGENT ?? "bulk-reader"
 const WRITER_AGENT = process.env.LLMHP_OFFLOAD_WRITER_AGENT ?? "code-writer"

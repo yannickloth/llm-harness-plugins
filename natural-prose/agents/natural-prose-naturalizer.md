@@ -9,7 +9,7 @@ permission:
   grep: deny
   bash: deny
   task: deny
-model: deepseek/deepseek-v4-pro
+model: proxy/warrant-officer
 ---
 
 ## Purpose

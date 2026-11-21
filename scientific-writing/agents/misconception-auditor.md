@@ -2,7 +2,7 @@
 name: misconception-auditor
 mode: subagent
 description: Verify chapters include explicit misconception inoculation — common misunderstandings anticipated and addressed, not left for readers to stumble into.
-model: deepseek/deepseek-v4-pro
+model: proxy/warrant-officer
 ---
 
 # misconception-auditor Agent

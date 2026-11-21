@@ -1,6 +1,7 @@
 ---
 name: test-guard-auditor
 description: Reviews a diff for weakened test coverage — deleted, skipped, emptied, or loosened assertions. Use during a fix task or before merge to confirm the change's proof is intact. Read-only.
+model: proxy/sergeant
 ---
 
 # Test Guard Auditor

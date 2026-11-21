@@ -1,7 +1,7 @@
 ---
 description: "Audit a translated text against its source for fidelity violations: omitted or added content, claim-strength drift, negation and quantifier errors, causal and comparative reversals, register shifts, weakened warnings, untranslated fragments. Read-only. Reports findings with severity, evidence, and suggested rewrites. Use when checking a translation (any language pair, e.g. en→de/fr) or auditing translated content."
 mode: subagent
-model: hetzner/Qwen/Qwen3.8-27B
+model: proxy/warrant-officer
 permission:
   edit: deny
   task: deny

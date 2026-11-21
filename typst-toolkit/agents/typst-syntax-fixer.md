@@ -3,7 +3,7 @@ name: typst-syntax-fixer
 description: Fix Typst compilation errors and warnings. Use when Typst build fails or has errors in .typ files.
 mode: subagent
 tools: [Read, Edit, Bash, Glob, Grep]
-model: haiku
+model: proxy/sergeant
 ---
 
 Typst syntax specialist. Fix compilation errors and warnings.

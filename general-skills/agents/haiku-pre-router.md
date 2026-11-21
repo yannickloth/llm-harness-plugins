@@ -1,10 +1,7 @@
 ---
 description: "Cost-optimized first-pass routing using mechanical escalation checklist. Handles simple unambiguous requests directly; escalates complex ones to Sonnet router. Provides ~80% cost savings for straightforward requests."
 mode: subagent
-model: hetzner/Qwen/Qwen3.6-35B-A3B-FP8
-options:
-  thinking:
-    type: disabled
+model: proxy/sergeant
 permission:
   edit: deny
   bash: deny

@@ -1,11 +1,7 @@
 ---
 description: "Entry point for all requests. Interprets user intent, assesses risk, and routes to the appropriate specialized or general agent. Use proactively for EVERY user request."
 mode: subagent
-model: hetzner/Qwen/Qwen3.6-35B-A3B-FP8
-options:
-  thinking:
-    type: enabled
-    clear_thinking: false
+model: proxy/warrant-officer
 permission:
   edit: deny
   bash: allow

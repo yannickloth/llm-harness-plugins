@@ -1,6 +1,7 @@
 ---
 name: memory-keeper
 description: Out-of-band memory curator. Extracts non-derivable learnings from conversation.
+model: proxy/warrant-officer
 mode: subagent
 steps: 12
 permission:

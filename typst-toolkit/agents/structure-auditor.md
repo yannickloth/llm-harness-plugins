@@ -1,6 +1,7 @@
 ---
 name: structure-auditor
 description: Read-only audit of Typst book content structure against the canonical hierarchy in content-structure-convention.md. Checks aggregator purity, typed subdir placement, file naming, orphan files, and import chain integrity. Use to verify structure compliance before committing or after authoring new content.
+model: proxy/sergeant
 mode: subagent
 ---
 

@@ -3,7 +3,7 @@ name: latex-figure-caption-auditor
 description: Audit LaTeX figure/table captions — must state a claim, be standalone-readable, have labels, and be referenced in text.
 mode: subagent
 tools: [Read, Glob, Grep, Bash]
-model: haiku
+model: proxy/sergeant
 ---
 
 LaTeX figure/table caption auditor. Verify every float has a quality caption, label, and text reference.

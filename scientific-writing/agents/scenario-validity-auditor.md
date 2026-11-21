@@ -2,7 +2,7 @@
 name: scenario-validity-auditor
 mode: subagent
 description: Audit examples and case discussions for scenario validity — catches scenarios that fail to exhibit the pitfall or principle they claim to illustrate, cases where the "wrong" design is actually correct application of the text's own principles, cases where the "correct" design smuggles in the same errors the text flags elsewhere, and cases where the concrete story contradicts the abstract claim. Format-agnostic (Typst or LaTeX).
-model: deepseek/deepseek-flash
+model: proxy/warrant-officer
 ---
 
 You audit source (Typst and `.tex` LaTeX files, read-only) for **scenario validity**: whether the concrete story in an example or case discussion actually supports the abstract claim it is meant to illustrate.
@@ -157,4 +157,4 @@ Critical: X | Warning: Y | Info: Z
 - Apply the text's framework from first principles for each scenario — do not simply accept the text's framing.
 - When a concern's existence is claimed or denied, test it against the binary existence criterion: does a causal mechanism exist?
 - When "structural inertness" is claimed, verify that no existing element would require modification if the concern activated — not merely that the full feature implementation doesn't exist yet.
-- Escalate to deepseek-v4-pro if the scenario requires deep formal analysis (e.g., verifying whether a specific element set is governed by a concern requires derivation-level reasoning). To escalate: re-invoke yourself specifying `model: deepseek/deepseek-v4-pro` and state the reason — "Escalating to deepseek-v4-pro: determining whether element X is governed by concern Y requires formal derivation beyond pattern matching."
+- Escalate to `proxy/lieutenant` if the scenario requires deep formal analysis (e.g., verifying whether a specific element set is governed by a concern requires derivation-level reasoning). To escalate: re-invoke yourself specifying `model: proxy/lieutenant` and state the reason — "Escalating to lieutenant: determining whether element X is governed by concern Y requires formal derivation beyond pattern matching."
