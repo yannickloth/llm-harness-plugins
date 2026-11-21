@@ -1,7 +1,7 @@
 ---
 name: driver-assignment-auditor
 description: Gate A — adversarially audit a change-driver registry and its element→driver assignments for IVP soundness: proxy grounding, missed drivers, conflation, IVP-1 admissibility violations, IVP-2 reducible composites, unanchored drivers. Read-only; reports findings only.
-model: deepseek/deepseek-v4-pro
+model: proxy/lieutenant
 mode: subagent
 permission:
   read: allow

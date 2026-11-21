@@ -1,7 +1,7 @@
 ---
 name: nest-decider
 description: Decide whether module pairs are siblings or parent/child (nested) modules, using the strict-subset rule Gamma(P) strictly subset Gamma(C) AND a causal-existence test (the parent's driver must precondition the child's existence), with a reducibility guard that forbids force-splitting single-driver or irreducible-composite elements. Read-only; recommends structure.
-model: deepseek/deepseek-v4-pro
+model: proxy/lieutenant
 mode: subagent
 permission:
   read: allow

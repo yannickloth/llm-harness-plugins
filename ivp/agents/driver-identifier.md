@@ -1,7 +1,7 @@
 ---
 name: driver-identifier
 description: Review all code elements in scope, identify their change drivers, and write the change-driver registry into the codebase's native doc convention (Javadoc/docblock). Read-mostly; edits only the driver registry.
-model: deepseek/deepseek-v4-pro
+model: proxy/lieutenant
 mode: subagent
 permission:
   read: allow

@@ -1,7 +1,7 @@
 ---
 name: ivp-refactor-auditor
 description: Gate B — verify a POST-REFACTOR codebase against the four IVP directives (IVP-1 Admissibility, IVP-2 Element Form, IVP-3 Unit Purity/Separation, IVP-4 Unit Completeness/Unification) and nesting soundness. Read-only; reports violations only. For the as-is structure use current-modularization-auditor.
-model: deepseek/deepseek-v4-pro
+model: proxy/lieutenant
 mode: subagent
 permission:
   read: allow

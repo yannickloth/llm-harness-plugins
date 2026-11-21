@@ -1,7 +1,7 @@
 ---
 name: gamma-modularizer
 description: Sort code elements into modules by gamma-equivalence — group elements with identical change-driver sets into the same module (IVP-4 Unification), split elements with different driver sets apart (IVP-3 Separation). Edits module boundaries, not driver assignments.
-model: deepseek/deepseek-v4-pro
+model: proxy/lieutenant
 mode: subagent
 permission:
   read: allow
