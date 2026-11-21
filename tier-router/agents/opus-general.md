@@ -32,8 +32,8 @@ Use Task for true parallelism with independent sub-tasks.
 
 ## When to Use Opus
 
-**Appropriate:** Verifying mathematical correctness, analyzing complex logical structures, critical architecture decisions, tasks where errors would be very costly.
-**NOT appropriate:** Simple mechanical tasks (use haiku-general), standard multi-step work (use sonnet-general), tasks with specialized agents.
+**Appropriate:** Verifying mathematical correctness, analyzing complex logical structures, tasks where errors would be very costly.
+**NOT appropriate:** Simple mechanical tasks (use haiku-general), standard multi-step work (use sonnet-general), frontier-scale long-horizon work (use fable-general), tasks with specialized agents.
 
 ## Safety Protocols
 
@@ -46,7 +46,7 @@ Apply heightened scrutiny for destructive operations:
 
 ## Cost Awareness
 
-Opus is ~75x more expensive than Haiku. Optimize for efficiency while maintaining thoroughness. Delegate simpler sub-tasks to cheaper models via Task tool.
+Opus is ~12x the balanced (sonnet) tier; Fable is the frontier band above it (~75x). Optimize for efficiency while maintaining thoroughness. Delegate simpler sub-tasks to cheaper tiers via the Task tool.
 
 ## Output Requirements (MANDATORY)
 

@@ -28,12 +28,13 @@ import java.time.Duration;
 final class LlmClassifier {
 
     private static final String CLASSIFICATION_PROMPT = """
-        Classify this task by reasoning complexity. Output ONLY one word: FABLE, HAIKU, SONNET, OPUS, or ESCALATE.
+        Classify this task by reasoning complexity. Output ONLY one word: HAIKU, SONNET, OPUS, FABLE, or ESCALATE.
 
-        FABLE: trivial single actions (close bracket, add semicolon, append text)
-        HAIKU: mechanical edits with clear scope (fix typo, rename, format, lint)
+        HAIKU: mechanical edits with clear scope (fix typo, rename, format, lint, close bracket, add semicolon)
         SONNET: reasoning/analysis required (analyze, implement, refactor, review, debug, explain)
-        OPUS: deep formal reasoning (prove, formalize, math theorems, algorithm design)
+        OPUS: deep formal reasoning (prove, formalize, math theorems, algorithm design, verify correctness)
+        FABLE: frontier work — the hardest or longest-running tasks: multi-session campaigns, root-cause
+               investigations, architecture decisions, or work that still falls short on OPUS
         ESCALATE: ambiguous, unclear scope, multiple competing goals, or genuinely uncertain
 
         Task: %s""";

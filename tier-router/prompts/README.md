@@ -1,27 +1,31 @@
 ---
 name: tier-router
-description: Prompt-intercepting multi-tier router that classifies user requests by reasoning complexity, reformulates prompts with SOTA prompt engineering criteria, and dispatches to the cheapest sufficient model tier.
+description: Prompt-intercepting tier router that classifies a request by reasoning complexity, reformulates it with SOTA prompt criteria, and recommends (optionally dispatches to) the cheapest sufficient tier agent.
+---
 
 ## How It Works
 
-1. **Intercept**: `UserPromptSubmit` hook captures every user prompt before the LLM sees it
-2. **Classify**: 8-trigger mechanical escalation checklist + keyword tier matching → determines which tier (fable/haiku/sonnet/opus) is needed
-3. **Reformulate**: Rewrites the prompt with SOTA criteria:
-   - Conciseness directive (critical for Opus 5+)
+1. **Intercept**: the `chat.message` (v1) / `session.hook("prompt")` (v2) hook sees each user prompt before the model does.
+2. **Classify**: LLM classifier for substantial prompts; otherwise the Java `RouterCli` (ambiguity, skill-axis rank match, keyword bands). Tier order is **Haiku < Sonnet < Opus < Fable**.
+3. **Reformulate**: rewrites the prompt with SOTA criteria:
+   - Conciseness directive
    - Output format constraint ("Return usable results")
    - Uncertainty permission ("If unsure, say so")
    - Strips AI-style anti-patterns (em-dash abuse, weak openers, template language)
-4. **Ambiguity check**: Detects vague requests ("fix the bug", "update the config") and asks clarification before routing
-5. **Dispatch**: Injects `<routing-recommendation>` directive into context → main agent spawns correct tier agent
+4. **Ambiguity check**: detects vague requests ("fix the bug", "update the config") and asks for clarification before routing.
+5. **Dispatch**: the annotation names the recommended rank and agent. With `TIER_ROUTER_DISPATCH` (default), it instructs the model to delegate to `<tier>-general` via the Task tool; with `TIER_ROUTER_DISPATCH=0` it stays advisory. Annotation itself is opt-in via `TIER_ROUTER_ANNOTATE=1`.
 
 ## Tier Agents
 
-| Tier | Model | Cost | Use When |
-|------|-------|------|----------|
-| fable-general | fable | 0.25x | Trivial completions: add semicolons, close brackets |
-| haiku-general | haiku | 1x | Mechanical: typos, format, rename, sort |
-| sonnet-general | sonnet | 12x | Judgment: analyze, implement, refactor, review |
-| opus-general | opus | 75x | Deep reasoning: proofs, formal verification |
+| Tier | Agent | Rank | Relative cost | Use When |
+|------|-------|------|---------------|----------|
+| haiku | `haiku-general` | `proxy/sergeant` | 0.25x | Mechanical: typos, format, rename, sort |
+| sonnet | `sonnet-general` | `proxy/warrant-officer` | 1x | Judgment: analyze, implement, refactor, review |
+| opus | `opus-general` | `proxy/lieutenant` | 12x | Deep reasoning: proofs, formal verification |
+| fable | `fable-general` | `proxy/lieutenant-colonel` | 75x | Frontier: hardest/longest-running work, architecture |
+
+Fable is the top band and explicit-only: no keyword rule assigns it, and no
+lower tier auto-escalates to it.
 
 ## Escalation Triggers
 
@@ -44,11 +48,10 @@ Add to `opencode.json`:
 {
   "plugin": ["./tier-router/opencode/index.ts"],
   "agent": {
-    "fable-general": { "mode": "subagent", "model": "proxy/sergeant" },
     "haiku-general": { "mode": "subagent", "model": "proxy/sergeant" },
     "sonnet-general": { "mode": "subagent", "model": "proxy/warrant-officer" },
-    "opus-general": { "mode": "subagent", "model": "proxy/lieutenant" }
+    "opus-general": { "mode": "subagent", "model": "proxy/lieutenant" },
+    "fable-general": { "mode": "subagent", "model": "proxy/lieutenant-colonel" }
   }
 }
 ```
-

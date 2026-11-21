@@ -240,6 +240,16 @@ final class Classifier {
         var lower = request.toLowerCase();
         var hasFile = explicitFileMentioned(request);
 
+        // Trivial exact edits — the Haiku band (fastest, cheapest).
+        var trivialPatterns = List.of(
+            Pattern.compile("\\b(add|close)\\s+(semicolon|bracket|paren|brace)\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\b(append|prepend)\\b")
+        );
+        for (var p : trivialPatterns) {
+            if (p.matcher(lower).find() && hasFile) return Tier.HAIKU;
+        }
+
+        // Mechanical edits with clear scope — also Haiku.
         var haikuHighConf = List.of(
             Pattern.compile("fix\\s+(typo|spelling|syntax)"),
             Pattern.compile("format\\s+(code|file)"),
@@ -256,26 +266,23 @@ final class Classifier {
             }
         }
 
+        // Deep formal reasoning — Opus.
         var opusKeywords = List.of(
             "prove", "formalize", "verify correctness", "mathematical",
             "theorem", "algorithm design", "proof"
         );
         if (opusKeywords.stream().anyMatch(lower::contains)) return Tier.OPUS;
 
+        // Reasoning / analysis — Sonnet.
         var sonnetKeywords = List.of(
             "analyze", "implement", "refactor", "integrate",
             "review", "optimize", "debug", "investigate"
         );
         if (sonnetKeywords.stream().anyMatch(lower::contains)) return Tier.SONNET;
 
-        var fablePatterns = List.of(
-            Pattern.compile("\\b(add|close)\\s+(semicolon|bracket|paren|brace)\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\b(append|prepend)\\b")
-        );
-        for (var p : fablePatterns) {
-            if (p.matcher(lower).find() && hasFile) return Tier.FABLE;
-        }
-
+        // Fable has no keyword band: frontier work is explicit-only (the LLM
+        // classifier or the caller selects it), matching Claude Code's rule
+        // that no Fable model is ever an account default.
         if (hasFile) return Tier.HAIKU;
         return null;
     }
@@ -283,15 +290,15 @@ final class Classifier {
     double keywordConfidence(String request, Tier matched) {
         var lower = request.toLowerCase();
         return switch (matched) {
-            case FABLE -> countMatches(lower, Set.of(
-                "add semicolon", "close bracket", "close paren", "close brace",
-                "append", "prepend"
-            )) > 0 ? 0.9 : 0.0;
+            // No keyword band: frontier work is explicit-only.
+            case FABLE -> 0.0;
             case HAIKU -> {
                 var matches = countMatches(lower, Set.of(
                     "fix", "typo", "syntax", "format", "lint", "rename",
                     "correct", "spelling", "sort", "import",
                     "add semicolon", "add comma", "add bracket", "add import",
+                    "close bracket", "close paren", "close brace",
+                    "append", "prepend",
                     "remove trailing whitespace", "remove unused"
                 ));
                 yield matches > 0 ? Math.min(0.9, 0.6 + matches * 0.1) : 0.5;

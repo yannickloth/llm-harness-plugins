@@ -1,6 +1,8 @@
 # tier-router — Assumptions
 
-Intercepts user prompts, classifies reasoning complexity (keyword rules + optional LLM classifier + skill-axis fleet match), reformulates the prompt, and annotates the message (opt-in) with tier directives. A Java 25 CLI (`RouterCli`) does the keyword/fleet/budget logic; the OpenCode plugin (TS) spawns it and a headless `opencode run` for LLM classification.
+Intercepts user prompts, classifies reasoning complexity (keyword rules + optional LLM classifier + skill-axis rank match), reformulates the prompt, and annotates the message (opt-in) with tier directives and a rank/agent recommendation. A Java 25 CLI (`RouterCli`) does the keyword/rank/budget logic; the OpenCode plugin (TS) spawns it and a headless `opencode run` for LLM classification.
+
+Tier order is Claude's real lineup, ascending: **Haiku < Sonnet < Opus < Fable**. Each tier maps to a rank seat: haiku → `sergeant`, sonnet → `warrant-officer`, opus → `lieutenant`, fable → `lieutenant-colonel`. Fable has no keyword band and is explicit-only (LLM classifier or caller), mirroring Claude Code's rule that no Fable model is an account default.
 
 ## OpenCode API (hooks used, v1 vs v2, version sensitivity)
 
@@ -9,13 +11,14 @@ Intercepts user prompts, classifies reasoning complexity (keyword rules + option
 - v2 hooks: `ctx.session.hook("prompt")` (replaces `event.prompt.text` by assignment), `ctx.agent.transform`, `ctx.tool.transform` (`editor.add` with JSON Schema, `{ content }` results). ⚠ Shapes follow the datetime-inject v2 port, verified against opencode 2.x.
 - The v2 prompt hook is async (awaits classification). If the host does not await prompt hooks, the message passes through unannotated. ⚠
 - Plugin API `@opencode-ai/plugin` 1.19.3 (`tool`, `Plugin` types).
-- Agents are registered by the plugin itself (`shared/agents.ts`): `tools:` and `permissionMode:` frontmatter are ignored; a bare `model:` alias (no `provider/` prefix) is dropped. All four tier agents pin `proxy/<rank>` refs (`sergeant` ×2, `warrant-officer`, `lieutenant`), which register as-is.
+- Agents are registered by the plugin itself (`shared/agents.ts`): `tools:` and `permissionMode:` frontmatter are ignored; a bare `model:` alias (no `provider/` prefix) is dropped. All four tier agents pin `proxy/<rank>` refs (`sergeant`, `warrant-officer`, `lieutenant`, `lieutenant-colonel`), which register as-is.
 
 ## Environment (env vars, binaries, OS/process)
 
 - `java` on PATH, JDK 25+. ⚠ `RouterCli` uses a package-private instance `void main(String[])` — accepted only by the JEP 512 launcher (final in JDK 25); JDK ≤ 24 rejects it.
 - `opencode` binary on PATH for the headless LLM classifier. ⚠
 - `TIER_ROUTER_ANNOTATE` — unset: prompt hook is a no-op (default); `1`: annotation replaces the message text.
+- `TIER_ROUTER_DISPATCH` — with annotate: unset/`1` (default) tells the model to delegate the task to the tier agent (`<tier>-general`) via the Task tool; `0` keeps the annotation advisory and handles the request directly.
 - `TIER_ROUTER_LEAN` — `1` (with annotate): send rewritten prompt + directives only.
 - `TIER_ROUTER_CLASSIFY_MODEL` — default `proxy/sergeant` (rank gateway) for the `opencode run` classifier. ⚠
 - `TIER_ROUTER_CLASSIFY_DATA_DIR` — explicit classify data home; else `$XDG_RUNTIME_DIR/tier-router-classify`; else `os.tmpdir()/tier-router-classify`.
@@ -65,10 +68,11 @@ Intercepts user prompts, classifies reasoning complexity (keyword rules + option
 
 ## Data & LLM behavior (trusted formats, model assumptions)
 
-- LLM classifier reply is trusted as one token: `FABLE|HAIKU|SONNET|OPUS|ESCALATE` (trailing punctuation stripped). Anything else → keyword fallback. ⚠
+- LLM classifier reply is trusted as one token: `HAIKU|SONNET|OPUS|FABLE|ESCALATE` (trailing punctuation stripped). Anything else → keyword fallback. ⚠
 - Java LLM reply is parsed by string-scanning for the first `"content":"` after `"message"`; the unescape drops backslash escapes (harmless for one-word replies).
 - Ambiguity = fixed 7-phrase substring list, skipped when a path/extension is present.
 - Skill-axis match = ≥ 2 substring keyword hits in one axis; substring matching causes over-hits (e.g. "finance" ⊃ "nan", "summary" ⊃ "sum").
 - Tier keywords are regex/substring heuristics; escalation triggers use `contains` (e.g. "install" ⊃ "all").
-- The routing decision (tier/fleet) is emitted as annotation text only. ⚠ Nothing in the plugin selects a model or dispatches a Task from it; the session model serves the prompt regardless of the computed tier.
-- `fleet_models` appears in the annotation as plain text; no code consumes it for dispatch.
+- The plugin cannot switch the session model: the annotation hook mutates prompt text only. With `TIER_ROUTER_DISPATCH` (default) it instructs the model to delegate to the tier agent, which is the only path from classification to a different rank; the plugin itself still dispatches nothing.
+- `fleet_models` are rank names (or an explicit served id where the rank is not deployed); they appear in the annotation as the suggested rank list.
+- An already-annotated prompt (`<prompt-annotation>` / `<tier-router:`) is never annotated again, so a tier subagent's delegated prompt does not bounce back to itself.

@@ -24,6 +24,12 @@ const routerEnv: Record<string, string> = {
  * self-quote, no duplication. */
 const ANNOTATE_ENV = "TIER_ROUTER_ANNOTATE"
 
+/** When annotation is on, also tell the model to delegate the task to the
+ * tier's agent (the only way a prompt plugin can influence model selection).
+ * Set to "0" to keep the annotation advisory and handle the task directly. */
+const DISPATCH_ENV = "TIER_ROUTER_DISPATCH"
+const DISPATCH_ENABLED = process.env[DISPATCH_ENV] !== "0"
+
 /** When TIER_ROUTER_ANNOTATE=1 AND this is "1", send only the rewritten prompt
  * plus the tier directives — no self-quote annotation block. Leaner than the
  * full annotation: still single-prompt, but minimal. */
@@ -318,12 +324,17 @@ async function checkAmbiguity(prompt: string): Promise<string | null> {
   return null
 }
 
+/** Tier -> rank seat on the LiteLLM ladder. Fable is explicit-only, like
+ * Claude Code's fable alias: no tier below it ever defaults upward. */
+const TIER_RANKS: Record<string, string> = {
+  haiku: "sergeant",
+  sonnet: "warrant-officer",
+  opus: "lieutenant",
+  fable: "lieutenant-colonel",
+}
+
 const TIER_DIRECTIVES: Record<string, string[]> = {
-  fable: ["Be concise. Answer directly. Minimize output tokens."],
-  haiku: [
-    "Be concise. Answer directly. Minimize output tokens.",
-    "If uncertain or missing info, say so explicitly. Never invent facts or fabricate output.",
-  ],
+  haiku: ["Be concise. Answer directly. Minimize output tokens."],
   sonnet: [
     "Be concise. Answer directly. Minimize output tokens.",
     "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
@@ -332,6 +343,13 @@ const TIER_DIRECTIVES: Record<string, string[]> = {
     "Be concise. Answer directly. Minimize output tokens.",
     "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
     "If uncertain or missing info, say so explicitly. Never invent facts or fabricate output.",
+  ],
+  fable: [
+    "Be concise. Answer directly. Minimize output tokens.",
+    "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
+    "If uncertain or missing info, say so explicitly. Never invent facts or fabricate output.",
+    "Plan before acting. Investigate the relevant code and constraints before changing anything.",
+    "Verify your work before reporting it: run the check, read the diff, or compile the change.",
   ],
 }
 
@@ -366,13 +384,19 @@ function buildPromptContext(result: {
   const tierDirectives = TIER_DIRECTIVES[result.tier] ?? TIER_DIRECTIVES.sonnet
   const directiveBlock = `Prompt standards to apply:\n${tierDirectives.map(d => `- ${d}`).join("\n")}`
 
-  const classification = `Classification: ${result.decision} (confidence ${result.confidence.toFixed(2)}). ${result.reason}.`
+  const rank = TIER_RANKS[result.tier] ?? TIER_RANKS.sonnet
+  const agent = `${result.tier}-general`
+  const classification = `Classification: ${result.decision} (confidence ${result.confidence.toFixed(2)}). ${result.reason}. Recommended rank: proxy/${rank} (agent ${agent}).`
   const fleet = result.fleet_models.length
-    ? `\nFleet model(s): ${result.fleet_models.join(", ")}`
+    ? `\nSuggested rank(s): ${result.fleet_models.join(", ")}`
     : ""
+  const routing = DISPATCH_ENABLED
+    ? `Routing: unless you are already the ${agent} subagent, delegate this task to ${agent} with the Task tool — it runs on proxy/${rank}. Do not solve ${result.tier}-band work on a lower rank.`
+    : `Routing: ${result.tier} band (recommended proxy/${rank} / ${agent}). Handle the request directly.`
 
   return `<prompt-annotation>
-The user's request below is annotated to the highest prompt standard. Apply the standards and problem fixes below when answering. Do NOT dispatch to another agent — handle the user's request directly.
+${routing}
+Apply the standards and problem fixes below when answering.
 
 ${problemBlock}
 
@@ -398,11 +422,12 @@ function buildLeanRewrite(result: {
   rewritten_prompt: string
 }): string {
   const tierDirectives = TIER_DIRECTIVES[result.tier] ?? TIER_DIRECTIVES.sonnet
+  const rank = TIER_RANKS[result.tier] ?? TIER_RANKS.sonnet
   const lines = [
-    `<tier-router:${result.tier} conf=${result.confidence.toFixed(2)}>`,
+    `<tier-router:${result.tier} rank=proxy/${rank} conf=${result.confidence.toFixed(2)}>`,
     ...tierDirectives.map(d => `- ${d}`),
   ]
-  if (result.fleet_models.length) lines.push(`- fleet: ${result.fleet_models.join(", ")}`)
+  if (result.fleet_models.length) lines.push(`- suggested rank: ${result.fleet_models.join(", ")}`)
   lines.push("", result.rewritten_prompt)
   return lines.join("\n")
 }
@@ -449,6 +474,9 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
       const textPart = output.parts.find(p => p.type === "text") as { id: string; sessionID: string; messageID: string; text: string } | undefined
       if (!textPart) return
       if (!textPart.text.trim()) return
+      // A tier subagent's delegated prompt is already annotated; re-annotating
+      // it would bounce the Task call back to itself.
+      if (textPart.text.includes("<prompt-annotation>") || textPart.text.includes("<tier-router:")) return
 
       // Annotation (and the rewrite) is opt-in via TIER_ROUTER_ANNOTATE=1.
       // When unset, leave the user's message byte-for-byte untouched — the hook
@@ -579,6 +607,7 @@ export default {
       if (process.env[NO_SUBSPAWN_ENV] === "1") return
       const text: string | undefined = event?.prompt?.text
       if (!text || !text.trim()) return
+      if (text.includes("<prompt-annotation>") || text.includes("<tier-router:")) return
       if (process.env[ANNOTATE_ENV] !== "1") return
 
       const key: string = event?.messageID ?? event?.prompt?.messageID ?? `${event?.sessionID ?? "?"}:${text.slice(0, 64)}`
