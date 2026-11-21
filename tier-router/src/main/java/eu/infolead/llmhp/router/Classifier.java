@@ -240,17 +240,17 @@ final class Classifier {
         var lower = request.toLowerCase();
         var hasFile = explicitFileMentioned(request);
 
-        // Trivial exact edits — the Haiku band (fastest, cheapest).
+        // Trivial exact edits — the sergeant band (fastest, cheapest).
         var trivialPatterns = List.of(
             Pattern.compile("\\b(add|close)\\s+(semicolon|bracket|paren|brace)\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\b(append|prepend)\\b")
         );
         for (var p : trivialPatterns) {
-            if (p.matcher(lower).find() && hasFile) return Tier.HAIKU;
+            if (p.matcher(lower).find() && hasFile) return Tier.SERGEANT;
         }
 
-        // Mechanical edits with clear scope — also Haiku.
-        var haikuHighConf = List.of(
+        // Mechanical edits with clear scope — also sergeant.
+        var sergeantHighConf = List.of(
             Pattern.compile("fix\\s+(typo|spelling|syntax)"),
             Pattern.compile("format\\s+(code|file)"),
             Pattern.compile("lint\\s+"),
@@ -260,34 +260,34 @@ final class Classifier {
             Pattern.compile("correct\\s+(spelling|typo)"),
             Pattern.compile("sort\\s+(imports|lines)")
         );
-        for (var p : haikuHighConf) {
+        for (var p : sergeantHighConf) {
             if (p.matcher(lower).find() && hasFile) {
-                return Tier.HAIKU;
+                return Tier.SERGEANT;
             }
         }
 
-        // Deep formal reasoning — Opus.
-        var opusKeywords = List.of(
+        // Deep formal reasoning — lieutenant.
+        var lieutenantKeywords = List.of(
             "prove", "formalize", "verify correctness", "mathematical",
             "theorem", "algorithm design", "proof"
         );
-        if (opusKeywords.stream().anyMatch(lower::contains)) return Tier.OPUS;
+        if (lieutenantKeywords.stream().anyMatch(lower::contains)) return Tier.LIEUTENANT;
 
-        // Reasoning / analysis — Sonnet.
-        var sonnetKeywords = List.of(
+        // Reasoning / analysis — warrant-officer.
+        var warrantOfficerKeywords = List.of(
             "analyze", "implement", "refactor", "integrate",
             "review", "optimize", "debug", "investigate"
         );
-        if (sonnetKeywords.stream().anyMatch(lower::contains)) return Tier.SONNET;
+        if (warrantOfficerKeywords.stream().anyMatch(lower::contains)) return Tier.WARRANT_OFFICER;
 
-        if (hasFile) return Tier.HAIKU;
+        if (hasFile) return Tier.SERGEANT;
         return null;
     }
 
     double keywordConfidence(String request, Tier matched) {
         var lower = request.toLowerCase();
         return switch (matched) {
-            case HAIKU -> {
+            case SERGEANT -> {
                 var matches = countMatches(lower, Set.of(
                     "fix", "typo", "syntax", "format", "lint", "rename",
                     "correct", "spelling", "sort", "import",
@@ -298,14 +298,14 @@ final class Classifier {
                 ));
                 yield matches > 0 ? Math.min(0.9, 0.6 + matches * 0.1) : 0.5;
             }
-            case SONNET -> {
+            case WARRANT_OFFICER -> {
                 var matches = countMatches(lower, Set.of(
                     "analyze", "implement", "refactor", "integrate",
                     "review", "optimize", "debug", "investigate"
                 ));
                 yield matches > 0 ? Math.min(0.95, 0.65 + matches * 0.1) : 0.0;
             }
-            case OPUS -> {
+            case LIEUTENANT -> {
                 var matches = countMatches(lower, Set.of(
                     "prove", "formalize", "verify", "mathematical",
                     "theorem", "proof"

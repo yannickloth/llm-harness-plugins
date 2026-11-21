@@ -8,22 +8,25 @@ public final class ClassifierTest {
     public static void main(String... args) {
         var c = new Classifier();
 
-        // ── tier order: Haiku < Sonnet < Opus (no band above a served rank) ──
-        check(Tier.HAIKU.relativeCost() < Tier.SONNET.relativeCost(), "haiku cheaper than sonnet");
-        check(Tier.SONNET.relativeCost() < Tier.OPUS.relativeCost(), "sonnet cheaper than opus");
+        // ── bands: sergeant < warrant-officer < lieutenant ──
+        check(Tier.SERGEANT.relativeCost() < Tier.WARRANT_OFFICER.relativeCost(), "sergeant cheaper than warrant-officer");
+        check(Tier.WARRANT_OFFICER.relativeCost() < Tier.LIEUTENANT.relativeCost(), "warrant-officer cheaper than lieutenant");
         check(Tier.values().length == 3, "three bands");
+        check(Tier.WARRANT_OFFICER.proxyName().equals("warrant-officer"), "proxy name is hyphenated");
+        check(Tier.from("warrant-officer") == Tier.WARRANT_OFFICER, "hyphenated tier parses");
+        check(Tier.from("lieutenant") == Tier.LIEUTENANT, "lieutenant parses");
 
         // ── keyword bands ──
-        check(c.keywordMatch("add semicolon to Foo.java") == Tier.HAIKU, "semicolon -> haiku");
-        check(c.keywordMatch("close bracket in Foo.java") == Tier.HAIKU, "close bracket -> haiku");
-        check(c.keywordMatch("rename foo to bar in Foo.java") == Tier.HAIKU, "rename -> haiku");
-        check(c.keywordMatch("implement the parser in Parser.java") == Tier.SONNET, "implement -> sonnet");
-        check(c.keywordMatch("prove the theorem") == Tier.OPUS, "prove -> opus");
-        check(c.keywordMatch("formalize the invariant") == Tier.OPUS, "formalize -> opus");
+        check(c.keywordMatch("add semicolon to Foo.java") == Tier.SERGEANT, "semicolon -> sergeant");
+        check(c.keywordMatch("close bracket in Foo.java") == Tier.SERGEANT, "close bracket -> sergeant");
+        check(c.keywordMatch("rename foo to bar in Foo.java") == Tier.SERGEANT, "rename -> sergeant");
+        check(c.keywordMatch("implement the parser in Parser.java") == Tier.WARRANT_OFFICER, "implement -> warrant-officer");
+        check(c.keywordMatch("prove the theorem") == Tier.LIEUTENANT, "prove -> lieutenant");
+        check(c.keywordMatch("formalize the invariant") == Tier.LIEUTENANT, "formalize -> lieutenant");
         check(c.keywordMatch("design a new architecture") == null, "design has no keyword band");
 
         // ── confidence ──
-        check(c.keywordConfidence("add semicolon to Foo.java", Tier.HAIKU) > 0.0, "haiku confidence positive");
+        check(c.keywordConfidence("add semicolon to Foo.java", Tier.SERGEANT) > 0.0, "sergeant confidence positive");
 
         // ── skill-axis table carries gateway names ──
         var json = """

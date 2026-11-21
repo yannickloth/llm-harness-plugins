@@ -143,10 +143,10 @@ Resolved from (first match wins):
 
 const CLASSIFY_SYSTEM = [
   "You are a prompt classifier. Classify the user's task by reasoning complexity.",
-  "Reply with ONLY one word: HAIKU, SONNET, OPUS, or ESCALATE.",
-  "HAIKU: mechanical edits with clear scope (fix typo, rename, format, lint, close bracket, add semicolon).",
-  "SONNET: reasoning/analysis required (analyze, implement, refactor, review, debug, explain).",
-  "OPUS: deep formal reasoning (prove, formalize, math theorems, algorithm design).",
+  "Reply with ONLY one word: SERGEANT, WARRANT-OFFICER, LIEUTENANT, or ESCALATE.",
+  "SERGEANT: mechanical edits with clear scope (fix typo, rename, format, lint, close bracket, add semicolon).",
+  "WARRANT-OFFICER: reasoning/analysis required (analyze, implement, refactor, review, debug, explain).",
+  "LIEUTENANT: deep formal reasoning (prove, formalize, math theorems, algorithm design, verify correctness).",
   "ESCALATE: ambiguous, unclear scope, multiple competing goals, or genuinely uncertain.",
 ].join("\n")
 
@@ -190,15 +190,14 @@ async function classifyViaOpencode(dataDir: string | null, prompt: string): Prom
     if (out == null) return null
     const text = extractOpencodeText(out).toUpperCase()
     if (!text) return null
-    // Take the first token and strip trailing punctuation so the common
-    // "HAIKU.", "SONNET!", "OPUS," outputs still match. Exact-token equality
-    // (not startsWith) still rejects truncated/concatenated tokens like
-    // "HAIKUSTUFF", so partial output falls through to the keyword router.
-    const token = text.split(/\s+/)[0].replace(/[.,!?;:)]+$/g, "")
+    // Normalize the whole reply (drop punctuation/space) so "WARRANT-OFFICER",
+    // "warrant officer" and "LIEUTENANT." all match. Exact equality still
+    // rejects a reply carrying extra words, so it falls through to keywords.
+    const token = text.replace(/[^A-Z]/g, "")
     if (token === "ESCALATE") return { decision: "escalate", tier: "", reason: "LLM: uncertain scope", confidence: 0.7 }
-    if (token === "HAIKU") return { decision: "direct", tier: "haiku", reason: "LLM: mechanical edit with clear scope", confidence: 0.9 }
-    if (token === "OPUS") return { decision: "direct", tier: "opus", reason: "LLM: deep formal reasoning", confidence: 0.9 }
-    if (token === "SONNET") return { decision: "direct", tier: "sonnet", reason: "LLM: reasoning/analysis required", confidence: 0.9 }
+    if (token === "SERGEANT") return { decision: "direct", tier: "sergeant", reason: "LLM: mechanical edit with clear scope", confidence: 0.9 }
+    if (token === "WARRANTOFFICER") return { decision: "direct", tier: "warrant-officer", reason: "LLM: reasoning/analysis required", confidence: 0.9 }
+    if (token === "LIEUTENANT") return { decision: "direct", tier: "lieutenant", reason: "LLM: deep formal reasoning", confidence: 0.9 }
     return null
   } catch (e) {
     console.warn(`[tier-router] opencode LLM classification failed: ${(e as Error).message}`)
@@ -257,9 +256,9 @@ async function classifyPrompt(dataDir: string | null, prompt: string): Promise<C
   if (!javaOut) {
     const fallback = {
       decision: "escalate",
-      tier: "sonnet",
+      tier: "warrant-officer",
       fleet_models: [],
-      reason: "classification failed — defaulting to sonnet",
+      reason: "classification failed — defaulting to warrant-officer",
       confidence: 0.5,
       rewritten_prompt: prompt,
       failed: true,
@@ -282,9 +281,9 @@ async function classifyPrompt(dataDir: string | null, prompt: string): Promise<C
   } catch {
     const fallback = {
       decision: "escalate",
-      tier: "sonnet",
+      tier: "warrant-officer",
       fleet_models: [],
-      reason: "classification failed — defaulting to sonnet",
+      reason: "classification failed — defaulting to warrant-officer",
       confidence: 0.5,
       rewritten_prompt: prompt,
       failed: true,
@@ -322,21 +321,17 @@ async function checkAmbiguity(prompt: string): Promise<string | null> {
   return null
 }
 
-/** Tier -> rank seat on the LiteLLM ladder. Every band has a rank we serve;
- * nothing above Opus is kept. */
-const TIER_RANKS: Record<string, string> = {
-  haiku: "sergeant",
-  sonnet: "warrant-officer",
-  opus: "lieutenant",
-}
+/** The tier label is the rank name, so it doubles as the agent name and the
+ * proxy model name. Every band has a rank we serve. */
+const DEFAULT_TIER = "warrant-officer"
 
 const TIER_DIRECTIVES: Record<string, string[]> = {
-  haiku: ["Be concise. Answer directly. Minimize output tokens."],
-  sonnet: [
+  sergeant: ["Be concise. Answer directly. Minimize output tokens."],
+  "warrant-officer": [
     "Be concise. Answer directly. Minimize output tokens.",
     "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
   ],
-  opus: [
+  lieutenant: [
     "Be concise. Answer directly. Minimize output tokens.",
     "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
     "If uncertain or missing info, say so explicitly. Never invent facts or fabricate output.",
@@ -373,11 +368,11 @@ function buildPromptContext(result: {
     ? `Prompt problems identified:\n${problems.map(p => `- ${p}`).join("\n")}`
     : "Prompt problems identified: none."
 
-  const tierDirectives = TIER_DIRECTIVES[result.tier] ?? TIER_DIRECTIVES.sonnet
+  const tierDirectives = TIER_DIRECTIVES[result.tier] ?? TIER_DIRECTIVES[DEFAULT_TIER]
   const directiveBlock = `Prompt standards to apply:\n${tierDirectives.map(d => `- ${d}`).join("\n")}`
 
-  const rank = TIER_RANKS[result.tier] ?? TIER_RANKS.sonnet
-  const agent = `${result.tier}-general`
+  const rank = result.tier || DEFAULT_TIER
+  const agent = rank
   const classification = `Classification: ${result.decision} (confidence ${result.confidence.toFixed(2)}). ${result.reason}. Recommended rank: proxy/${rank} (agent ${agent}).`
   const fleet = result.fleet_models.length
     ? `\nSuggested rank(s): ${result.fleet_models.join(", ")}`
@@ -413,8 +408,8 @@ function buildLeanRewrite(result: {
   confidence: number
   rewritten_prompt: string
 }): string {
-  const tierDirectives = TIER_DIRECTIVES[result.tier] ?? TIER_DIRECTIVES.sonnet
-  const rank = TIER_RANKS[result.tier] ?? TIER_RANKS.sonnet
+  const tierDirectives = TIER_DIRECTIVES[result.tier] ?? TIER_DIRECTIVES[DEFAULT_TIER]
+  const rank = result.tier || DEFAULT_TIER
   const lines = [
     `<tier-router:${result.tier} rank=proxy/${rank} conf=${result.confidence.toFixed(2)}>`,
     ...tierDirectives.map(d => `- ${d}`),
@@ -452,7 +447,7 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
   }
 
   return {
-    // Register the tier agents (haiku/sonnet/opus-general) on the v1
+    // Register the tier agents (sergeant/warrant-officer/lieutenant) on the v1
     // config map, so `opencode run --agent <tier>-general` resolves (no symlinks).
     config: async (input: any) => {
       registerAgentDirV1(input, agentsDir)
@@ -500,7 +495,7 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
 
     tool: {
       "classify-prompt": tool({
-        description: "Classify a prompt string into a reasoning tier (haiku/sonnet/opus) with rewritten prompt. Use to test routing without executing.",
+        description: "Classify a prompt string into a reasoning tier (sergeant/warrant-officer/lieutenant) with rewritten prompt. Use to test routing without executing.",
         args: {
           prompt: tool.schema.string().describe("The user prompt to classify"),
         },
@@ -517,8 +512,8 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
         description: "Rewrite a prompt for a specific tier with SOTA prompt engineering criteria (conciseness, clarity, uncertainty permission, output format).",
         args: {
           prompt: tool.schema.string().describe("The prompt to rewrite"),
-          tier: tool.schema.enum(["haiku", "sonnet", "opus"])
-            .default("sonnet")
+          tier: tool.schema.enum(["sergeant", "warrant-officer", "lieutenant"])
+            .default("warrant-officer")
             .describe("Target reasoning tier"),
         },
         async execute(args) {
@@ -623,7 +618,7 @@ export default {
 
       editor.add({
         name: "classify-prompt",
-        description: "Classify a prompt string into a reasoning tier (haiku/sonnet/opus) with rewritten prompt. Use to test routing without executing.",
+        description: "Classify a prompt string into a reasoning tier (sergeant/warrant-officer/lieutenant) with rewritten prompt. Use to test routing without executing.",
         input: schema({ prompt: { type: "string", description: "The user prompt to classify" } }, ["prompt"]),
         async execute(args: any) {
           if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Classification disabled in subprocess." }
@@ -637,12 +632,12 @@ export default {
         description: "Rewrite a prompt for a specific tier with SOTA prompt engineering criteria (conciseness, clarity, uncertainty permission, output format).",
         input: schema({
           prompt: { type: "string", description: "The prompt to rewrite" },
-          tier: { type: "string", enum: ["haiku", "sonnet", "opus"], default: "sonnet", description: "Target reasoning tier" },
+          tier: { type: "string", enum: ["sergeant", "warrant-officer", "lieutenant"], default: "warrant-officer", description: "Target reasoning tier" },
         }, ["prompt"]),
         async execute(args: any) {
           if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Rewrite disabled in subprocess." }
           const result = await safeSpawn(
-            ["java", "--class-path", classpath, mainClass, "rewrite", args.tier ?? "sonnet"],
+            ["java", "--class-path", classpath, mainClass, "rewrite", args.tier ?? "warrant-officer"],
             { input: args.prompt, env: routerEnv },
           )
           return { content: result.stdout.trim() }

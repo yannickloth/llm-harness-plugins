@@ -239,7 +239,7 @@ Cost: [savings estimate vs baseline, if applicable]
 **Example 1: Bulk syntax fixes**
 ```
 Strategy: propose-review
-Agent(s): haiku-general (propose) → sonnet-general (review)
+Agent(s): sergeant (propose) → warrant-officer (review)
 Reason: 150 mechanical syntax fixes across 30 files with build verification
 Cost: ~65% savings vs direct-sonnet
 ```
@@ -247,7 +247,7 @@ Cost: ~65% savings vs direct-sonnet
 **Example 2: Logic verification**
 ```
 Strategy: direct-opus
-Agent(s): opus-general
+Agent(s): lieutenant
 Reason: Proof verification requires deep reasoning, no cheaper path
 Cost: High (necessary)
 ```
@@ -255,7 +255,7 @@ Cost: High (necessary)
 **Example 3: Simple rename**
 ```
 Strategy: direct-haiku
-Agent(s): haiku-general
+Agent(s): sergeant
 Reason: Single-file exact pattern replacement with explicit path, low risk
 Cost: Minimal
 ```
@@ -263,7 +263,7 @@ Cost: Minimal
 **Example 4: Style improvement**
 ```
 Strategy: direct-sonnet
-Agent(s): sonnet-general
+Agent(s): warrant-officer
 Reason: Stylistic judgment requires sonnet-level reasoning, review wouldn't save work
 Cost: Standard
 ```
@@ -271,7 +271,7 @@ Cost: Standard
 **Example 5: Bulk documentation generation**
 ```
 Strategy: draft-then-evaluate
-Agent(s): haiku-general (batch draft) → sonnet-general (batch eval + fixes)
+Agent(s): sergeant (batch draft) → warrant-officer (batch eval + fixes)
 Pattern: simple-batch
 Batch size: 50
 Expected acceptance: 60%
@@ -282,7 +282,7 @@ Cost: ~58% savings vs direct-sonnet (21 vs 50 messages)
 **Example 6: Small batch content (not worth draft-eval)**
 ```
 Strategy: direct-sonnet
-Agent(s): sonnet-general
+Agent(s): warrant-officer
 Reason: Only 5 items—batch overhead exceeds savings (need P_accept > 20%)
 Cost: Standard
 ```
@@ -290,7 +290,7 @@ Cost: Standard
 **Example 7: Heterogeneous context (partitioned draft-eval)**
 ```
 Strategy: draft-then-evaluate-partitioned
-Agent(s): Per partition: haiku-general (draft) → sonnet-general (eval + fixes)
+Agent(s): Per partition: sergeant (draft) → warrant-officer (eval + fixes)
 Partitions: 5 (by module: auth, users, products, orders, payments)
 Tasks per partition: 10 each
 Expected acceptance: 55%
@@ -433,7 +433,7 @@ When recommending draft-then-evaluate:
 
 ```
 Strategy: draft-then-evaluate
-Agent(s): haiku-general (batch draft) → sonnet-general (batch eval + fixes)
+Agent(s): sergeant (batch draft) → warrant-officer (batch eval + fixes)
 Pattern: simple-batch | tiered | adaptive
 Batch size: [N]
 Expected acceptance: [X]%

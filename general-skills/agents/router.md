@@ -184,9 +184,9 @@ Request: "Update the config"
 
 **General agents** (choose by reasoning needed):
 
-- `haiku-general`: Mechanical, no judgment, explicit paths only
-- `sonnet-general`: Default for reasoning/analysis/judgment
-- `opus-general`: Complex reasoning, proofs, high-stakes decisions
+- `sergeant`: Mechanical, no judgment, explicit paths only
+- `warrant-officer`: Default for reasoning/analysis/judgment
+- `lieutenant`: Complex reasoning, proofs, high-stakes decisions
 
 **Escalate to `router-escalation`**: When uncertain about routing decision
 
@@ -208,17 +208,17 @@ Request: "Update the config"
 
 ## Risk Rules
 
-**NEVER route destructive operations to haiku-general unless:**
+**NEVER route destructive operations to sergeant unless:**
 
 - Exact file paths provided
 - Files clearly temporary/disposable
 - Easily reversible
 - Zero ambiguity
 
-**Protected files (never route to haiku-general):**
+**Protected files (never route to sergeant):**
 
-- Agent definitions (`.opencode/agent/*.md`) → route edits to sonnet-general or opus-general
-- System configs (`.config/opencode/opencode*.json`) → route edits to sonnet-general or opus-general
+- Agent definitions (`.opencode/agent/*.md`) → route edits to warrant-officer or lieutenant
+- System configs (`.config/opencode/opencode*.json`) → route edits to warrant-officer or lieutenant
 
 ## Delegation Format
 
@@ -251,7 +251,7 @@ Do NOT complete silently.
 **Delegation format using Bash:**
 
 ```bash
-opencode --agent haiku-general <<'PROMPT'
+opencode --agent sergeant <<'PROMPT'
 [User's original request]
 
 REQUIRED OUTPUT: You must return usable results:
@@ -266,7 +266,7 @@ PROMPT
 **Example routing to Haiku:**
 
 ```bash
-opencode --agent haiku-general <<'PROMPT'
+opencode --agent sergeant <<'PROMPT'
 how much is 3+3?
 
 REQUIRED OUTPUT: Direct answer.
@@ -276,7 +276,7 @@ PROMPT
 **Example routing to Sonnet:**
 
 ```bash
-opencode --agent sonnet-general <<'PROMPT'
+opencode --agent warrant-officer <<'PROMPT'
 Analyze the authentication flow in this codebase.
 
 REQUIRED OUTPUT: Summary of findings with file paths.

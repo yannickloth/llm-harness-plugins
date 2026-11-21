@@ -221,24 +221,24 @@ def classify_confidence(request: str, context: dict) -> str:
 ### Phase 2: Routing Decision
 
 **HIGH confidence:**
-- Route to: `haiku-general`
+- Route to: `sergeant`
 - Validation plan: automated only
-- Fallback: escalate to `sonnet-general`
+- Fallback: escalate to `warrant-officer`
 
 **MEDIUM confidence:**
-- Route to: `haiku-general`
+- Route to: `sergeant`
 - Validation plan: automated + user approval
-- Fallback: escalate to `sonnet-general`
+- Fallback: escalate to `warrant-officer`
 
 **LOW confidence:**
-- Route to: `sonnet-general`
+- Route to: `warrant-officer`
 - Validation plan: N/A (skip Haiku)
 
 ### Phase 3: Execution (HIGH/MEDIUM only)
 
 **Execute with Haiku:**
 ```
-Task agent: haiku-general
+Task agent: sergeant
 Request: [original request]
 Validation: [validation plan]
 ```
@@ -284,7 +284,7 @@ user_approved = get_user_approval()
 ```
 ↗ Escalate to Sonnet
 ↗ Provide validation failure details
-↗ Re-execute with sonnet-general
+↗ Re-execute with warrant-officer
 ↗ Log escalation (for metrics)
 ```
 
@@ -356,7 +356,7 @@ When `router` receives a request that might be simple:
 5. If LOW → return recommendation to use Sonnet
 ```
 
-**probabilistic-router → haiku-general:**
+**probabilistic-router → sergeant:**
 
 ```
 Task: [original request]
@@ -364,7 +364,7 @@ Validation: Will validate after execution
 Constraints: Keep changes minimal and focused
 ```
 
-**probabilistic-router → sonnet-general (on escalation):**
+**probabilistic-router → warrant-officer (on escalation):**
 
 ```
 Task: [original request]
@@ -425,7 +425,7 @@ Approach: Please fix the issues and complete correctly
 - Risk: Low (easily validated)
 
 **Execution:**
-1. Route to `haiku-general`
+1. Route to `sergeant`
 2. Haiku processes files, removes whitespace
 3. Validation:
    - Syntax check: ✓ All files still parse
@@ -451,7 +451,7 @@ Approach: Please fix the issues and complete correctly
 - Risk: Medium (wrong types could cause issues)
 
 **Execution:**
-1. Route to `haiku-general`
+1. Route to `sergeant`
 2. Haiku adds type hints: `def calculate_total(items: list) -> int:`
 3. Validation:
    - Syntax check: ✓ Code still parses
@@ -487,7 +487,7 @@ Reason: Security-sensitive refactoring requires expert reasoning
 
 **Execution:**
 1. Skip Haiku attempt
-2. Route directly to `sonnet-general`
+2. Route directly to `warrant-officer`
 3. Sonnet analyzes security vulnerabilities and refactors
 4. No validation needed (went straight to quality model)
 

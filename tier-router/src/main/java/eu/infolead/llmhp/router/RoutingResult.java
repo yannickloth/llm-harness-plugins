@@ -29,7 +29,7 @@ record RoutingResult(
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
             .replace("\n", "\\n");
-        var tierStr = tier != null ? tier.name().toLowerCase() : "null";
+        var tierStr = tier != null ? tier.proxyName() : "null";
         var fleetField = "";
         if (fleetModels != null && !fleetModels.isEmpty()) {
             var models = fleetModels.stream()

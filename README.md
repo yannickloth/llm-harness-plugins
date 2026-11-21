@@ -305,7 +305,7 @@ Plugins that ship agents:
 | Plugin | Agents | Notes |
 |--------|--------|-------|
 | `agentmem` | `memory-keeper`, `memory-dreamer` | Both work with `{file:...}` prompt |
-| `tier-router` | `haiku-general`, `sonnet-general`, `opus-general` | Generic tier agents; typically overridden globally |
+| `tier-router` | `sergeant`, `warrant-officer`, `lieutenant` | Generic tier agents (rank names); typically overridden globally |
 | `general-skills` | `proof-soundness-auditor`, `xref-checker`, `style-naturalizer`, `style-auditor`, `citation-fidelity-auditor`, `bibliography-auditor`, `math-verifier` (read-only + calculator: `bash: allow` for recomputation only), `logic-auditor`, `redundancy-auditor`, `config-auditor`, `ste-100-auditor` | Use `{file:...}` prompt |
 | `sdlc-guardrails` | `plan-auditor`, `test-guard-auditor` | Verify diff vs plan / weakened tests |
 | `latex-toolkit` | `latex-xref-checker`, `latex-syntax-fixer`, `latex-figure-caption-auditor`, `latex-production-readiness-checker`, `latex-notation-consistency-checker`, `latex-index-auditor`, `latex-citation-checker`, `latex-formatting-fixer` | Use `{file:...}` prompt |

@@ -147,8 +147,8 @@ User interface format:
 ═══════════════
 
 Active (2/3):
-  ⏳ [w1] Implement authentication (sonnet-general, 15m elapsed)
-  ⏳ [w2] Add test coverage (haiku-general, 8m elapsed)
+  ⏳ [w1] Implement authentication (warrant-officer, 15m elapsed)
+  ⏳ [w2] Add test coverage (sergeant, 8m elapsed)
 
 Queued (2):
   📋 [w3] Priority 8 - Deploy to production (blocked: needs w1)
@@ -326,7 +326,7 @@ work-coordinator:
   [w2] P:8  Add test coverage (depends: w1)
   [w3] P:7  Deploy to production (depends: w1, w2)
 
-  Starting w1 with sonnet-general...
+  Starting w1 with warrant-officer...
 
   [15 minutes later]
   w1 completed ✅
@@ -352,8 +352,8 @@ work-coordinator:
 ═══════════════
 
 Active (2/3):
-  ⏳ [w1] Complex refactoring (sonnet-general, 75m elapsed) ⚠️ STALLED
-  ⏳ [w2] Update docs (haiku-general, 12m elapsed)
+  ⏳ [w1] Complex refactoring (warrant-officer, 75m elapsed) ⚠️ STALLED
+  ⏳ [w2] Update docs (sergeant, 12m elapsed)
 
 ⚠️  Stall detected: w1 has been active for >1 hour
 

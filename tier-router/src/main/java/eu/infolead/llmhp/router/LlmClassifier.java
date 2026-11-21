@@ -28,11 +28,11 @@ import java.time.Duration;
 final class LlmClassifier {
 
     private static final String CLASSIFICATION_PROMPT = """
-        Classify this task by reasoning complexity. Output ONLY one word: HAIKU, SONNET, OPUS, or ESCALATE.
+        Classify this task by reasoning complexity. Output ONLY one word: SERGEANT, WARRANT-OFFICER, LIEUTENANT, or ESCALATE.
 
-        HAIKU: mechanical edits with clear scope (fix typo, rename, format, lint, close bracket, add semicolon)
-        SONNET: reasoning/analysis required (analyze, implement, refactor, review, debug, explain)
-        OPUS: deep formal reasoning (prove, formalize, math theorems, algorithm design, verify correctness)
+        SERGEANT: mechanical edits with clear scope (fix typo, rename, format, lint, close bracket, add semicolon)
+        WARRANT-OFFICER: reasoning/analysis required (analyze, implement, refactor, review, debug, explain)
+        LIEUTENANT: deep formal reasoning (prove, formalize, math theorems, algorithm design, verify correctness)
         ESCALATE: ambiguous, unclear scope, multiple competing goals, or genuinely uncertain
 
         Task: %s""";
@@ -132,11 +132,11 @@ final class LlmClassifier {
         var text = raw.strip().toUpperCase().replaceAll("[^A-Z]", "");
 
         return switch (text) {
-            case "HAIKU" -> new Classification(Tier.HAIKU, Decision.DIRECT, 0.95,
+            case "SERGEANT" -> new Classification(Tier.SERGEANT, Decision.DIRECT, 0.95,
                 "LLM: mechanical edit with clear scope");
-            case "SONNET" -> new Classification(Tier.SONNET, Decision.DIRECT, 0.95,
+            case "WARRANTOFFICER" -> new Classification(Tier.WARRANT_OFFICER, Decision.DIRECT, 0.95,
                 "LLM: reasoning/analysis required");
-            case "OPUS" -> new Classification(Tier.OPUS, Decision.DIRECT, 0.9,
+            case "LIEUTENANT" -> new Classification(Tier.LIEUTENANT, Decision.DIRECT, 0.9,
                 "LLM: deep formal reasoning");
             case "ESCALATE" -> new Classification(null, Decision.ESCALATE, 0.9,
                 "LLM uncertain — escalating for judgment");

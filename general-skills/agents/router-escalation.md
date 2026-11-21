@@ -53,9 +53,9 @@ Router delegates when uncertain about:
 
 **General agents**:
 
-- `haiku-general`: Only for truly mechanical, zero-ambiguity operations
-- `sonnet-general`: Default for anything requiring judgment
-- `opus-general`: Complex reasoning, proofs, high-stakes decisions
+- `sergeant`: Only for truly mechanical, zero-ambiguity operations
+- `warrant-officer`: Default for anything requiring judgment
+- `lieutenant`: Complex reasoning, proofs, high-stakes decisions
 
 ## Delegation Requirements
 

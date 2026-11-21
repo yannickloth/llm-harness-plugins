@@ -142,11 +142,11 @@ Route directly to most specific matched agent:
 ```
 ✅ DIRECT ROUTING
 
-Agent: haiku-general
+Agent: sergeant
 Confidence: 95%
 Reason: Simple file operation with explicit path
 
-Delegating to haiku-general...
+Delegating to sergeant...
 ```
 
 ## Decision Algorithm
@@ -185,7 +185,7 @@ def route_request(user_request: str) -> Decision:
 
     # Special case: Simple file operations with explicit paths
     if is_simple_file_operation(user_request) and has_explicit_path(user_request):
-        return direct_route("haiku-general", "Simple file operation")
+        return direct_route("sergeant", "Simple file operation")
 
     if confidence < 0.8:
         return escalate(f"Low confidence ({confidence})")
@@ -219,13 +219,13 @@ The mechanical escalation logic is implemented in:
 
 | Request | Decision | Reason |
 |---------|----------|--------|
-| "Fix typo in README.md" | DIRECT → haiku-general | Simple file op, explicit path |
+| "Fix typo in README.md" | DIRECT → sergeant | Simple file op, explicit path |
 | "Which DB is best?" | ESCALATE → router | Judgment keyword "best" |
 | "Delete all logs" | ESCALATE → router | Destructive + bulk |
 | "Fix the auth bug" | ESCALATE → router | No explicit path |
 | "Create API and tests" | ESCALATE → router | Multiple objectives |
 | "Design cache system" | ESCALATE → router | Design keyword |
-| "Format src/main.py" | DIRECT → haiku-general | Simple file op, explicit path |
+| "Format src/main.py" | DIRECT → sergeant | Simple file op, explicit path |
 | "Help with the project" | ESCALATE → router | No clear agent match |
 
 ## Change Driver Analysis

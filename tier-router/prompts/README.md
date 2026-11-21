@@ -6,7 +6,7 @@ description: Prompt-intercepting tier router that classifies a request by reason
 ## How It Works
 
 1. **Intercept**: the `chat.message` (v1) / `session.hook("prompt")` (v2) hook sees each user prompt before the model does.
-2. **Classify**: LLM classifier for substantial prompts; otherwise the Java `RouterCli` (ambiguity, skill-axis rank match, keyword bands). Tier order is **Haiku < Sonnet < Opus**.
+2. **Classify**: LLM classifier for substantial prompts; otherwise the Java `RouterCli` (ambiguity, skill-axis rank match, keyword bands). Tier labels are the rank hierarchy: **sergeant < warrant-officer < lieutenant**.
 3. **Reformulate**: rewrites the prompt with SOTA criteria:
    - Conciseness directive
    - Output format constraint ("Return usable results")
@@ -19,18 +19,18 @@ description: Prompt-intercepting tier router that classifies a request by reason
 
 | Tier | Agent | Rank | Relative cost | Use When |
 |------|-------|------|---------------|----------|
-| haiku | `haiku-general` | `proxy/sergeant` | 0.25x | Mechanical: typos, format, rename, sort |
-| sonnet | `sonnet-general` | `proxy/warrant-officer` | 1x | Judgment: analyze, implement, refactor, review |
-| opus | `opus-general` | `proxy/lieutenant` | 12x | Deep reasoning: proofs, formal verification |
+| sergeant | `sergeant` | `proxy/sergeant` | 0.25x | Mechanical: typos, format, rename, sort |
+| warrant-officer | `warrant-officer` | `proxy/warrant-officer` | 1x | Judgment: analyze, implement, refactor, review |
+| lieutenant | `lieutenant` | `proxy/lieutenant` | 12x | Deep reasoning: proofs, formal verification |
 
-Opus is the top band; there is no rank above it in this plugin.
+Lieutenant is the top band; there is no rank above it in this plugin.
 
 ## Escalation Triggers
 
 | # | Condition | Action |
 |---|-----------|--------|
 | 1 | Ambiguity: vague prompt, missing scope | Ask user to clarify |
-| 2 | Complexity signal: "design", "architecture", "best approach", etc. | Escalate to sonnet-level routing |
+| 2 | Complexity signal: "design", "architecture", "best approach", etc. | Escalate to warrant-officer-level routing |
 | 3 | Bulk destructive: "delete all", "remove *" | Escalate |
 | 4 | File op without path: "fix the bug" | Escalate |
 | 5 | Agent definition edit: ".opencode/agents" + edit | Escalate |
@@ -46,9 +46,9 @@ Add to `opencode.json`:
 {
   "plugin": ["./tier-router/opencode/index.ts"],
   "agent": {
-    "haiku-general": { "mode": "subagent", "model": "proxy/sergeant" },
-    "sonnet-general": { "mode": "subagent", "model": "proxy/warrant-officer" },
-    "opus-general": { "mode": "subagent", "model": "proxy/lieutenant" }
+    "sergeant": { "mode": "subagent", "model": "proxy/sergeant" },
+    "warrant-officer": { "mode": "subagent", "model": "proxy/warrant-officer" },
+    "lieutenant": { "mode": "subagent", "model": "proxy/lieutenant" }
   }
 }
 ```

@@ -213,7 +213,7 @@ final class RouterEngine {
             var questions = reformatter.generateClarificationQuestions(trimmed);
             return new RoutingResult(
                 Decision.DIRECT,
-                Tier.SONNET,
+                Tier.WARRANT_OFFICER,
                 "Request ambiguous — clarification needed: " + String.join(" | ", questions) + memoryHint,
                 0.3,
                 trimmed
@@ -331,8 +331,8 @@ final class RouterEngine {
                 return result(Decision.DIRECT, tier,
                     "High-confidence keyword match" + memoryHint, confidence, trimmed);
             } else if (confidence >= MEDIUM_CONFIDENCE_THRESHOLD) {
-                return result(Decision.DIRECT, Tier.SONNET,
-                    "Moderate confidence match — escalating to sonnet for verification" + memoryHint,
+                return result(Decision.DIRECT, Tier.WARRANT_OFFICER,
+                    "Moderate confidence match — escalating to warrant-officer for verification" + memoryHint,
                     confidence, trimmed);
             }
         }

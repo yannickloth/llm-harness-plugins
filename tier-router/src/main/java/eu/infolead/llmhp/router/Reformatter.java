@@ -42,9 +42,9 @@ final class Reformatter {
 
         // Tier-specific augmentation
         var suffix = switch (tier) {
-            case HAIKU -> "\n\n%s\n\n%s".formatted(CONCISENESS_DIRECTIVE, UNCERTAINTY_DIRECTIVE);
-            case SONNET -> "\n\n%s\n\n%s".formatted(CONCISENESS_DIRECTIVE, OUTPUT_DIRECTIVE);
-            case OPUS -> "\n\n%s\n\n%s\n%s".formatted(
+            case SERGEANT -> "\n\n%s\n\n%s".formatted(CONCISENESS_DIRECTIVE, UNCERTAINTY_DIRECTIVE);
+            case WARRANT_OFFICER -> "\n\n%s\n\n%s".formatted(CONCISENESS_DIRECTIVE, OUTPUT_DIRECTIVE);
+            case LIEUTENANT -> "\n\n%s\n\n%s\n%s".formatted(
                 CONCISENESS_DIRECTIVE, OUTPUT_DIRECTIVE, UNCERTAINTY_DIRECTIVE);
         };
 

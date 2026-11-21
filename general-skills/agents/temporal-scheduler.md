@@ -236,7 +236,7 @@ Morning hook shows completed work results
   "action": "execute_now",
   "timing_classification": "synchronous",
   "reason": "User interaction required for decision-making",
-  "delegated_to": "sonnet-general"
+  "delegated_to": "warrant-officer"
 }
 ```
 
@@ -247,7 +247,7 @@ Morning hook shows completed work results
   "action": "execute_now",
   "timing_classification": "flexible",
   "reason": "Quota available (450/1125 used), active hours (14:30)",
-  "delegated_to": "haiku-general"
+  "delegated_to": "sergeant"
 }
 ```
 
@@ -265,7 +265,7 @@ Morning hook shows completed work results
 
 **temporal-scheduler → executor agents:**
 - Queues async work with agent specification
-- Overnight executor spawns appropriate agents (haiku-general, sonnet-general)
+- Overnight executor spawns appropriate agents (sergeant, warrant-officer)
 - Results stored for morning review
 
 ## Uncertainty Handling
@@ -344,7 +344,7 @@ Morning hook shows completed work results
   "action": "execute_now",
   "timing_classification": "synchronous",
   "reason": "User decision-making required",
-  "delegated_to": "sonnet-general"
+  "delegated_to": "warrant-officer"
 }
 ```
 
@@ -361,7 +361,7 @@ Morning hook shows completed work results
 - Time: 14:30 (active hours)
 - Quota: 450/1125 Sonnet used (plenty available)
 
-**Decision:** Execute now with haiku-general
+**Decision:** Execute now with sergeant
 
 **Output:**
 ```json
@@ -369,7 +369,7 @@ Morning hook shows completed work results
   "action": "execute_now",
   "timing_classification": "flexible",
   "reason": "Quota available (450/1125 used), active hours",
-  "delegated_to": "haiku-general"
+  "delegated_to": "sergeant"
 }
 ```
 
