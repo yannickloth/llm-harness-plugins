@@ -169,10 +169,13 @@ check_agent_registration() {
       PASS=0
     fi
   done
-  # Verify every agent file in the plugin is registered in opencode.json.
-  python3 - "$SCRIPT_DIR/opencode.json" "$AGENTS_DIR" "$NAME" <<'PY' || PASS=0
-import json, os, sys
-cfg=json.load(open(sys.argv[1]))
+  # Verify every agent file in the plugin is registered in opencode.jsonc.
+  python3 - "$SCRIPT_DIR/opencode.jsonc" "$AGENTS_DIR" "$NAME" <<'PY' || PASS=0
+import json, os, re, sys
+raw = open(sys.argv[1]).read()
+raw = re.sub(r"^\s*//.*$", "", raw, flags=re.M)
+raw = re.sub(r",(\s*[}\]])", r"\1", raw)
+cfg = json.loads(raw)
 agents=cfg.get("agent",{})
 agents_dir=sys.argv[2]
 plugin=sys.argv[3]
@@ -214,7 +217,7 @@ printf '{"id":"host:1","host":"host","seq":1,"ts":"2026-08-13T22:22:05.000Z","ag
 java --class-path "$SCRIPT_DIR/agentfeed/build/classes" eu.infolead.llmhp.agentfeed.AtomCli \
   --ledger "$CLI_DIR/ledger.jsonl" --out "$CLI_DIR/feeds" >/dev/null 2>&1 \
   && [ -s "$CLI_DIR/feeds/feed.xml" ] \
-  && xmllint --noout "$CLI_DIR/feeds/feed.xml" 2>/dev/null \
+  && python3 -c "import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])" "$CLI_DIR/feeds/feed.xml" \
   && echo "agentfeed CLI feed validity: PASSED" \
   || echo "agentfeed CLI feed validity: FAILED"
 rm -rf "$CLI_DIR"
