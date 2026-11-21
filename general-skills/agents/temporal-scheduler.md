@@ -1,7 +1,7 @@
 ---
 description: "Classify work as sync vs async and queue async work for overnight execution to maximize quota utilization. Use for batch processing, literature searches, and background analysis."
 mode: subagent
-model: proxy/sergeant
+model: proxy/warrant-officer
 permission:
   edit: allow
   bash: allow

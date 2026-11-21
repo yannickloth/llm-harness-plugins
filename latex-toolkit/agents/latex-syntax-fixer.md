@@ -3,7 +3,7 @@ name: latex-syntax-fixer
 description: Fix LaTeX compilation errors and warnings. Use when LaTeX build fails.
 mode: subagent
 tools: [Read, Edit, Bash, Glob, Grep]
-model: proxy/sergeant
+model: proxy/warrant-officer
 ---
 
 **Note — sonnet tier is intentional**: LaTeX error messages are notoriously cryptic (e.g., "Runaway argument?", "Missing \endcsname") and require deeper reasoning about package interactions, macro expansion, and compiler state than Typst errors. The Typst equivalent uses haiku because Typst's error messages include source locations and fix hints.

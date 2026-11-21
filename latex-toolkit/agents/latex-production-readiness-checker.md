@@ -3,7 +3,7 @@ name: latex-production-readiness-checker
 description: Scan LaTeX files for TODO markers, placeholders, debug artifacts, draft mode, and production issues.
 mode: subagent
 tools: [Read, Glob, Grep, Bash]
-model: proxy/sergeant
+model: proxy/warrant-officer
 ---
 
 LaTeX production readiness checker. Scan for leftover markers, incomplete content, and production artifacts.

@@ -1,7 +1,7 @@
 ---
 name: current-modularization-auditor
 description: Step 4 of IVP — assess the AS-IS modularization of an existing codebase against the Γ-equivalence partition, naming every violation (IVP-3 mixed modules, IVP-4 scattered classes, IVP-1/2 element defects, unsound nesting) and pricing the change propagation. Read-only; reports findings and a ranked prescription, never edits.
-model: proxy/sergeant
+model: proxy/lieutenant
 mode: subagent
 permission:
   read: allow

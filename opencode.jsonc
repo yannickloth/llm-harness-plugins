@@ -76,7 +76,7 @@
     },
     "document-health-monitor": {
       "file": "./scientific-writing/agents/document-health-monitor.md",
-      "model": "proxy/sergeant",
+      "model": "proxy/warrant-officer",
       "mode": "subagent"
     },
     "backward-reader-auditor": {

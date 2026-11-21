@@ -2,7 +2,7 @@
 name: config-auditor
 description: Audit AI coding agent configuration stacks for conflicts, inconsistencies, or undefined references across config files, agents, and workflows.
 mode: subagent
-model: proxy/sergeant
+model: proxy/warrant-officer
 permission:
   read: allow
   glob: allow

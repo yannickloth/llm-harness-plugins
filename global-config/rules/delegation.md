@@ -45,11 +45,11 @@ Before writing any agent prompt or delegating a task, verify all four fields are
 
 ## Agent Model Selection
 
-Models are rank names (`proxy/<rank>`) on the LiteLLM rank gateway — pure abstractions over the model holding the slot; the model behind a rank can change without touching agent config. Pick the cheapest sufficient rank. Never silently escalate to a costlier rank — state the trade-off and ask.
+Models are rank names (`proxy/<rank>`) on the LiteLLM rank gateway — pure abstractions over the model holding the slot; the model behind a rank can change without touching agent config. **Seat each agent on the cheapest/weakest rank that can consistently and faithfully do its job — else escalate until one can.** Never silently escalate to a costlier rank — state the trade-off and ask.
 
 | Task type | Rank |
 |-----------|------|
-| Mechanical (renames, edits, structure fixes, checkers, faithful transformation) | `proxy/sergeant` |
+| Mechanical, short-input (single-item classification, diff review, trivial completions, tool-driven verification) | `proxy/sergeant` |
 | Volume (agentic pipelines, code generation, fix loops, long-form, research scanning) | `proxy/warrant-officer` |
 | Language quality (style, tone, translation, terminology, prose patterns) | `proxy/second-lieutenant` |
 | Deep reasoning / formal proofs / adversarial / domain-critical audits | `proxy/lieutenant` |
@@ -58,6 +58,7 @@ Models are rank names (`proxy/<rank>`) on the LiteLLM rank gateway — pure abst
 **Hard contracts:**
 
 - **Local ranks are sequential-only.** `sergeant` and `lieutenant` sit on single-slot local backends: parallel fan-out queues and queued requests can time out. N > 1 at once → `proxy/warrant-officer` (cloud), unconditionally — even for work that would otherwise be sergeant-class.
+- **Sergeant input constraint.** `sergeant` holds a ~4B executor: its task must be short, clear, almost mechanical — one message/diff/work item, a fixed checklist, or tool-driven heavy lifting. Whole-document or multi-file input, exhaustive scans, counting over long context, multi-step stateful procedures, and semantic judgment all exceed its reliable range (context rot) — seat those on `proxy/warrant-officer` or higher.
 - **Plain ranks are text-only by contract.** Vision is exposed only through the `-v` sibling ranks; no caller may expect images from a plain rank (that is what lets a rank's model be swapped freely).
 - **Nothing defaults above `lieutenant`.** `major`, `lieutenant-colonel*`, and unranked paid ids are explicit per-task escalation only, never an agent default.
 

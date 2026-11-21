@@ -2,7 +2,7 @@
 name: fable-general
 description: Ultra-light agent for trivial completions — close brackets, add semicolons, single-line exact edits with explicit content. Use ONLY when the operation is so simple it requires zero reasoning or judgment.
 mode: subagent
-model: proxy/warrant-officer
+model: proxy/sergeant
 tools: [Read, Edit, Write, Bash, Glob, Grep]
 permissionMode: acceptEdits
 ---
