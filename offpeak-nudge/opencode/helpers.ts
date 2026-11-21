@@ -66,6 +66,43 @@ export function planForProvider(
   return plans.find(p => p.providerID.toLowerCase() === id && p.timeOfDay)
 }
 
+/**
+ * Proxy model names whose deployment draws a time-of-day plan. The rank
+ * gateway hides the backend behind provider id `proxy`; a session's modelID is
+ * then a rank name (or an explicit model name). Each entry names the first
+ * plan-bearing deployment in ladder order; ranks whose deployments are all
+ * free-cloud/local (warrant-officer*, second-lieutenant, lieutenant*, sergeant)
+ * or Kimi-only (lieutenant-colonel-v) are absent — no plan, no nudge.
+ */
+export const PROXY_PLAN_MODELS: Record<string, string> = {
+  // major: Kimi K2.8 (no plan) -> GLM-5.3-flash (Z.ai plan) -> DeepSeek cash
+  "major": "zai",
+  "major-v": "zai",
+  // lieutenant-colonel: GLM-5.3 (Z.ai plan) -> k3 -> k3-256k (Kimi, no plan)
+  "lieutenant-colonel": "zai",
+  // explicit model names
+  "glm-5.3": "zai",
+  "glm-5.3-flash": "zai",
+  "deepseek-flash": "deepseek",
+  "deepseek-v4-pro": "deepseek",
+}
+
+/**
+ * Resolve the pricing plan for a gateway session: provider `proxy` carries a
+ * rank/explicit model name in modelID, so the plan comes from the model name.
+ * Other providers resolve by providerID only (the direct-provider path).
+ */
+export function planForModel(
+  providerID: string | undefined,
+  modelID: string | undefined,
+  plans: PricingPlan[] = DEFAULT_PRICING_PLANS,
+): PricingPlan | undefined {
+  if (!providerID || !modelID) return undefined
+  if (providerID.toLowerCase() !== "proxy") return undefined
+  const target = PROXY_PLAN_MODELS[modelID.toLowerCase()]
+  return target ? planForProvider(target, plans) : undefined
+}
+
 export function windowsForPlan(
   plan: PricingPlan | undefined,
 ): PeakWindow[] {

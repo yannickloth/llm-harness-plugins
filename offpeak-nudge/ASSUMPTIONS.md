@@ -11,7 +11,7 @@ state file.
 - v1 (1.x, served by `server`): `tool`, `chat.message`, `experimental.chat.system.transform`, and `event` hooks; lifecycle events arrive through the `event` hook.
 - v2 (2.x, served by `id` + `setup(ctx)`): `ctx.session.hook("context")`, `ctx.session.hook("prompt")` (mutates `event.prompt.text`), `ctx.event.subscribe({ signal })`, `ctx.tool.transform`, `ctx.agent.list()`.
 - ⚠ The running binary is 2.2.5 and calls only `setup`; all v1 paths are dead there.
-- ⚠ v2 hook payload shapes are untyped and trusted from the runtime: `event.model?.providerID ?? event?.providerID`, `event.system` as an array of `{ type, text }` parts, `event.prompt.text`, event data as `input.data ?? input.properties`.
+- ⚠ v2 hook payload shapes are untyped and trusted from the runtime: `event.model?.providerID ?? event?.providerID`, `event.model?.modelID`, `event.system` as an array of `{ type, text }` parts, `event.prompt.text`, event data as `input.data ?? input.properties`.
 - ⚠ `ctx.agent.list()` is not in the installed `@opencode-ai/plugin` v2 types (only `ctx.agent.transform` / `reload` are typed); if absent at runtime, agent-based plan resolution silently degrades to nothing (caught).
 - ⚠ The installed types say `setup` returns `Promise<void> | void`, but the plugin returns a cleanup function (as context-editing does); cleanup runs only if the 2.2.5 runtime honors a returned function.
 - ⚠ v1 boundary timer starts only on a `server.connected` event that arrives after plugin load; if it never fires, no boundary toasts.
@@ -57,8 +57,9 @@ state file.
 ## Data & LLM behavior (formats trusted from the model)
 
 - Trusts v1 `message.updated` `info`: `role === "assistant"`, numeric `cost` (assumed USD), `tokens.{ input, output, cache.read }`, `model.providerID`, stable `id` for dedup. Messages without a numeric cost are skipped (no spend recorded for them).
-- Trusts `chat.message`/`prompt` payloads to carry `sessionID` and `model.providerID`; when absent, the nudge degrades to doing nothing for the primary provider (agent/skill reference matching may still apply).
+- Trusts `chat.message`/`prompt` payloads to carry `sessionID`, `model.providerID` and (for rank-gateway sessions) `model.modelID`; when absent, the nudge degrades to doing nothing for the primary provider (agent/skill reference matching may still apply).
 - ⚠ Agent/skill reference matching is case-insensitive whole-token regex over the prompt text; any mention of a plan-provider agent name (e.g. "run the cynic-auditor") attributes that provider's plan and triggers the banner even if the agent never actually runs on it.
 - ⚠ The model is expected to obey the injected system rule and the `[offpeak-confirm]` banner (ask for confirmation during peak; do not run by default). Compliance is prompt-level only; nothing enforces it.
 - Provider IDs are matched case-insensitively against plan `providerID`.
+- Rank-gateway sessions (`providerID = proxy`) resolve their plan from the model name (`PROXY_PLAN_MODELS`): `major`/`major-v`/`lieutenant-colonel` → Z.ai (first plan-bearing deployment), explicit `glm-5.3*` → Z.ai, explicit `deepseek-*` → DeepSeek. Free-cloud ranks (`warrant-officer*`, `second-lieutenant`), local ranks (`sergeant`, `lieutenant*`), and Kimi-only `lieutenant-colonel-v` carry no plan and receive no nudge. ⚠ A rank mixes deployments with different windows; the first plan-bearing deployment's plan is used, so a `major` session that has fallen through to the DeepSeek cash deployment is nudged on Z.ai windows, not DeepSeek's.
 - Heavy detection is a heuristic: skill-name mention, "phase/step N" or line-start numbered lists (threshold 2), or a long-running keyword.

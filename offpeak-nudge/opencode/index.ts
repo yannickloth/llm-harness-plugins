@@ -11,6 +11,7 @@ import {
   localPeakWindows,
   pricingStatus,
   planForProvider,
+  planForModel,
   planForPrompt,
   recordSpend,
   ratioForPlan,
@@ -82,7 +83,7 @@ confirmation before running it. If the user does not confirm, do not run. Do not
 repeat the reminder if it was already shown earlier this peak window.`
 }
 
-type AgentEntry = { name: string; model?: { providerID?: string } }
+type AgentEntry = { name: string; model?: { providerID?: string; modelID?: string } }
 
 // ---------------------------------------------------------------------------
 // v1 entrypoint.
@@ -108,6 +109,15 @@ const v1Factory = async (
     )
   }
 
+  /** Plan provider for a (provider, model) pair: direct providers by id,
+   *  the rank gateway by rank/model name. */
+  const planProviderForModel = (providerID: string | undefined, modelID: string | undefined): string | undefined => {
+    if (!providerID) return undefined
+    const direct = planForProvider(providerID, plans)
+    if (direct) return direct.providerID.toLowerCase()
+    return planForModel(providerID, modelID, plans)?.providerID.toLowerCase()
+  }
+
   // Agent names per plan provider, resolved once from the opencode API
   // (agent .md frontmatter / opencode.json `agent` entries carry `model`).
   let agentNamesByProvider: Record<string, string[]> | null = null
@@ -119,9 +129,9 @@ const v1Factory = async (
         ?.app?.agents?.({ query: { directory: worktree ?? directory } })
       const agents = ((res as { data?: unknown })?.data ?? res) as AgentEntry[] | undefined
       for (const a of agents ?? []) {
-        const prov = a.model?.providerID
-        if (!prov) continue
-        ;(byProvider[prov.toLowerCase()] ??= []).push(a.name)
+        const planProvider = planProviderForModel(a.model?.providerID, a.model?.modelID)
+        if (!planProvider) continue
+        ;(byProvider[planProvider] ??= []).push(a.name)
       }
     } catch {
       // agent resolution is best-effort; nudges still work via primary provider
@@ -135,9 +145,12 @@ const v1Factory = async (
   const resolvePlan = async (
     providerID: string | undefined,
     text: string,
+    modelID?: string,
   ): Promise<{ plan: PricingPlan; provider: string } | undefined> => {
-    const primary = providerID ? planForProvider(providerID, plans) : undefined
-    if (primary) return { plan: primary, provider: providerID! }
+    const primary = providerID
+      ? (planForProvider(providerID, plans) ?? planForModel(providerID, modelID, plans))
+      : undefined
+    if (primary) return { plan: primary, provider: primary.providerID.toLowerCase() }
     const promptPlan = planForPrompt(text, {
       plans,
       agentNamesByProvider: await loadAgentNames(),
@@ -153,10 +166,9 @@ const v1Factory = async (
   const sessionProviders = new Map<string, string>()
   let activeProvider: string | null = null
 
-  const trackProvider = (sessionID: string | undefined, providerID: string | undefined) => {
-    if (!providerID) return
-    const id = providerID.toLowerCase()
-    if (!planIndex().has(id)) return
+  const trackProvider = (sessionID: string | undefined, providerID: string | undefined, modelID?: string) => {
+    const id = planProviderForModel(providerID, modelID)
+    if (!id) return
     if (sessionID) sessionProviders.set(sessionID, id)
     activeProvider = id
   }
@@ -217,7 +229,7 @@ const v1Factory = async (
         },
         async execute(args) {
           const provider = (args.provider ?? "deepseek").toLowerCase()
-          const plan = planForProvider(provider, plans)
+          const plan = planForProvider(provider, plans) ?? planForModel("proxy", provider, plans)
           if (!plan) {
             return `provider "${provider}" has no time-of-day pricing plan; pricing is flat.`
           }
@@ -228,7 +240,7 @@ const v1Factory = async (
           const peak = formatWindows(localPeakWindows(now(), windows))
           return JSON.stringify(
             {
-              provider: displayName(provider),
+              provider: displayName(plan.providerID),
               status,
               offPeakRatio: ratio,
               offPeakPercentCheaper: Math.round((1 - ratio) * 100),
@@ -243,16 +255,19 @@ const v1Factory = async (
     },
 
     "experimental.chat.system.transform": async (
-      input: { sessionID?: string; model?: { providerID?: string } },
+      input: { sessionID?: string; model?: { providerID?: string; modelID?: string } },
       output: { system: string[] },
     ) => {
       if (disabled) return
       const provider = input.model?.providerID
-      const plan = provider ? planForProvider(provider, plans) : undefined
+      const modelID = input.model?.modelID
+      const plan = provider
+        ? (planForProvider(provider, plans) ?? planForModel(provider, modelID, plans))
+        : undefined
       if (!plan) return
-      trackProvider(input.sessionID, provider)
+      trackProvider(input.sessionID, provider, modelID)
       if (output.system.some(s => s.includes(NUDGE_MARKER))) return
-      output.system = [systemRuleFor(plan, displayName(provider!)), ...output.system]
+      output.system = [systemRuleFor(plan, displayName(plan.providerID)), ...output.system]
     },
 
     event: async (input: { event: { type: string; properties?: any } }) => {
@@ -300,8 +315,11 @@ const v1Factory = async (
         if (countedMessages.has(info.id)) return
         countedMessages.add(info.id)
         const provider = info.model?.providerID
-        trackProvider(sessionID, provider)
-        const plan = provider ? planForProvider(provider, plans) : undefined
+        const modelID = info.model?.modelID
+        trackProvider(sessionID, provider, modelID)
+        const plan = provider
+          ? (planForProvider(provider, plans) ?? planForModel(provider, modelID, plans))
+          : undefined
         recordSpend(
           sessionID,
           now(),
@@ -321,7 +339,7 @@ const v1Factory = async (
     },
 
     "chat.message": async (
-      input: { sessionID: string; model?: { providerID?: string } },
+      input: { sessionID: string; model?: { providerID?: string; modelID?: string } },
       output: { parts: Array<{ type: string; text: string }> },
     ) => {
       if (disabled) return
@@ -333,10 +351,11 @@ const v1Factory = async (
       const text = textPart.text
 
       const providerID = input.model?.providerID
-      const resolved = await resolvePlan(providerID, text)
+      const modelID = input.model?.modelID
+      const resolved = await resolvePlan(providerID, text, modelID)
       if (!resolved) return
       const { plan, provider } = resolved
-      trackProvider(input.sessionID, providerID)
+      trackProvider(input.sessionID, providerID, modelID)
 
       const windows = effectivePeakWindows(nowDate, plan)
       // Off-peak: run unconditionally — never touch the user's message.
@@ -346,7 +365,7 @@ const v1Factory = async (
       // Otherwise the plan was matched via an agent/skill reference, which is
       // itself the heavy signal (it bills the plan provider).
       const primaryHasPlan = providerID
-        ? planForProvider(providerID, plans) !== undefined
+        ? (planForProvider(providerID, plans) ?? planForModel(providerID, modelID, plans)) !== undefined
         : false
       if (primaryHasPlan) {
         const { heavy } = isHeavyPrompt(text, heavyOpts)
@@ -404,6 +423,15 @@ export default {
     const plans = options.plans ?? undefined
     const skillProviders = options.skillProviders ?? undefined
 
+    /** Plan provider for a (provider, model) pair: direct providers by id,
+     *  the rank gateway by rank/model name. */
+    const planProviderForModel = (providerID: string | undefined, modelID: string | undefined): string | undefined => {
+      if (!providerID) return undefined
+      const direct = planForProvider(providerID, plans)
+      if (direct) return direct.providerID.toLowerCase()
+      return planForModel(providerID, modelID, plans)?.providerID.toLowerCase()
+    }
+
     let agentNamesByProvider: Record<string, string[]> | null = null
     const loadAgentNames = async (): Promise<Record<string, string[]>> => {
       if (agentNamesByProvider) return agentNamesByProvider
@@ -411,9 +439,9 @@ export default {
       try {
         const agents = (await ctx.agent.list()) as AgentEntry[] | undefined
         for (const a of agents ?? []) {
-          const prov = a?.model?.providerID
-          if (!prov) continue
-          ;(byProvider[prov.toLowerCase()] ??= []).push(a.name)
+          const planProvider = planProviderForModel(a?.model?.providerID, a?.model?.modelID)
+          if (!planProvider) continue
+          ;(byProvider[planProvider] ??= []).push(a.name)
         }
       } catch {
         // best-effort: nudges still work via the primary provider
@@ -425,9 +453,12 @@ export default {
     const resolvePlan = async (
       providerID: string | undefined,
       text: string,
+      modelID?: string,
     ): Promise<{ plan: PricingPlan; provider: string } | undefined> => {
-      const primary = providerID ? planForProvider(providerID, plans) : undefined
-      if (primary) return { plan: primary, provider: providerID! }
+      const primary = providerID
+        ? (planForProvider(providerID, plans) ?? planForModel(providerID, modelID, plans))
+        : undefined
+      if (primary) return { plan: primary, provider: primary.providerID.toLowerCase() }
       const promptPlan = planForPrompt(text, {
         plans,
         agentNamesByProvider: await loadAgentNames(),
@@ -440,11 +471,9 @@ export default {
     const countedMessages = new Set<string>()
     const sessionProviders = new Map<string, string>()
 
-    const trackProvider = (sessionID: string | undefined, providerID: string | undefined) => {
-      if (!providerID) return
-      const id = providerID.toLowerCase()
-      const plan = planForProvider(id, plans)
-      if (!plan) return
+    const trackProvider = (sessionID: string | undefined, providerID: string | undefined, modelID?: string) => {
+      const id = planProviderForModel(providerID, modelID)
+      if (!id) return
       if (sessionID) sessionProviders.set(sessionID, id)
     }
 
@@ -469,12 +498,15 @@ export default {
     await ctx.session.hook("context", (event: any) => {
       if (disabled) return
       const provider = event?.model?.providerID ?? event?.providerID
-      const plan = provider ? planForProvider(provider, plans) : undefined
+      const modelID = event?.model?.modelID
+      const plan = provider
+        ? (planForProvider(provider, plans) ?? planForModel(provider, modelID, plans))
+        : undefined
       if (!plan) return
-      trackProvider(event?.sessionID, provider)
+      trackProvider(event?.sessionID, provider, modelID)
       const parts: Array<{ type: string; text: string }> = Array.isArray(event.system) ? event.system : []
       if (parts.some(p => (p.text ?? "").includes(NUDGE_MARKER))) return
-      if (Array.isArray(event.system)) event.system.unshift({ type: "text", text: systemRuleFor(plan, displayName(provider!)) })
+      if (Array.isArray(event.system)) event.system.unshift({ type: "text", text: systemRuleFor(plan, displayName(plan.providerID)) })
     })
 
     await ctx.session.hook("prompt", async (event: any) => {
@@ -486,15 +518,18 @@ export default {
       const nowDate = now()
 
       const providerID = event?.model?.providerID ?? event?.providerID
-      const resolved = await resolvePlan(providerID, text)
+      const modelID = event?.model?.modelID
+      const resolved = await resolvePlan(providerID, text, modelID)
       if (!resolved) return
       const { plan, provider } = resolved
-      trackProvider(sessionID, providerID)
+      trackProvider(sessionID, providerID, modelID)
 
       const windows = effectivePeakWindows(nowDate, plan)
       if (!isPeakUtc(utcHourOf(nowDate), windows)) return
 
-      const primaryHasPlan = providerID ? planForProvider(providerID, plans) !== undefined : false
+      const primaryHasPlan = providerID
+        ? (planForProvider(providerID, plans) ?? planForModel(providerID, modelID, plans)) !== undefined
+        : false
       if (primaryHasPlan) {
         const { heavy } = isHeavyPrompt(text, heavyOpts)
         if (!heavy) return
@@ -547,8 +582,11 @@ If the user confirms, run the task. If not, do not run it.\n\n${text}`
             if (countedMessages.has(info.id)) continue
             countedMessages.add(info.id)
             const provider = info.model?.providerID
-            trackProvider(sessionID, provider)
-            const plan = provider ? planForProvider(provider, plans) : undefined
+            const modelID = info.model?.modelID
+            trackProvider(sessionID, provider, modelID)
+            const plan = provider
+              ? (planForProvider(provider, plans) ?? planForModel(provider, modelID, plans))
+              : undefined
             recordSpend(
               sessionID,
               now(),
@@ -585,7 +623,7 @@ If the user confirms, run the task. If not, do not run it.\n\n${text}`
         },
         async execute(args: any) {
           const provider = (args.provider ?? "deepseek").toLowerCase()
-          const plan = planForProvider(provider, plans)
+          const plan = planForProvider(provider, plans) ?? planForModel("proxy", provider, plans)
           if (!plan) {
             return { content: `provider "${provider}" has no time-of-day pricing plan; pricing is flat.` }
           }
@@ -597,7 +635,7 @@ If the user confirms, run the task. If not, do not run it.\n\n${text}`
           return {
             content: JSON.stringify(
               {
-                provider: displayName(provider),
+                provider: displayName(plan.providerID),
                 status,
                 offPeakRatio: ratio,
                 offPeakPercentCheaper: Math.round((1 - ratio) * 100),

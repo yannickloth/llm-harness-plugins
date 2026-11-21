@@ -24,6 +24,8 @@ import {
   hasScheduled,
   allScheduled,
   planForProvider,
+  planForModel,
+  PROXY_PLAN_MODELS,
   windowsForPlan,
   ratioForPlan,
   isWeekendOffPeak,
@@ -148,6 +150,32 @@ describe("offpeak-nudge weekend policy", () => {
     expect(state["s-weekend"].cost?.peak).toBeCloseTo(0)
     expect(state["s-weekend"].cost?.offpeak).toBeCloseTo(0.03)
     fs.rmSync(stateDir, { recursive: true, force: true })
+  })
+})
+
+describe("offpeak-nudge proxy rank plans", () => {
+  test("planForModel maps the plan-bearing ranks to their first plan deployment", () => {
+    expect(planForModel("proxy", "major")?.providerID).toBe("zai")
+    expect(planForModel("proxy", "major-v")?.providerID).toBe("zai")
+    expect(planForModel("proxy", "lieutenant-colonel")?.providerID).toBe("zai")
+    expect(planForModel("proxy", "glm-5.3-flash")?.providerID).toBe("zai")
+    expect(planForModel("proxy", "deepseek-flash")?.providerID).toBe("deepseek")
+    expect(planForModel("proxy", "deepseek-v4-pro")?.providerID).toBe("deepseek")
+  })
+
+  test("free-cloud, local and Kimi-only ranks carry no plan", () => {
+    for (const rank of ["warrant-officer", "warrant-officer-v", "second-lieutenant", "lieutenant", "lieutenant-v", "sergeant", "lieutenant-colonel-v", "k3-256k"]) {
+      expect(planForModel("proxy", rank)).toBeUndefined()
+    }
+  })
+
+  test("planForModel ignores direct providers (they resolve by providerID)", () => {
+    expect(planForModel("deepseek", "deepseek-flash")).toBeUndefined()
+  })
+
+  test("the proxy map is case-insensitive", () => {
+    expect(planForModel("PROXY", "MAJOR")?.providerID).toBe("zai")
+    expect(PROXY_PLAN_MODELS["major"]).toBe("zai")
   })
 })
 
@@ -323,6 +351,45 @@ describe("offpeak-nudge plugin hooks", () => {
     const output = { system: ["base"] }
     await hooks["experimental.chat.system.transform"]({}, output)
     expect(output.system.length).toBe(1)
+  })
+
+  test("system.transform arms on a plan-bearing rank behind the proxy", async () => {
+    const hooks = await loadHooks()
+    const output = { system: ["base"] }
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "s-proxy-sys", model: { providerID: "proxy", modelID: "major" } },
+      output,
+    )
+    expect(output.system.length).toBe(2)
+    expect(output.system[0]).toContain(NUDGE_MARKER)
+  })
+
+  test("system.transform stays silent on free-cloud and local ranks", async () => {
+    const hooks = await loadHooks()
+    for (const modelID of ["warrant-officer", "second-lieutenant", "lieutenant", "sergeant"]) {
+      const output = { system: ["base"] }
+      await hooks["experimental.chat.system.transform"](
+        { sessionID: `s-proxy-${modelID}`, model: { providerID: "proxy", modelID } },
+        output,
+      )
+      expect(output.system.length).toBe(1)
+    }
+  })
+
+  test("chat.message banners a heavy prompt on a proxy cash model during peak", async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "offpeak-proxy-"))
+    const stateFile = path.join(stateDir, "state.json")
+    const hooks = await loadHooks({
+      now: () => new Date("2026-08-13T02:00:00Z"), // inside DeepSeek peak 01:00–04:00 UTC
+      statePath: stateFile,
+    })
+    const output = { parts: [{ type: "text", text: "run integrate-topic for biofabrication" }] }
+    await hooks["chat.message"](
+      { sessionID: "s-proxy-heavy", model: { providerID: "proxy", modelID: "deepseek-flash" } },
+      output,
+    )
+    expect(output.parts[0].text.startsWith("╭")).toBe(true)
+    fs.rmSync(stateDir, { recursive: true, force: true })
   })
 
   test("session.created shows pricing toast only for a session already using a plan provider", async () => {
