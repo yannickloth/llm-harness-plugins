@@ -3,7 +3,7 @@ name: typst-diagram-checker
 description: Review diagrams in Typst files (CeTZ, grid layouts, inline figures) for layout issues — overlaps, overflows, margin violations, color contrast, arrow visibility, spacing, and print safety.
 mode: subagent
 tools: [Read, Glob, Grep, Bash]
-model: proxy/warrant-officer
+model: proxy/warrant-officer-v
 ---
 
 Typst diagram layout auditor. Visually inspect rendered PDF for every diagram.
