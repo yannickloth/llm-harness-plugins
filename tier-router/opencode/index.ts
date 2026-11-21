@@ -143,9 +143,8 @@ Resolved from (first match wins):
 
 const CLASSIFY_SYSTEM = [
   "You are a prompt classifier. Classify the user's task by reasoning complexity.",
-  "Reply with ONLY one word: FABLE, HAIKU, SONNET, OPUS, or ESCALATE.",
-  "FABLE: trivial single actions (close bracket, add semicolon, append text).",
-  "HAIKU: mechanical edits with clear scope (fix typo, rename, format, lint).",
+  "Reply with ONLY one word: HAIKU, SONNET, OPUS, or ESCALATE.",
+  "HAIKU: mechanical edits with clear scope (fix typo, rename, format, lint, close bracket, add semicolon).",
   "SONNET: reasoning/analysis required (analyze, implement, refactor, review, debug, explain).",
   "OPUS: deep formal reasoning (prove, formalize, math theorems, algorithm design).",
   "ESCALATE: ambiguous, unclear scope, multiple competing goals, or genuinely uncertain.",
@@ -192,12 +191,11 @@ async function classifyViaOpencode(dataDir: string | null, prompt: string): Prom
     const text = extractOpencodeText(out).toUpperCase()
     if (!text) return null
     // Take the first token and strip trailing punctuation so the common
-    // "FABLE.", "HAIKU!", "OPUS," outputs still match. Exact-token equality
+    // "HAIKU.", "SONNET!", "OPUS," outputs still match. Exact-token equality
     // (not startsWith) still rejects truncated/concatenated tokens like
-    // "FABLESTUFF", so partial output falls through to the keyword router.
+    // "HAIKUSTUFF", so partial output falls through to the keyword router.
     const token = text.split(/\s+/)[0].replace(/[.,!?;:)]+$/g, "")
     if (token === "ESCALATE") return { decision: "escalate", tier: "", reason: "LLM: uncertain scope", confidence: 0.7 }
-    if (token === "FABLE") return { decision: "direct", tier: "fable", reason: "LLM: trivial mechanical task", confidence: 0.9 }
     if (token === "HAIKU") return { decision: "direct", tier: "haiku", reason: "LLM: mechanical edit with clear scope", confidence: 0.9 }
     if (token === "OPUS") return { decision: "direct", tier: "opus", reason: "LLM: deep formal reasoning", confidence: 0.9 }
     if (token === "SONNET") return { decision: "direct", tier: "sonnet", reason: "LLM: reasoning/analysis required", confidence: 0.9 }
@@ -299,7 +297,7 @@ async function classifyPrompt(dataDir: string | null, prompt: string): Promise<C
 /**
  * Whether the expensive LLM classifier is worth running for a prompt. Cheap,
  * deterministic gate: short prompts and prompts that are clearly single,
- * mechanical actions (the FABLE/HAIKU band) skip the LLM round-trip and go
+ * mechanical actions (the HAIKU band) skip the LLM round-trip and go
  * straight to the Java keyword router. Keeps the common trivial prompt path
  * sub-second instead of a multi-second spawned `opencode run`.
  */
@@ -324,13 +322,12 @@ async function checkAmbiguity(prompt: string): Promise<string | null> {
   return null
 }
 
-/** Tier -> rank seat on the LiteLLM ladder. Fable is explicit-only, like
- * Claude Code's fable alias: no tier below it ever defaults upward. */
+/** Tier -> rank seat on the LiteLLM ladder. Every band has a rank we serve;
+ * nothing above Opus is kept. */
 const TIER_RANKS: Record<string, string> = {
   haiku: "sergeant",
   sonnet: "warrant-officer",
   opus: "lieutenant",
-  fable: "lieutenant-colonel",
 }
 
 const TIER_DIRECTIVES: Record<string, string[]> = {
@@ -340,11 +337,6 @@ const TIER_DIRECTIVES: Record<string, string[]> = {
     "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
   ],
   opus: [
-    "Be concise. Answer directly. Minimize output tokens.",
-    "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
-    "If uncertain or missing info, say so explicitly. Never invent facts or fabricate output.",
-  ],
-  fable: [
     "Be concise. Answer directly. Minimize output tokens.",
     "REQUIRED OUTPUT: Return usable results — direct results OR file path OR action summary with specifics. Never complete silently.",
     "If uncertain or missing info, say so explicitly. Never invent facts or fabricate output.",
@@ -460,7 +452,7 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
   }
 
   return {
-    // Register the tier agents (fable/haiku/sonnet/opus-general) on the v1
+    // Register the tier agents (haiku/sonnet/opus-general) on the v1
     // config map, so `opencode run --agent <tier>-general` resolves (no symlinks).
     config: async (input: any) => {
       registerAgentDirV1(input, agentsDir)
@@ -508,7 +500,7 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
 
     tool: {
       "classify-prompt": tool({
-        description: "Classify a prompt string into a reasoning tier (fable/haiku/sonnet/opus) with rewritten prompt. Use to test routing without executing.",
+        description: "Classify a prompt string into a reasoning tier (haiku/sonnet/opus) with rewritten prompt. Use to test routing without executing.",
         args: {
           prompt: tool.schema.string().describe("The user prompt to classify"),
         },
@@ -525,7 +517,7 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
         description: "Rewrite a prompt for a specific tier with SOTA prompt engineering criteria (conciseness, clarity, uncertainty permission, output format).",
         args: {
           prompt: tool.schema.string().describe("The prompt to rewrite"),
-          tier: tool.schema.enum(["fable", "haiku", "sonnet", "opus"])
+          tier: tool.schema.enum(["haiku", "sonnet", "opus"])
             .default("sonnet")
             .describe("Target reasoning tier"),
         },
@@ -631,7 +623,7 @@ export default {
 
       editor.add({
         name: "classify-prompt",
-        description: "Classify a prompt string into a reasoning tier (fable/haiku/sonnet/opus) with rewritten prompt. Use to test routing without executing.",
+        description: "Classify a prompt string into a reasoning tier (haiku/sonnet/opus) with rewritten prompt. Use to test routing without executing.",
         input: schema({ prompt: { type: "string", description: "The user prompt to classify" } }, ["prompt"]),
         async execute(args: any) {
           if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Classification disabled in subprocess." }
@@ -645,7 +637,7 @@ export default {
         description: "Rewrite a prompt for a specific tier with SOTA prompt engineering criteria (conciseness, clarity, uncertainty permission, output format).",
         input: schema({
           prompt: { type: "string", description: "The prompt to rewrite" },
-          tier: { type: "string", enum: ["fable", "haiku", "sonnet", "opus"], default: "sonnet", description: "Target reasoning tier" },
+          tier: { type: "string", enum: ["haiku", "sonnet", "opus"], default: "sonnet", description: "Target reasoning tier" },
         }, ["prompt"]),
         async execute(args: any) {
           if (process.env[NO_SUBSPAWN_ENV] === "1") return { content: "Rewrite disabled in subprocess." }

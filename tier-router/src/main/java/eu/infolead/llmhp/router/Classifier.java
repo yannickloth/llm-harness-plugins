@@ -280,9 +280,6 @@ final class Classifier {
         );
         if (sonnetKeywords.stream().anyMatch(lower::contains)) return Tier.SONNET;
 
-        // Fable has no keyword band: frontier work is explicit-only (the LLM
-        // classifier or the caller selects it), matching Claude Code's rule
-        // that no Fable model is ever an account default.
         if (hasFile) return Tier.HAIKU;
         return null;
     }
@@ -290,8 +287,6 @@ final class Classifier {
     double keywordConfidence(String request, Tier matched) {
         var lower = request.toLowerCase();
         return switch (matched) {
-            // No keyword band: frontier work is explicit-only.
-            case FABLE -> 0.0;
             case HAIKU -> {
                 var matches = countMatches(lower, Set.of(
                     "fix", "typo", "syntax", "format", "lint", "rename",

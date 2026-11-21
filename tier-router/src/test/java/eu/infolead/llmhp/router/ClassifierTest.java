@@ -8,11 +8,10 @@ public final class ClassifierTest {
     public static void main(String... args) {
         var c = new Classifier();
 
-        // ── tier order: Haiku < Sonnet < Opus < Fable ──
+        // ── tier order: Haiku < Sonnet < Opus (no band above a served rank) ──
         check(Tier.HAIKU.relativeCost() < Tier.SONNET.relativeCost(), "haiku cheaper than sonnet");
         check(Tier.SONNET.relativeCost() < Tier.OPUS.relativeCost(), "sonnet cheaper than opus");
-        check(Tier.OPUS.relativeCost() < Tier.FABLE.relativeCost(), "opus cheaper than fable");
-        check(Tier.from("fable") == Tier.FABLE, "fable parses");
+        check(Tier.values().length == 3, "three bands");
 
         // ── keyword bands ──
         check(c.keywordMatch("add semicolon to Foo.java") == Tier.HAIKU, "semicolon -> haiku");
@@ -22,10 +21,8 @@ public final class ClassifierTest {
         check(c.keywordMatch("prove the theorem") == Tier.OPUS, "prove -> opus");
         check(c.keywordMatch("formalize the invariant") == Tier.OPUS, "formalize -> opus");
         check(c.keywordMatch("design a new architecture") == null, "design has no keyword band");
-        check(c.keywordMatch("prove the theorem") != Tier.FABLE, "fable is never keyword-matched");
 
-        // ── confidence: fable has no keyword band ──
-        check(c.keywordConfidence("prove the theorem", Tier.FABLE) == 0.0, "fable confidence 0");
+        // ── confidence ──
         check(c.keywordConfidence("add semicolon to Foo.java", Tier.HAIKU) > 0.0, "haiku confidence positive");
 
         // ── skill-axis table carries gateway names ──

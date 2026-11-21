@@ -2,7 +2,7 @@
 
 Intercepts user prompts, classifies reasoning complexity (keyword rules + optional LLM classifier + skill-axis rank match), reformulates the prompt, and annotates the message (opt-in) with tier directives and a rank/agent recommendation. A Java 25 CLI (`RouterCli`) does the keyword/rank/budget logic; the OpenCode plugin (TS) spawns it and a headless `opencode run` for LLM classification.
 
-Tier order is Claude's real lineup, ascending: **Haiku < Sonnet < Opus < Fable**. Each tier maps to a rank seat: haiku → `sergeant`, sonnet → `warrant-officer`, opus → `lieutenant`, fable → `lieutenant-colonel`. Fable has no keyword band and is explicit-only (LLM classifier or caller), mirroring Claude Code's rule that no Fable model is an account default.
+Tier order, ascending: **Haiku < Sonnet < Opus**. Each tier maps to a rank the gateway serves: haiku → `sergeant`, sonnet → `warrant-officer`, opus → `lieutenant`. There is no band without a rank behind it.
 
 ## OpenCode API (hooks used, v1 vs v2, version sensitivity)
 
@@ -54,7 +54,7 @@ Tier order is Claude's real lineup, ascending: **Haiku < Sonnet < Opus < Fable**
 
 - The plugin must be listed in `opencode.json` (`./tier-router/opencode`). The repo's root `opencode.json` does NOT register it; `opencode.json.sample` does. ⚠
 - Annotation is opt-in (`TIER_ROUTER_ANNOTATE=1`); default-off.
-- Tier agents `fable/haiku/sonnet/opus-general` register via the v1 `config` hook or v2 `agent.transform`. Their `model:` values are full `proxy/<rank>` refs and register as-is (no `opencode.json` model chain for them).
+- Tier agents `haiku/sonnet/opus-general` register via the v1 `config` hook or v2 `agent.transform`. Their `model:` values are full `proxy/<rank>` refs and register as-is (no `opencode.json` model chain for them).
 - The 3 tools (`classify-prompt`, `rewrite-prompt`, `check-ambiguity`) register in both v1 and v2.
 
 ## Concurrency (locks, multi-instance, atomicity)
@@ -68,7 +68,7 @@ Tier order is Claude's real lineup, ascending: **Haiku < Sonnet < Opus < Fable**
 
 ## Data & LLM behavior (trusted formats, model assumptions)
 
-- LLM classifier reply is trusted as one token: `HAIKU|SONNET|OPUS|FABLE|ESCALATE` (trailing punctuation stripped). Anything else → keyword fallback. ⚠
+- LLM classifier reply is trusted as one token: `HAIKU|SONNET|OPUS|ESCALATE` (trailing punctuation stripped). Anything else → keyword fallback. ⚠
 - Java LLM reply is parsed by string-scanning for the first `"content":"` after `"message"`; the unescape drops backslash escapes (harmless for one-word replies).
 - Ambiguity = fixed 7-phrase substring list, skipped when a path/extension is present.
 - Skill-axis match = ≥ 2 substring keyword hits in one axis; substring matching causes over-hits (e.g. "finance" ⊃ "nan", "summary" ⊃ "sum").

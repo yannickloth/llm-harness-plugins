@@ -6,7 +6,7 @@ description: Prompt-intercepting tier router that classifies a request by reason
 ## How It Works
 
 1. **Intercept**: the `chat.message` (v1) / `session.hook("prompt")` (v2) hook sees each user prompt before the model does.
-2. **Classify**: LLM classifier for substantial prompts; otherwise the Java `RouterCli` (ambiguity, skill-axis rank match, keyword bands). Tier order is **Haiku < Sonnet < Opus < Fable**.
+2. **Classify**: LLM classifier for substantial prompts; otherwise the Java `RouterCli` (ambiguity, skill-axis rank match, keyword bands). Tier order is **Haiku < Sonnet < Opus**.
 3. **Reformulate**: rewrites the prompt with SOTA criteria:
    - Conciseness directive
    - Output format constraint ("Return usable results")
@@ -22,10 +22,8 @@ description: Prompt-intercepting tier router that classifies a request by reason
 | haiku | `haiku-general` | `proxy/sergeant` | 0.25x | Mechanical: typos, format, rename, sort |
 | sonnet | `sonnet-general` | `proxy/warrant-officer` | 1x | Judgment: analyze, implement, refactor, review |
 | opus | `opus-general` | `proxy/lieutenant` | 12x | Deep reasoning: proofs, formal verification |
-| fable | `fable-general` | `proxy/lieutenant-colonel` | 75x | Frontier: hardest/longest-running work, architecture |
 
-Fable is the top band and explicit-only: no keyword rule assigns it, and no
-lower tier auto-escalates to it.
+Opus is the top band; there is no rank above it in this plugin.
 
 ## Escalation Triggers
 
@@ -50,8 +48,7 @@ Add to `opencode.json`:
   "agent": {
     "haiku-general": { "mode": "subagent", "model": "proxy/sergeant" },
     "sonnet-general": { "mode": "subagent", "model": "proxy/warrant-officer" },
-    "opus-general": { "mode": "subagent", "model": "proxy/lieutenant" },
-    "fable-general": { "mode": "subagent", "model": "proxy/lieutenant-colonel" }
+    "opus-general": { "mode": "subagent", "model": "proxy/lieutenant" }
   }
 }
 ```
