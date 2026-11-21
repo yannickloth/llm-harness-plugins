@@ -24,10 +24,7 @@ installation and runtime. Mark fragile assumptions with ⚠.
 
 ## Environment
 
-- ⚠ 17 agents pin `model: deepseek/deepseek-v4-pro` and 8 pin
-  `deepseek/deepseek-flash`. These references resolve only when the global
-  config declares a `deepseek` provider and `DEEPSEEK_API_KEY` is present in
-  the runtime environment (true here via `~/.config/opencode/opencode.env`).
+- All 25 agents pin `proxy/<rank>` refs (`proxy/lieutenant` ×17 — the sequential adversarial/scientific-analysis panel, `proxy/warrant-officer` ×2, `proxy/sergeant` ×6). These resolve through the `proxy` provider (LiteLLM rank gateway) — no direct provider key required.
 - `LLMHP_CANARY_DIR` and `LLMHP_CANARY_NONCE` are optional. The load canary
   is a no-op unless both are set (shared/load-canary.ts).
 - The `review-adversarial-generic` skill writes its report to

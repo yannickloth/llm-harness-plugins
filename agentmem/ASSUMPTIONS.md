@@ -23,8 +23,8 @@ File-based, auto-persisted memory for OpenCode. A TypeScript plugin (`opencode/i
 - ⚠ Recursion guard `LLMHP_NO_SUBSPAWN=1` set on spawned children; effective only if the plugin also loads inside the child `opencode run` process (its own server). If a child instead attaches to a shared server whose env lacks the var, the guard is a no-op.
 - `OPENCODE_MEMORY_MODEL` — model for keeper/dreamer; default `"auto"`.
 - `OPENCODE_MEMORY_CLASSIFY_INTERVAL_MS` — classifier rate limit; default `300000`; non-numeric / ≤ 0 falls back to default.
-- ⚠ Classifier model is hard-coded `deepseek/deepseek-flash`; that provider must be configured and authenticated or every classification silently returns NO.
-- Sample config assumes an `openai/gpt-4.1-nano` provider for the keeper/dreamer agents.
+- ⚠ Classifier model is hard-coded `proxy/sergeant` (rank gateway); if the gateway is unreachable or unauthenticated, every classification silently returns NO.
+- Sample config sets `proxy/warrant-officer` for the keeper/dreamer agents.
 - `LLMHP_CANARY_DIR` / `LLMHP_CANARY_NONCE` — only for the load canary; unset = no-op.
 - `user.home` used by the (unused) `tiered-inject` CLI path.
 

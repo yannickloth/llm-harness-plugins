@@ -44,10 +44,10 @@ Add to `opencode.json`:
 {
   "plugin": ["./tier-router/opencode/index.ts"],
   "agent": {
-    "fable-general": { "mode": "subagent", "model": "anthropic/claude-fable-5" },
-    "haiku-general": { "mode": "subagent", "model": "anthropic/claude-haiku-4.5" },
-    "sonnet-general": { "mode": "subagent", "model": "anthropic/claude-sonnet-5" },
-    "opus-general": { "mode": "subagent", "model": "anthropic/claude-opus-5" }
+    "fable-general": { "mode": "subagent", "model": "proxy/sergeant" },
+    "haiku-general": { "mode": "subagent", "model": "proxy/sergeant" },
+    "sonnet-general": { "mode": "subagent", "model": "proxy/warrant-officer" },
+    "opus-general": { "mode": "subagent", "model": "proxy/lieutenant" }
   }
 }
 ```

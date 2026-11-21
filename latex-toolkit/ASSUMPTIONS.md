@@ -6,7 +6,7 @@ tool that compiles with `latexmk -pdf` into a scratch temp dir.
 ## OpenCode API (hooks used, v1 vs v2, version sensitivity)
 - v2: `id` + `setup(ctx)`; skills via `ctx.skill.transform` (shared/v2-skills), agents via `ctx.agent.transform` (shared/agents), tool via `ctx.tool.transform` with JSON Schema input and `{ content }` results.
 - v1: `server()` serves a function-form factory; `config` hook (valid per `@opencode-ai/plugin` types) appends the skills dir and registers agents inline; `tool` map registers `latex-check`.
-- ⚠ All 8 agents use bare model aliases (`model: haiku` ×7, `model: sonnet` ×1) — silently dropped by shared/agents.ts (only `provider/model` survives); the "sonnet tier is intentional" note in `latex-syntax-fixer.md` therefore has no effect.
+- All 8 agents pin `proxy/sergeant` except `latex-syntax-fixer`, which pins `proxy/warrant-officer` — the file's "deeper tier is intentional" note now has effect (LaTeX error recovery needs more reasoning than Typst's).
 - ⚠ `tools:` frontmatter lists are intentionally ignored by shared/agents.ts — "read-only" checkers rely on prose constraints plus the default tool set.
 - ⚠ An agent id already present in the host config is not overwritten by the plugin.
 

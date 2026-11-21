@@ -28,7 +28,7 @@
   ],
   "agent": {
     "memory-keeper": {
-      "model": "openai/gpt-4.1-nano",
+      "model": "proxy/warrant-officer",
       "mode": "subagent",
       "steps": 5,
       "permission": {
@@ -37,7 +37,7 @@
       }
     },
     "memory-dreamer": {
-      "model": "openai/gpt-4.1-nano",
+      "model": "proxy/warrant-officer",
       "mode": "subagent",
       "steps": 10,
       "permission": {
@@ -59,13 +59,13 @@
     },
     "bulk-reader": {
       "file": "./premium-read-offload/agents/bulk-reader.md",
-      "model": "deepseek/deepseek-flash",
+      "model": "proxy/warrant-officer",
       "mode": "all",
       "permission": { "read": "allow", "edit": "deny", "bash": "deny", "glob": "allow", "grep": "allow" }
     },
     "code-writer": {
       "file": "./premium-read-offload/agents/code-writer.md",
-      "model": "deepseek/deepseek-flash",
+      "model": "proxy/warrant-officer",
       "mode": "all",
       "permission": { "read": "allow", "edit": "deny", "bash": "deny", "glob": "allow", "grep": "allow" }
     }

@@ -287,7 +287,7 @@ The `.md` file frontmatter is for metadata. All config (model, mode, steps, desc
 {
   "agent": {
     "memory-keeper": {
-      "model": "deepseek/deepseek-flash",
+      "model": "proxy/warrant-officer",
       "mode": "subagent",
       "steps": 5,
       "description": "Extracts non-derivable learnings from conversation to persistent memory",
@@ -310,7 +310,7 @@ Plugins that ship agents:
 | `sdlc-guardrails` | `plan-auditor`, `test-guard-auditor` | Verify diff vs plan / weakened tests |
 | `latex-toolkit` | `latex-xref-checker`, `latex-syntax-fixer`, `latex-figure-caption-auditor`, `latex-production-readiness-checker`, `latex-notation-consistency-checker`, `latex-index-auditor`, `latex-citation-checker`, `latex-formatting-fixer` | Use `{file:...}` prompt |
 | `typst-toolkit` | `typst-diagram-checker`, `typst-syntax-fixer`, `typst-citation-checker`, `typst-xref-checker`, `typst-production-readiness-checker`, `typst-formatting-fixer` | Use `{file:...}` prompt |
-| `premium-read-offload` | `bulk-reader`, `code-writer` | Worker prompts for the offload gate; run on `deepseek/deepseek-flash` |
+| `premium-read-offload` | `bulk-reader`, `code-writer` | Worker prompts for the offload gate; run on `proxy/warrant-officer` |
 
 Plugins without agents: `guardrail-chain`, `semantic-cache`, `semantic-router`, `agentinsights`, `knowledge-graph`, `graphrag`, `prompt-registry`, `session-lifecycle` (tools/hooks only).
 ### Adding a plugin agent to your project
@@ -319,7 +319,7 @@ Plugins without agents: `guardrail-chain`, `semantic-cache`, `semantic-router`, 
 {
   "agent": {
     "typst-diagram-checker": {
-      "model": "kimi-for-coding/k3",
+      "model": "proxy/warrant-officer-v",
       "mode": "subagent",
       "prompt": "{file:./llm-harness-plugins/typst-toolkit/agents/typst-diagram-checker.md}",
       "permission": {

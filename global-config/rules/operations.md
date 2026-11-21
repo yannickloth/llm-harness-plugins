@@ -24,7 +24,7 @@ Fastest, least expensive approach always.
 | Automate repeated actions | Script/loop, not N manual steps |
 | Batch operations | Group similar actions |
 | Parallel execution | Concurrent tool calls + background agents |
-| Cheapest sufficient model | small=mechanical, default=judgment, capable=deep reasoning |
+| Cheapest sufficient rank | `sergeant`=mechanical · `warrant-officer`=volume + all parallel fan-out · `second-lieutenant`=language quality · `lieutenant`=deep reasoning; above-lieutenant = explicit per-task escalation |
 | Minimize round-trips | One-pass info gathering |
 | Avoid redundant work | Check done before doing; don't re-read files in context |
 

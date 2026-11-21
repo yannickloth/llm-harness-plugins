@@ -39,13 +39,13 @@ plugins — position is irrelevant.
 "agent": {
   "bulk-reader": {
     "file": "./llm-harness-plugins/premium-read-offload/agents/bulk-reader.md",
-    "model": "deepseek/deepseek-flash",
+    "model": "proxy/warrant-officer",
     "mode": "all",
     "permission": { "read": "allow", "edit": "deny", "bash": "deny", "glob": "allow", "grep": "allow" }
   },
   "code-writer": {
     "file": "./llm-harness-plugins/premium-read-offload/agents/code-writer.md",
-    "model": "deepseek/deepseek-flash",
+    "model": "proxy/warrant-officer",
     "mode": "all",
     "permission": { "read": "allow", "edit": "deny", "bash": "deny", "glob": "allow", "grep": "allow" }
   }
@@ -61,7 +61,7 @@ worker without an agent (which also drops the citation/format prompt). Passing
 
 - Java 25 (`java -version`) — the deterministic core is compiled and committed; **no build step**.
 - `opencode` on `PATH` — the worker is a child `opencode run`.
-- A reachable `deepseek/deepseek-flash` (or your `LLMHP_OFFLOAD_WORKER_MODEL`).
+- A reachable `proxy/warrant-officer` rank on the LiteLLM gateway (or your `LLMHP_OFFLOAD_WORKER_MODEL`).
 - Restart OpenCode. On start the log shows `premium-read-offload plugin active — gate on premium sessions, worker=...`.
 
 ### Example — `~/code/ivp-book-series`
@@ -79,19 +79,18 @@ and add the two agents to its `agent` object (same relative path):
 "bulk-reader": {
   "file": "../llm-harness-plugins/premium-read-offload/agents/bulk-reader.md",
   "mode": "all",
-  "model": "deepseek/deepseek-flash",
-  "thinking": { "type": "disabled" }
+  "model": "proxy/warrant-officer"
 },
 "code-writer": {
   "file": "../llm-harness-plugins/premium-read-offload/agents/code-writer.md",
   "mode": "all",
-  "model": "deepseek/deepseek-flash",
-  "thinking": { "type": "disabled" }
+  "model": "proxy/warrant-officer"
 }
 ```
 
-> `ivp-book-series` currently runs `deepseek/*` for its main session and agents,
-> so the gate stays dormant there (reads pass through — no premium pool to
+> `ivp-book-series` runs rank-ladder sessions (`proxy/*`) for its main session
+> and agents, so the gate's premium detection (provider/model substring
+> markers) stays dormant there (reads pass through — no premium pool to
 > protect). It activates only when the active session's provider is `kimi`,
 > `kimi-for-coding`, `zai`, or `zai-coding-plan`. That makes it safe to register now and use the moment
 > a Kimi/GLM session is opened. Worker model `deepseek/deepseek-flash` matches

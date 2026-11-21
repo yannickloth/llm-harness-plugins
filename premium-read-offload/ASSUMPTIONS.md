@@ -4,9 +4,9 @@ OpenCode plugin that keeps bulk file reads and boilerplate generation out of a
 premium subscription session (Kimi K3, GLM-5.3, GLM-5.3-Flash). A hard gate in
 `tool.execute.before` blocks unbounded `read` and plain `cat/head/tail/less/more`
 on premium sessions, redirecting to the `offload-read` tool. `offload-read` and
-`code-write` run a persistent cheap `deepseek-flash` worker via child
-`opencode run` (one resumed session per corpus fingerprint, so DeepSeek's prefix
-cache serves follow-ups). Worker answers are mechanically citation-verified
+`code-write` run a persistent cheap `proxy/warrant-officer` worker via child
+`opencode run` (one resumed session per corpus fingerprint, so provider prefix
+caching serves follow-ups). Worker answers are mechanically citation-verified
 (Java `CitationVerifier`) and returned as a JSON provenance contract.
 
 ## OpenCode API (hooks used, v1 vs v2, version sensitivity)
@@ -26,7 +26,7 @@ cache serves follow-ups). Worker answers are mechanically citation-verified
 - `java` on PATH must be JDK 25 (classes compiled with `--release 25`; committed in `build/classes`, no build step required).
 - `opencode` on PATH (worker transport is a child `opencode run`).
 - `jq` on PATH for `evals/run.sh` only (not needed at runtime).
-- Env vars (defaults): `LLMHP_PREMIUM_OFFLOAD` (kill switch, `"0"` disables), `LLMHP_OFFLOAD_WORKER_MODEL` (`deepseek/deepseek-flash`), `LLMHP_OFFLOAD_READER_AGENT` (`bulk-reader`), `LLMHP_OFFLOAD_WRITER_AGENT` (`code-writer`), `LLMHP_OFFLOAD_MIN_LINES` (`1000`), `LLMHP_OFFLOAD_ZAI_MIN_LINES` (`400`), `LLMHP_OFFLOAD_TARGETED_MAX` (`2000`), `LLMHP_OFFLOAD_MIN_WORTH_LINES` (`200`), `LLMHP_OFFLOAD_TIMEOUT_MS` (`180000`), `LLMHP_OFFLOAD_TTL_DAYS` (`14`), `LLMHP_OFFLOAD_DATA_DIR` (else `$XDG_RUNTIME_DIR/premium-read-offload`, else `os.tmpdir()/premium-read-offload`).
+- Env vars (defaults): `LLMHP_PREMIUM_OFFLOAD` (kill switch, `"0"` disables), `LLMHP_OFFLOAD_WORKER_MODEL` (`proxy/warrant-officer`), `LLMHP_OFFLOAD_READER_AGENT` (`bulk-reader`), `LLMHP_OFFLOAD_WRITER_AGENT` (`code-writer`), `LLMHP_OFFLOAD_MIN_LINES` (`1000`), `LLMHP_OFFLOAD_ZAI_MIN_LINES` (`400`), `LLMHP_OFFLOAD_TARGETED_MAX` (`2000`), `LLMHP_OFFLOAD_MIN_WORTH_LINES` (`200`), `LLMHP_OFFLOAD_TIMEOUT_MS` (`180000`), `LLMHP_OFFLOAD_TTL_DAYS` (`14`), `LLMHP_OFFLOAD_DATA_DIR` (else `$XDG_RUNTIME_DIR/premium-read-offload`, else `os.tmpdir()/premium-read-offload`).
 - ⚠ `LLMHP_NO_SUBSPAWN`: `safeSpawn` does NOT set it on the worker child (only `spawnDetached` does), so the `code-write` subprocess guard never fires for worker children, and `offload-read` has no such guard at all — a worker session can in principle re-invoke offload tools and spawn nested `opencode run` children (bounded only by the worker model's behavior).
 - `XDG_DATA_HOME`/`XDG_RUNTIME_DIR` semantics assumed (XDG-compliant platform, typically Linux).
 - ⚠ Worker timeout (180 s default) only races the promise; the child `opencode run` process is not killed on timeout and keeps running (and spending) past the cap.
@@ -45,16 +45,16 @@ cache serves follow-ups). Worker answers are mechanically citation-verified
 
 ## External services
 
-- DeepSeek API via the `deepseek/deepseek-flash` model (or `LLMHP_OFFLOAD_WORKER_MODEL`) — authenticated through the linked `auth.json`; no other network calls.
-- Assumed: DeepSeek automatic prefix cache serves resumed-session follow-ups near-free (design §5, empirically verified 2026-09-13: 99.6% cache hit on turn 3).
+- LiteLLM rank gateway via the `proxy/warrant-officer` rank (or `LLMHP_OFFLOAD_WORKER_MODEL`) — authenticated through the linked `auth.json` / `litellm-proxy.key`; no other network calls.
+- Assumed: provider prefix cache serves resumed-session follow-ups near-free (design §5; empirically verified 2026-09-13 against the DeepSeek backend: 99.6% cache hit on turn 3). ⚠ The worker now runs on `proxy/warrant-officer` (Hetzner primary / Studio fallback) — cache behaviour there is unverified.
 - Assumed: premium subscriptions (Kimi Allegretto, ZAI GLM Coding Plan) gate on the provider/model pair as configured; no quota API is consulted (open-loop by design).
 
 ## Configuration (opencode.json)
 
-- ⚠ Root `opencode.json` registers neither the plugin nor the agents. `opencode.json.sample` registers `./premium-read-offload/opencode` plus agents `bulk-reader` and `code-writer` (`mode: "all"`, `model: "deepseek/deepseek-flash"`, read-only permissions) — the plugin is inert without an equivalent config.
+- ⚠ Root `opencode.json` registers neither the plugin nor the agents. `opencode.json.sample` registers `./premium-read-offload/opencode` plus agents `bulk-reader` and `code-writer` (`mode: "all"`, `model: "proxy/warrant-officer"`, read-only permissions) — the plugin is inert without an equivalent config.
 - If the agents are NOT pre-registered in the config, the plugin registers them inline from `agents/*.md` — and the md frontmatter says `mode: subagent`, which re-triggers the `opencode run --agent` fallback (default agent, citation prompt dropped) that design §14g fixed for the sample config only.
 - Worker model must be reachable under the linked auth; a 401 surfaces as `worker produced no text output`.
-- Gate provider/model list is hardcoded in Java (`kimi`, `kimi-for-coding`, `zai`, `zai-coding-plan` providers; model substring markers `k3`, `glm-5.3`): ⚠ the opencode 2.2.5 catalog contains model id `kimi-k3` (matches) but the Kimi Code subscription models `kimi-for-coding`/`kimi-for-coding-highspeed` do not contain `k3`, so the gate stays dormant for those models; the evals' assumed id `k3-256k` is not in the catalog.
+- Gate provider/model list is hardcoded in Java (`kimi`, `kimi-for-coding`, `zai`, `zai-coding-plan` providers; model substring markers `k3`, `glm-5.3`): ⚠ the opencode 2.2.5 catalog contains model id `kimi-k3` (matches) but the Kimi Code subscription models `kimi-for-coding`/`kimi-for-coding-highspeed` do not contain `k3`, so the gate stays dormant for those models; the evals' assumed id `k3-256k` is not in the catalog. ⚠ Rank-ladder sessions (`proxy/*` provider) match no marker either — the gate is dormant for rank-named sessions; it would need rank-aware premium detection (e.g. matching the paid ranks) to activate there.
 
 ## Concurrency (locks, multi-instance, atomicity)
 

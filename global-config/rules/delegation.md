@@ -45,14 +45,20 @@ Before writing any agent prompt or delegating a task, verify all four fields are
 
 ## Agent Model Selection
 
-Pick the cheapest sufficient model for the task type. Never silently upgrade to a costlier model — state the cost trade-off and ask before proceeding with an alternative.
+Models are rank names (`proxy/<rank>`) on the LiteLLM rank gateway — pure abstractions over the model holding the slot; the model behind a rank can change without touching agent config. Pick the cheapest sufficient rank. Never silently escalate to a costlier rank — state the trade-off and ask.
 
-| Task type | Tier |
+| Task type | Rank |
 |-----------|------|
-| Mechanical (renames, edits, structure fixes) | small/fast model |
-| Standard judgment | default model |
-| Open-ended exploration/research | explore agent |
-| Implementation planning | plan agent |
-| Deep reasoning / formal proofs | most capable model |
+| Mechanical (renames, edits, structure fixes, checkers, faithful transformation) | `proxy/sergeant` |
+| Volume (agentic pipelines, code generation, fix loops, long-form, research scanning) | `proxy/warrant-officer` |
+| Language quality (style, tone, translation, terminology, prose patterns) | `proxy/second-lieutenant` |
+| Deep reasoning / formal proofs / adversarial / domain-critical audits | `proxy/lieutenant` |
+| Reads rendered figures / images / PDFs | the rank's `-v` sibling (checker → `proxy/warrant-officer-v`, deep visual judgment → `proxy/lieutenant-v`) |
 
-**Rationale:** silent fallback inflates costs fast; token limits hit → all work blocked. Route before continuing.
+**Hard contracts:**
+
+- **Local ranks are sequential-only.** `sergeant` and `lieutenant` sit on single-slot local backends: parallel fan-out queues and queued requests can time out. N > 1 at once → `proxy/warrant-officer` (cloud), unconditionally — even for work that would otherwise be sergeant-class.
+- **Plain ranks are text-only by contract.** Vision is exposed only through the `-v` sibling ranks; no caller may expect images from a plain rank (that is what lets a rank's model be swapped freely).
+- **Nothing defaults above `lieutenant`.** `major`, `lieutenant-colonel*`, and unranked paid ids are explicit per-task escalation only, never an agent default.
+
+**Rationale:** silent escalation burns quota fast; token limits hit → all work blocked. Route before continuing.

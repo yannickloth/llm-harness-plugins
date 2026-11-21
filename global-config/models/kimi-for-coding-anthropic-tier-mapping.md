@@ -4,6 +4,8 @@ Research date: 2026-08-22.
 
 Reference doc for routing plugin agents that use Anthropic tier names (`haiku`, `sonnet`, `opus`, `fable`) against a Kimi For Coding subscription fleet.
 
+> **Status (2026-11):** superseded by the rank ladder — agents reference rank names (`proxy/<rank>`) via the LiteLLM gateway, not Anthropic tier names or direct Kimi ids. The mapping below is a point-in-time research record (fetched 2026-08-22), kept for reference only.
+
 ## Sources
 
 | Source | Provides | Fetched |

@@ -14,7 +14,7 @@ Detail rules live in `global-config/rules/*.md` and are loaded **on demand**. Do
 | `rules/agent-execution.md` | Running/monitoring agents; evaluating agent output |
 | `rules/response-quality.md` | Drafting responses or handling errors |
 | `rules/operations.md` | Estimation, efficiency, session/file handling, dead code, review-context fixes |
-| `rules/kimi-subscription-models.md` | Choosing/validating a Kimi model ID, debugging "Model not found", configuring Kimi For Coding in opencode |
+| `rules/kimi-subscription-models.md` | Kimi backend behavior reference (reached via ranks `major` / `lieutenant-colonel-v`); point-in-time provider catalog record |
 | `rules/calculations.md` | Computing any number, quoting figures in a document you produce, or proposing a calculator install |
 
 ## Computed Numbers
@@ -194,7 +194,7 @@ Before ANY file deletion or major change:
 | 4 | Audit trail | Important ops logged/trackable |
 | 5 | Reversibility preference | Prefer reversible ops |
 
-For dangerous/destructive or high-stakes operations, prefer a more capable model; avoid the small fast model for destructive or risky work.
+For dangerous/destructive or high-stakes operations, escalate the rank — never `proxy/sergeant` for destructive or risky work; ranks above `proxy/lieutenant` are explicit per-task escalation only.
 
 ## Never Fabricate
 

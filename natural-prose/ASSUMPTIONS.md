@@ -26,7 +26,7 @@ LLM audit / naturalisation / judging passes over prose, with domain modes
 
 - Reads `<plugin>/skills/<name>/SKILL.md` (frontmatter `name`/`description`) and `<plugin>/agents/*.md` (sorted by filename) at plugin load; UTF-8.
 - Agent ids come from the frontmatter `name:` (all three match their filenames); bodies become the agent `system` prompt.
-- All three agents set `model: deepseek/deepseek-v4-pro` — a full `provider/model` ref, which `shared/agents.ts` keeps (bare aliases such as `model: sonnet` would be silently dropped).
+- The agents pin `proxy/warrant-officer` (auditor, naturalizer) and `proxy/second-lieutenant` (perplexity-judge) — full `provider/model` refs, which `shared/agents.ts` keeps (bare aliases such as `model: sonnet` would be silently dropped).
 - ⚠ Analyzer path is hardcoded to the sibling plugin layout: `<repo>/general-skills/tools/ProsePatternAnalyzer.java`; if that tree moves, `naturalize-analyzer-path` returns `NOT FOUND: <path>` and the skills stop (handled, but the whole deterministic baseline is gone).
 - `TypstIncludeResolver.java` is expected in the same `general-skills/tools` directory; the skill references it with a `<tools-path>` placeholder and no tool resolves that path.
 - ⚠ Agent bodies reference `references/natural-prose.md`, `references/scientific-ai-prose.md`, `references/reader-guidance-phrases.md` as bare relative paths, but the files live at `<plugin>/references/`; nothing copies or symlinks them into a project, so a subagent must discover them (works by luck of the layout in this repo, fragile elsewhere).

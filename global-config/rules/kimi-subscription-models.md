@@ -4,6 +4,8 @@
 
 # Kimi For Coding — Subscription Model IDs
 
+> **Status (2026-11):** the client no longer ships a Kimi provider — opencode/pi reach Kimi only through the LiteLLM rank-gateway provider (`proxy`), as rank deployments: `major` (kimi-for-coding) and `lieutenant-colonel-v` (k3 / k3-256k). The catalog below is a point-in-time provider record (fetched 2026-08-12) kept for backend debugging — do not use these ids as client model references.
+
 ## Two products — do not conflate
 
 | Product | Billing | Base URL | Notes |

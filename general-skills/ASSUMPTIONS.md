@@ -7,7 +7,7 @@ Provides the `calc` and `calc_probe` tools, injects the `[calc-discipline]` and 
 - v2 hooks: `ctx.skill.transform` (shared/v2-skills.ts), `ctx.agent.transform` (shared/agents.ts), `ctx.session.hook("context")`, `ctx.tool.transform`. ⚠ All four names and their shapes are version-sensitive; the context hook mutates `event.system` in place (`unshift`) and expects parts shaped `{ type: "text", text }`.
 - v1 hooks: `config` (appends skills dir to `input.skills.paths`, inlines agents into `input.agent`) and `experimental.chat.system.transform` (string array). ⚠ The experimental hook name must exist in `@opencode-ai/plugin` v1.19.3; both rules are injected there with no lifecycle `event` hook involved.
 - Tool schema v1 (zod) vs v2 (JSON Schema): same arg surface (`expr` required, `engine` enum `auto|qalc|numbat|bc|python|sympy|maxima`). ⚠ v1 validates `engine` via `z.enum`; v2 relies on host-side enum enforcement — an invalid `engine` string reaching `calcImpl` throws (`ENGINES[bad]` is `undefined`, then `.good` access crashes).
-- Agent frontmatter: ⚠ 10 of 12 agents declare `model: sonnet` (bare alias); shared/agents.ts drops bare aliases by design, so these agents run on the default model. `proof-soundness-auditor` and `translation-auditor` use `deepseek/*` refs and survive.
+- Agent frontmatter: all agents declare full `proxy/<rank>` refs (rank gateway), which shared/agents.ts keeps (bare aliases are dropped by design and would run on the session default).
 - Skill frontmatter: only `name`/`description` are read (shared/v2-skills.ts `parseFrontmatter`); other keys (`compatibility:`, `argument-hint:`) are ignored.
 
 ## Environment (env vars read, with defaults; binaries on PATH; OS/process assumptions)

@@ -9,7 +9,7 @@ Intercepts user prompts, classifies reasoning complexity (keyword rules + option
 - v2 hooks: `ctx.session.hook("prompt")` (replaces `event.prompt.text` by assignment), `ctx.agent.transform`, `ctx.tool.transform` (`editor.add` with JSON Schema, `{ content }` results). ⚠ Shapes follow the datetime-inject v2 port, verified against opencode 2.x.
 - The v2 prompt hook is async (awaits classification). If the host does not await prompt hooks, the message passes through unannotated. ⚠
 - Plugin API `@opencode-ai/plugin` 1.19.3 (`tool`, `Plugin` types).
-- Agents are registered by the plugin itself (`shared/agents.ts`): `tools:` and `permissionMode:` frontmatter are ignored; a bare `model:` alias (no `provider/` prefix) is dropped. ⚠ All four tier agents use bare aliases (`fable`, `haiku`, `sonnet`, `opus`), so they register with no model and run on the session default.
+- Agents are registered by the plugin itself (`shared/agents.ts`): `tools:` and `permissionMode:` frontmatter are ignored; a bare `model:` alias (no `provider/` prefix) is dropped. All four tier agents pin `proxy/<rank>` refs (`sergeant` ×2, `warrant-officer`, `lieutenant`), which register as-is.
 
 ## Environment (env vars, binaries, OS/process)
 
@@ -17,15 +17,15 @@ Intercepts user prompts, classifies reasoning complexity (keyword rules + option
 - `opencode` binary on PATH for the headless LLM classifier. ⚠
 - `TIER_ROUTER_ANNOTATE` — unset: prompt hook is a no-op (default); `1`: annotation replaces the message text.
 - `TIER_ROUTER_LEAN` — `1` (with annotate): send rewritten prompt + directives only.
-- `TIER_ROUTER_CLASSIFY_MODEL` — default `deepseek/deepseek-flash` for the `opencode run` classifier. ⚠
+- `TIER_ROUTER_CLASSIFY_MODEL` — default `proxy/sergeant` (rank gateway) for the `opencode run` classifier. ⚠
 - `TIER_ROUTER_CLASSIFY_DATA_DIR` — explicit classify data home; else `$XDG_RUNTIME_DIR/tier-router-classify`; else `os.tmpdir()/tier-router-classify`.
 - `LLMHP_NO_SUBSPAWN=1` — child opencode processes refuse to re-classify (recursion guard).
 - `TIER_ROUTER_PLUGIN_ROOT` — set by the plugin on spawned JVMs (locates `iron-gate.json`, `skill-axis-mapping.json`). ⚠ Manual JVM invocations without it fall back to cwd lookups.
 - `TIER_ROUTER_METRICS_DIR` — never set by the plugin. ⚠ Breaker dir then defaults to the JVM's cwd (`<project>/.breakers`), which the JVM creates on every invocation.
 - `TIER_ROUTER_IRON_GATE_CONFIG`, `TIER_ROUTER_SKILL_AXIS_CONFIG` — optional path overrides.
 - `TIER_ROUTER_BUDGET_CEILING` — default 500000; read only by the `budget-*` CLI subcommands, which the plugin never calls.
-- `TIER_ROUTER_LLM_BASE_URL` (default `https://api.deepseek.com`), `TIER_ROUTER_LLM_MODEL` (default `deepseek-flash`), `TIER_ROUTER_SKIP_LLM` (`true` disables).
-- API key resolution: `TIER_ROUTER_LLM_API_KEY` → `DEEPSEEK_API_KEY` → `~/.config/opencode/keys/deepseek.key`. ⚠ No key: Java LLM classifier disabled (null → gate check → keyword fallback or hard escalate).
+- `TIER_ROUTER_LLM_BASE_URL` (default `http://server-nike.bee-blues.ts.net:4000/v1` — the LiteLLM rank gateway), `TIER_ROUTER_LLM_MODEL` (default `sergeant`), `TIER_ROUTER_SKIP_LLM` (`true` disables).
+- API key resolution: `TIER_ROUTER_LLM_API_KEY` → `~/.config/opencode/keys/litellm-proxy.key`. ⚠ No key: Java LLM classifier disabled (null → gate check → keyword fallback or hard escalate).
 - JVM default locale affects JSON output (`%.2f`). ⚠ Comma-decimal locales (de_DE etc.) emit invalid JSON; the TS falls back to "classification failed".
 - POSIX process-group kill for timeout reaping (detached children, negative PID).
 
@@ -43,7 +43,7 @@ Intercepts user prompts, classifies reasoning complexity (keyword rules + option
 
 ## External services (URLs/ports, protocol)
 
-- DeepSeek (or `TIER_ROUTER_LLM_BASE_URL`) `POST /chat/completions`: OpenAI-compatible; 5 s connect / 10 s request timeout; `thinking: {"type":"disabled"}` is a DeepSeek extension other providers ignore. ⚠
+- LiteLLM rank gateway (or `TIER_ROUTER_LLM_BASE_URL`) `POST /chat/completions`: OpenAI-compatible; 5 s connect / 10 s request timeout. Model behaviour parameters are owned by the proxy — the request body carries none. ⚠
 - JSON body is built by string escaping; raw control characters (tab) in a prompt produce invalid JSON → 400 → keyword fallback.
 - `opencode run` classification uses the user's provider auth from `XDG_CONFIG_HOME`; output parsed as newline-delimited JSON events (`{type:"text",part:{text}}`). ⚠
 
@@ -51,7 +51,7 @@ Intercepts user prompts, classifies reasoning complexity (keyword rules + option
 
 - The plugin must be listed in `opencode.json` (`./tier-router/opencode`). The repo's root `opencode.json` does NOT register it; `opencode.json.sample` does. ⚠
 - Annotation is opt-in (`TIER_ROUTER_ANNOTATE=1`); default-off.
-- Tier agents `fable/haiku/sonnet/opus-general` register via the v1 `config` hook or v2 `agent.transform`. ⚠ Their `model:` values are bare aliases and are dropped at registration, so no model chain from `.md` to `opencode.json` exists.
+- Tier agents `fable/haiku/sonnet/opus-general` register via the v1 `config` hook or v2 `agent.transform`. Their `model:` values are full `proxy/<rank>` refs and register as-is (no `opencode.json` model chain for them).
 - The 3 tools (`classify-prompt`, `rewrite-prompt`, `check-ambiguity`) register in both v1 and v2.
 
 ## Concurrency (locks, multi-instance, atomicity)

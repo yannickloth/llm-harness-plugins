@@ -111,7 +111,7 @@ This pack is **shared, not installed**. A consuming project points its own
   "agent": {
     "driver-identifier": {
       "mode": "subagent",
-      "model": "deepseek/deepseek-flash",
+      "model": "proxy/lieutenant",
       "prompt": "{file:../llm-harness-plugins/ivp/agents/driver-identifier.md}"
     }
   }
