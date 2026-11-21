@@ -8,8 +8,8 @@ import java.util.Set;
  * unit-testable.
  *
  * <p>The gate fires only when a session is spending a premium subscription pool
- * (Kimi / ZAI) and the agent attempts an unbounded bulk read. Everything else
- * falls through.
+ * (Kimi / ZAI, directly or through a premium rank of the LiteLLM gateway) and
+ * the agent attempts an unbounded bulk read. Everything else falls through.
  */
 public final class GateDecider {
 
@@ -21,6 +21,15 @@ public final class GateDecider {
     /** Model IDs treated as premium within those providers. Substring-matched,
      * lowercased, so provider-specific prefixes/suffixes still resolve. */
     public static final Set<String> PREMIUM_MODEL_MARKERS = Set.of("k3", "glm-5.3");
+
+    /** Ranks whose ladder deployments draw premium subscription quota. The
+     * LiteLLM gateway fronts every backend under provider id {@code proxy},
+     * so a session's modelID is the rank name. lieutenant-colonel deploys
+     * GLM-5.3 (Z.ai) then k3/k3-256k (Kimi); major deploys K2.8 (Kimi) then
+     * GLM-5.3-flash (Z.ai) then DeepSeek cash. Both are premium while a
+     * subscription deployment remains, which is the case the gate protects. */
+    public static final Set<String> PREMIUM_RANKS = Set.of(
+        "lieutenant-colonel", "lieutenant-colonel-v", "major", "major-v");
 
     /** Verdict of a gate evaluation. */
     public enum Verdict {
@@ -89,15 +98,23 @@ public final class GateDecider {
     public boolean isPremium(String providerID, String modelID) {
         if (providerID == null || modelID == null) return false;
         var provider = providerID.toLowerCase(Locale.ROOT);
-        if (!PREMIUM_PROVIDERS.contains(provider)) return false;
         var model = modelID.toLowerCase(Locale.ROOT);
+        // The rank gateway hides the backend: provider "proxy" carries a rank
+        // name (or an explicit model name) as its modelID.
+        if (provider.equals("proxy")) {
+            return PREMIUM_RANKS.contains(model)
+                || PREMIUM_MODEL_MARKERS.stream().anyMatch(model::contains);
+        }
+        if (!PREMIUM_PROVIDERS.contains(provider)) return false;
         return PREMIUM_MODEL_MARKERS.stream().anyMatch(model::contains);
     }
 
-    /** Threshold for this provider: ZAI lower than Kimi. */
+    /** Threshold for this provider: ZAI lower than Kimi. A proxy rank may mix
+     * both pools, so it takes the lower (Z.ai) threshold — gating early on a
+     * Kimi-backed turn costs one cheap offload, not quota. */
     public int thresholdFor(String providerID) {
         var p = providerID == null ? "" : providerID.toLowerCase(Locale.ROOT);
-        return p.startsWith("zai") ? zaiThreshold : premiumThreshold;
+        return p.startsWith("zai") || p.equals("proxy") ? zaiThreshold : premiumThreshold;
     }
 
     /**

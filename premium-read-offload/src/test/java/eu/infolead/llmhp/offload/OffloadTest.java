@@ -23,9 +23,22 @@ public final class OffloadTest {
         check(!d.isPremium(null, "k3"), "null provider not premium");
         check(!d.isPremium("kimi", null), "null model not premium");
 
+        // ── premium detection through the rank gateway ──
+        check(d.isPremium("proxy", "major"), "proxy/major premium");
+        check(d.isPremium("proxy", "major-v"), "proxy/major-v premium");
+        check(d.isPremium("proxy", "lieutenant-colonel"), "proxy/lieutenant-colonel premium");
+        check(d.isPremium("proxy", "lieutenant-colonel-v"), "proxy/lieutenant-colonel-v premium");
+        check(d.isPremium("proxy", "glm-5.3"), "proxy explicit glm-5.3 premium");
+        check(d.isPremium("proxy", "k3-256k"), "proxy explicit k3-256k premium");
+        check(!d.isPremium("proxy", "warrant-officer"), "proxy workhorse not premium");
+        check(!d.isPremium("proxy", "lieutenant"), "proxy local lieutenant not premium");
+        check(!d.isPremium("proxy", "sergeant"), "proxy local sergeant not premium");
+        check(!d.isPremium("proxy", "deepseek-flash"), "proxy cash deepseek-flash not premium");
+
         // ── thresholds: ZAI lower than Kimi ──
         check(d.thresholdFor("zai-coding-plan") == 400, "zai threshold 400");
         check(d.thresholdFor("kimi") == 1000, "kimi threshold 1000");
+        check(d.thresholdFor("proxy") == 400, "proxy uses the lower (zai) threshold");
 
         // ── read decisions ──
         // Not premium: always allow.
@@ -39,6 +52,8 @@ public final class OffloadTest {
             "kimi big read blocked");
         check(d.decideRead("zai-coding-plan", "glm-5.3", "/x", null, null, true, 5000, false).blocked(),
             "zai big read blocked");
+        check(d.decideRead("proxy", "major", "/x", null, null, true, 5000, false).blocked(),
+            "proxy premium rank big read blocked");
         // Small file: allow.
         check(!d.decideRead("kimi", "k3", "/x", null, null, true, 500, false).blocked(),
             "kimi small file allowed");
