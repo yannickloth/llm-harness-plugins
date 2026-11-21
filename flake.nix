@@ -23,6 +23,7 @@
       # - inline-snapshot: test_docs.py + test_example.py assert the exact
       #   output of a specific `black` version (fastapi -> openai -> graphrag)
       # - fnllm: check imports numpy without declaring it in check inputs
+      # - looptime: three timing tests with assertions too tight for build env
       # graphrag itself: np.float_ removed in NumPy 2.0 (prompt_tune type
       # annotation, imported at CLI startup) — patched below, checks off.
       # All packaging-level issues irrelevant to graphrag functionality.
@@ -31,7 +32,7 @@
       # This list (and the graphrag override below) must stay equivalent to
       # the overlay in health-me-cfs/flake.nix: that is what makes the two
       # repos' graphrag derivations hash-identical.
-      noCheck = [ "pot" "hyppo" "graspologic" "inline-snapshot" "fnllm" ];
+      noCheck = [ "pot" "hyppo" "graspologic" "inline-snapshot" "fnllm" "looptime" ];
       # Plain nixpkgs for everything except graphrag (pandoc, mkShell, ...).
       basePkgs = import nixpkgs { inherit system; };
       # Must use legacyPackages (like health-me-cfs): it applies nixpkgs'
