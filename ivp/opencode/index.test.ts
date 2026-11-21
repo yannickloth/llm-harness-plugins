@@ -99,7 +99,11 @@ describe("ivp agents", () => {
     // Consumers point their own opencode.json at ../llm-harness-plugins/ivp.
     // The harness itself does not load the pack; if it ever does, that is a
     // deliberate change and this test should be updated with it.
-    const config = JSON.parse(readFileSync(join(REPO, "opencode.json"), "utf8"))
+    // The repo config is JSONC (line comments + trailing commas).
+    const raw = readFileSync(join(REPO, "opencode.jsonc"), "utf8")
+      .replace(/^\s*\/\/.*$/gm, "")
+      .replace(/,(\s*[}\]])/g, "$1")
+    const config = JSON.parse(raw)
     expect(config.plugin).not.toContain("./ivp/opencode")
     for (const record of records) expect(config.agent?.[record.id]).toBeUndefined()
   })

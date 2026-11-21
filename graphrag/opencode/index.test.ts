@@ -1,6 +1,7 @@
 import { describe, test, expect, afterAll } from "bun:test"
 import { join } from "path"
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, utimesSync } from "fs"
+import { tmpdir } from "os"
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, utimesSync } from "fs"
 import { claimSpawnSlot } from "./spawn-slot"
 import {
   gateMissing, statusNotice, readManifestV2, mergeManifestV2Atomic,
@@ -222,8 +223,15 @@ describe("resolveEnvKey (FS-1)", () => {
   })
 
   test("absent everywhere resolves to null", async () => {
-    const dir = freshDir("env-absent")
-    expect(await resolveEnvKey("__GRAPHRAG_NO_SUCH_KEY__", dir, dir)).toBeNull()
+    // Outside the repo on purpose: an in-repo temp path inherits the project
+    // .envrc, so the direnv fallback would evaluate the host flake (slow, and
+    // offline-cache dependent) instead of failing fast. /tmp has no .envrc.
+    const dir = mkdtempSync(join(tmpdir(), "graphrag-env-absent-"))
+    try {
+      expect(await resolveEnvKey("__GRAPHRAG_NO_SUCH_KEY__", dir, dir)).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
