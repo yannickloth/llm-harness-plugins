@@ -34,7 +34,7 @@ check_eq() { # check_eq <got> <want> <label>
 # (unless FAKE_PRE=0, simulating hooks/plugins not loading), then dies on the bogus model.
 FAKE="$TMP/opencode_falso.sh"
 cat > "$FAKE" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 if [ "${1:-}" = "--version" ]; then echo "${FAKE_VERSION:-1.0.0} (opencode)"; exit 0; fi
 if [ "${1:-}" = "run" ] && [ "${2:-}" = "--help" ]; then
   echo "FLAGS"
