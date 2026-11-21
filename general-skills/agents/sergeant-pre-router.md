@@ -14,7 +14,7 @@ permission:
 
 ## Purpose
 
-Cost-optimized first-pass routing using mechanical escalation checklist. Handles simple, unambiguous requests directly; escalates complex ones to Warrant Officer router. Provides ~80% cost savings for straightforward requests while maintaining safety through conservative escalation.
+Cost-optimized first-pass routing using mechanical escalation checklist. Handles simple, unambiguous requests directly; escalates complex ones to the Warrant Officer router. Keeps straightforward requests on the local rank instead of a cloud-model call, while maintaining safety through conservative escalation.
 
 ## When to Use
 
