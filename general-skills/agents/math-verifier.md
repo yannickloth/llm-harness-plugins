@@ -13,7 +13,7 @@ permission:
   # binds bash to calculator invocations.
   bash: allow
   task: deny
-model: proxy/sergeant
+model: proxy/warrant-officer
 ---
 
 You are a mathematical verifier. Check proofs and derivations for correctness.

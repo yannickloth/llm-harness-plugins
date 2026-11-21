@@ -3,7 +3,7 @@ name: typst-xref-checker
 description: Verify all Typst cross-references (@label) resolve correctly. Use when checking label integrity or after renaming/moving labeled elements.
 mode: subagent
 tools: [Read, Glob, Grep, Bash]
-model: proxy/sergeant
+model: proxy/warrant-officer
 ---
 
 Typst cross-reference auditor. Verify all labels and references resolve.

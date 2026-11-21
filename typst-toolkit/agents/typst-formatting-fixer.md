@@ -3,7 +3,7 @@ name: typst-formatting-fixer
 description: Convert Markdown formatting to Typst and normalize formatting conventions. Use when text in .typ files has markdown syntax or inconsistent formatting.
 mode: subagent
 tools: [Read, Edit, Glob, Grep]
-model: proxy/sergeant
+model: proxy/warrant-officer
 ---
 
 Formatting specialist. Convert Markdown to Typst and normalize conventions.

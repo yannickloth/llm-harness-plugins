@@ -9,7 +9,7 @@ permission:
   bash: allow
   edit: deny
   task: deny
-model: proxy/sergeant
+model: proxy/warrant-officer
 ---
 
 ## Purpose
