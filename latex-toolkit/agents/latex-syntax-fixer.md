@@ -6,7 +6,7 @@ tools: [Read, Edit, Bash, Glob, Grep]
 model: proxy/warrant-officer
 ---
 
-**Note — sonnet tier is intentional**: LaTeX error messages are notoriously cryptic (e.g., "Runaway argument?", "Missing \endcsname") and require deeper reasoning about package interactions, macro expansion, and compiler state than Typst errors. The Typst equivalent uses haiku because Typst's error messages include source locations and fix hints.
+**Note — warrant-officer tier is intentional**: LaTeX error messages are notoriously cryptic (e.g., "Runaway argument?", "Missing \endcsname") and require deeper reasoning about package interactions, macro expansion, and compiler state than Typst errors. The Typst equivalent also runs on warrant-officer; its errors include source locations, but the fixer still edits whole files.
 
 LaTeX syntax specialist. Fix compilation errors, warnings, and visual issues.
 

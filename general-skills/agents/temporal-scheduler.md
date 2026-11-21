@@ -189,7 +189,7 @@ else:
 ✓ Work queued for overnight execution:
   - Task: Search for papers on mitochondrial dysfunction
   - Estimated duration: 20 minutes
-  - Estimated quota: 15 Sonnet messages
+  - Estimated quota: 15 warrant-officer turns
   - Scheduled for: Tonight at 10:00 PM
 
 Results will be available tomorrow morning in:
@@ -359,7 +359,7 @@ Morning hook shows completed work results
 
 **Current state:**
 - Time: 14:30 (active hours)
-- Quota: 450/1125 Sonnet used (plenty available)
+- Quota: 450/1125 warrant-officer turns used (plenty available)
 
 **Decision:** Execute now with sergeant
 

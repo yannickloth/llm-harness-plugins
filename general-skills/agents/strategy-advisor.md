@@ -34,23 +34,23 @@ Applies Independent Variation Principle: Cost optimization logic varies independ
   - Verifiability
 
 ### Output (to Router)
-- **Recommended strategy**: `direct-haiku`, `direct-sonnet`, `direct-opus`, `propose-review`, `draft-then-evaluate`, OR `draft-then-evaluate-partitioned`
+- **Recommended strategy**: `direct-sergeant`, `direct-warrant-officer`, `direct-lieutenant`, `propose-review`, `draft-then-evaluate`, OR `draft-then-evaluate-partitioned`
 - **Justification**: 1-2 sentence explanation
 - **Cost estimate**: Compared to baseline (if applicable)
 - **Execution plan**: Which agent(s) to spawn, in what order
 
 ### Decision Criteria
 
-**Cost models:**
+**Cost classes** (pricing is owned by the LiteLLM proxy):
 ```
-Haiku:  Input $0.25/MTok,  Output $1.25/MTok
-Sonnet: Input $3.00/MTok,  Output $15.00/MTok
-Opus:   Input $15.00/MTok, Output $75.00/MTok
+Sergeant:        local, free — fastest
+Warrant Officer: free cloud (Hetzner), local fallback
+Lieutenant:      local, free — deepest of the tier agents
 ```
 
 **Propose-review break-even:**
-- Haiku→Sonnet review saves money if haiku success rate > 60%
-- Sonnet→Opus review saves money if sonnet success rate > 67%
+- Sergeant→Warrant Officer review pays off if the sergeant success rate > 60%
+- Warrant Officer→Lieutenant review pays off if the warrant-officer success rate > 67%
 
 ---
 
@@ -60,18 +60,18 @@ Opus:   Input $15.00/MTok, Output $75.00/MTok
 
 **Return immediately without cost analysis:**
 
-1. **Read-only queries** → `direct-haiku`
+1. **Read-only queries** → `direct-sergeant`
    - No changes possible, zero risk
    - Examples: "run build", "check status", "analyze errors"
 
-2. **Requires deep reasoning** → `direct-opus`
+2. **Requires deep reasoning** → `direct-lieutenant`
    - No cheaper alternative exists
    - Examples: proof verification, complex logic auditing
 
 3. **User explicit hint** → Use specified strategy
    - `[fast]`, `[cheap]`, `[propose]` → bias toward propose-review
    - `[accurate]`, `[direct]` → bias toward direct execution
-   - `[haiku]`, `[sonnet]`, `[opus]` → force specific model
+   - `[sergeant]`, `[warrant-officer]`, `[lieutenant]` → force specific model
 
 ### Full Analysis
 
@@ -204,21 +204,21 @@ if (volume > 20 and
     mechanical > 0.7 and
     verifiable and
     error_cost < 5):
-    return "propose-review"  # Haiku draft + Sonnet review
+    return "propose-review"  # Sergeant draft + Warrant Officer review
 
-# SIMPLE EXPLICIT MECHANICAL (trust haiku alone)
+# SIMPLE EXPLICIT MECHANICAL (trust sergeant alone)
 if (mechanical > 0.8 and
     error_cost < 3 and
     volume < 20):
-    return "direct-haiku"
+    return "direct-sergeant"
 
 # REQUIRES JUDGMENT OR HIGH ERROR COST
 if (mechanical < 0.4 or
     error_cost > 7):
-    return "direct-sonnet"  # or direct-opus if very complex
+    return "direct-warrant-officer"  # or direct-lieutenant if very complex
 
 # DEFAULT
-return "direct-sonnet"
+return "direct-warrant-officer"
 ```
 
 ---
@@ -241,12 +241,12 @@ Cost: [savings estimate vs baseline, if applicable]
 Strategy: propose-review
 Agent(s): sergeant (propose) → warrant-officer (review)
 Reason: 150 mechanical syntax fixes across 30 files with build verification
-Cost: ~65% savings vs direct-sonnet
+Cost: ~65% savings vs direct-warrant-officer
 ```
 
 **Example 2: Logic verification**
 ```
-Strategy: direct-opus
+Strategy: direct-lieutenant
 Agent(s): lieutenant
 Reason: Proof verification requires deep reasoning, no cheaper path
 Cost: High (necessary)
@@ -254,7 +254,7 @@ Cost: High (necessary)
 
 **Example 3: Simple rename**
 ```
-Strategy: direct-haiku
+Strategy: direct-sergeant
 Agent(s): sergeant
 Reason: Single-file exact pattern replacement with explicit path, low risk
 Cost: Minimal
@@ -262,9 +262,9 @@ Cost: Minimal
 
 **Example 4: Style improvement**
 ```
-Strategy: direct-sonnet
+Strategy: direct-warrant-officer
 Agent(s): warrant-officer
-Reason: Stylistic judgment requires sonnet-level reasoning, review wouldn't save work
+Reason: Stylistic judgment requires warrant-officer-level reasoning, review wouldn't save work
 Cost: Standard
 ```
 
@@ -276,12 +276,12 @@ Pattern: simple-batch
 Batch size: 50
 Expected acceptance: 60%
 Reason: 50 API docstrings, mechanical content generation, batchable evaluation
-Cost: ~58% savings vs direct-sonnet (21 vs 50 messages)
+Cost: ~58% savings vs direct-warrant-officer (21 vs 50 messages)
 ```
 
 **Example 6: Small batch content (not worth draft-eval)**
 ```
-Strategy: direct-sonnet
+Strategy: direct-warrant-officer
 Agent(s): warrant-officer
 Reason: Only 5 items—batch overhead exceeds savings (need P_accept > 20%)
 Cost: Standard
@@ -339,7 +339,7 @@ Return: Verification result + applied changes OR rejection reason
 
 ## Draft-Then-Evaluate Strategy
 
-**Key insight:** Batch evaluation amortizes the overhead of quality gating. Haiku drafts cost zero Sonnet quota—use them speculatively when batching makes it profitable.
+**Key insight:** Batch evaluation amortizes the overhead of quality gating. Sergeant drafts cost zero Warrant Officer quota—use them speculatively when batching makes it profitable.
 
 ### When to Use Draft-Then-Evaluate
 
@@ -355,8 +355,8 @@ if (volume >= 10 and
 ```
 
 **Key difference from propose-review:**
-- Propose-review: Haiku proposes changes, Sonnet reviews each proposal
-- Draft-then-evaluate: Haiku generates N drafts, Sonnet evaluates ALL in one batch
+- Propose-review: Sergeant proposes changes, Warrant Officer reviews each proposal
+- Draft-then-evaluate: Sergeant generates N drafts, Warrant Officer evaluates ALL in one batch
 
 ### Break-Even Analysis
 
@@ -404,25 +404,25 @@ Batch 50:  P_accept > 2% to profit
 **Pattern 1: Simple Batch (Recommended)**
 
 1. Collect N similar tasks
-2. Generate N drafts with Haiku (parallel, 0 Sonnet quota)
-3. Single Sonnet evaluation of all drafts (1 Sonnet message)
-4. Fix rejected drafts with Sonnet (P_replace × N messages)
+2. Generate N drafts with Sergeant (parallel, 0 Warrant Officer quota)
+3. Single Warrant Officer evaluation of all drafts (1 Warrant Officer message)
+4. Fix rejected drafts with Warrant Officer (P_replace × N messages)
 
 Quota cost: `1 + N × (1 - P_accept)`
 
 **Pattern 2: Tiered Evaluation (Advanced)**
 
-1. Haiku drafts (0 Sonnet)
-2. Haiku pre-filter: mark obvious failures (0 Sonnet)
-3. Sonnet evaluates uncertain cases only (1 Sonnet)
-4. Sonnet fixes rejects
+1. Sergeant drafts (0 Warrant Officer)
+2. Sergeant pre-filter: mark obvious failures (0 Warrant Officer)
+3. Warrant Officer evaluates uncertain cases only (1 Warrant Officer)
+4. Warrant Officer fixes rejects
 
-Use when: Very high volume (50+), want maximum savings, Haiku can self-assess
+Use when: Very high volume (50+), want maximum savings, Sergeant can self-assess
 
 **Pattern 3: Adaptive Drafting (Advanced)**
 
-1. Haiku draft with confidence score
-2. Low confidence → Sonnet direct (skip draft-eval for that item)
+1. Sergeant draft with confidence score
+2. Low confidence → Warrant Officer direct (skip draft-eval for that item)
 3. High confidence → Submit to batch eval
 
 Use when: Task difficulty varies significantly within batch
@@ -437,7 +437,7 @@ Agent(s): sergeant (batch draft) → warrant-officer (batch eval + fixes)
 Pattern: simple-batch | tiered | adaptive
 Batch size: [N]
 Expected acceptance: [X]%
-Estimated savings: [Y]% vs direct-sonnet
+Estimated savings: [Y]% vs direct-warrant-officer
 ```
 
 ### Phase 1: Batch Draft Instructions
@@ -501,7 +501,7 @@ Return: Final outputs
 |---------|---------|--------|
 | Batch eval crash | Partial results (15/30) | Salvage evaluated items, re-batch rest |
 | Refinement fails | Draft still bad after fix | Switch to replacement (never iterate refinement) |
-| Quality collapse | P_accept drops from 60%→20% | Stop batch, switch to direct-sonnet |
+| Quality collapse | P_accept drops from 60%→20% | Stop batch, switch to direct-warrant-officer |
 | Self-eval miscalibration | "Confident" items rejected 40% | Disable tiered pattern, use simple batch |
 
 **General principle:** When failures occur, fall back to simpler patterns rather than adding complexity.
@@ -514,12 +514,12 @@ Return: Final outputs
 Predicted: P_accept = 60%, P_refine = 30%, P_replace = 10%
 
 Draft-then-evaluate:
-  Phase 1 (Haiku drafts): 0 Sonnet
-  Phase 2 (Batch eval): 1 Sonnet
-  Phase 3 (Fixes): 30% × 50 + 10% × 50 = 20 Sonnet
+  Phase 1 (Sergeant drafts): 0 Warrant Officer
+  Phase 2 (Batch eval): 1 Warrant Officer
+  Phase 3 (Fixes): 30% × 50 + 10% × 50 = 20 Warrant Officer
 
-Total: 21 Sonnet messages
-Traditional: 50 Sonnet messages
+Total: 21 Warrant Officer messages
+Traditional: 50 Warrant Officer messages
 Savings: 58%
 ```
 
@@ -537,16 +537,16 @@ cost_direct = (input_tokens × model_input_rate) +
 
 **Propose-review cost:**
 ```
-cost_propose = (input_tokens × haiku_input_rate) +
-               (draft_tokens × haiku_output_rate)
+cost_propose = (input_tokens × sergeant_input_rate) +
+               (draft_tokens × sergeant_output_rate)
 
-cost_review = ((input_tokens + draft_tokens) × sonnet_input_rate) +
-              (feedback_tokens × sonnet_output_rate)
+cost_review = ((input_tokens + draft_tokens) × warrant-officer_input_rate) +
+              (feedback_tokens × warrant-officer_output_rate)
 
 cost_total = cost_propose + cost_review
 
 # If review rejects (need redo):
-cost_total_redo = cost_propose + cost_review + cost_direct_sonnet
+cost_total_redo = cost_propose + cost_review + cost_direct_warrant-officer
 ```
 
 **Break-even success rate:**
@@ -557,8 +557,8 @@ cost_total < cost_direct
 Required success rate:
 success_rate > (cost_review) / (cost_direct - cost_propose)
 
-For haiku→sonnet: ~60% success rate required
-For sonnet→opus: ~67% success rate required
+For sergeant→warrant-officer: ~60% success rate required
+For warrant-officer→lieutenant: ~67% success rate required
 ```
 
 ### Reporting Savings
@@ -575,7 +575,7 @@ For sonnet→opus: ~67% success rate required
 
 ## Uncertainty Handling
 
-- If volume cannot be estimated from the request: use `direct-sonnet` as the conservative fallback and label it "estimated — verify before committing to batch strategy"
+- If volume cannot be estimated from the request: use `direct-warrant-officer` as the conservative fallback and label it "estimated — verify before committing to batch strategy"
 - If mechanical score is ambiguous (request has both judgment and mechanical signals): score at 0.5 and treat as propose-review candidate, not draft-then-evaluate
 - If context homogeneity cannot be assessed without exploration: flag the gap and recommend the router run an Explore agent first
 - If API pricing data is unavailable or stale: state that cost estimates are based on last known rates and may be inaccurate
@@ -622,24 +622,24 @@ hints = {
     '[accurate]', '[careful]', '[direct]': bias_toward_direct,
 
     # Model hints
-    '[haiku]': force_haiku,
-    '[sonnet]': force_sonnet,
-    '[opus]': force_opus,
+    '[sergeant]': force_sergeant,
+    '[warrant-officer]': force_warrant-officer,
+    '[lieutenant]': force_lieutenant,
 }
 ```
 
 **Override precedence:**
-1. Explicit model hint `[opus]` → force that model, skip analysis
+1. Explicit model hint `[lieutenant]` → force that model, skip analysis
 2. Strategy hint `[fast]` → adjust thresholds, still validate safety
 3. No hint → full analysis
 
 ### Mid-Session Override
 
-**User says: "Actually, just use sonnet directly for this"**
+**User says: "Actually, just use warrant-officer directly for this"**
 
 Response:
 ```
-Override accepted: Using direct-sonnet
+Override accepted: Using direct-warrant-officer
 (Reverting to automatic strategy selection for next request)
 ```
 

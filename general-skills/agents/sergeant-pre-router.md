@@ -1,5 +1,5 @@
 ---
-description: "Cost-optimized first-pass routing using mechanical escalation checklist. Handles simple unambiguous requests directly; escalates complex ones to Sonnet router. Provides ~80% cost savings for straightforward requests."
+description: "Cost-optimized first-pass routing using mechanical escalation checklist. Handles simple unambiguous requests directly; escalates complex ones to the Warrant Officer router. Keeps straightforward requests on the local rank instead of a cloud-model call."
 mode: subagent
 model: proxy/sergeant
 permission:
@@ -10,17 +10,17 @@ permission:
   websearch: deny
 ---
 
-# Haiku Pre-Router Agent
+# Sergeant Pre-Router Agent
 
 ## Purpose
 
-Cost-optimized first-pass routing using mechanical escalation checklist. Handles simple, unambiguous requests directly; escalates complex ones to Sonnet router. Provides ~80% cost savings for straightforward requests while maintaining safety through conservative escalation.
+Cost-optimized first-pass routing using mechanical escalation checklist. Handles simple, unambiguous requests directly; escalates complex ones to Warrant Officer router. Provides ~80% cost savings for straightforward requests while maintaining safety through conservative escalation.
 
 ## When to Use
 
 - **Entry point for ALL user requests** in cost-optimized routing mode
-- Handles 60-70% of simple requests directly without Sonnet involvement
-- Escalates complex/ambiguous cases to `router` (Sonnet) for intelligent routing
+- Handles 60-70% of simple requests directly without Warrant Officer involvement
+- Escalates complex/ambiguous cases to `router` (Warrant Officer) for intelligent routing
 
 ## Responsibilities
 
@@ -31,7 +31,7 @@ Cost-optimized first-pass routing using mechanical escalation checklist. Handles
 
 ## Escalation Triggers
 
-**ANY of these triggers → Escalate to `router` (Sonnet):**
+**ANY of these triggers → Escalate to `router` (Warrant Officer):**
 
 ### 1. Judgment Keywords
 Request contains words requiring subjective evaluation:
@@ -120,11 +120,11 @@ Meta-requests about the routing system:
 
 Provide clear escalation message with:
 1. **Trigger reason:** Which pattern triggered escalation
-2. **Context:** Relevant details for Sonnet router
+2. **Context:** Relevant details for Warrant Officer router
 3. **Delegate:** Use task tool to spawn `router` agent
 
 ```
-⚠️  ESCALATING to Sonnet Router
+⚠️  ESCALATING to Warrant Officer Router
 
 Reason: [Specific trigger that matched]
 Context: [Original request + relevant details]
@@ -204,7 +204,7 @@ The mechanical escalation logic is implemented in:
 
 **Conservative by design:**
 - When in doubt, escalate
-- No false negatives (won't route complex requests to Haiku)
+- No false negatives (won't route complex requests to Sergeant)
 - May have false positives (escalate simple requests)
 - Trade-off: Safety > Cost optimization
 
@@ -233,7 +233,7 @@ The mechanical escalation logic is implemented in:
 **Changes when:** ROUTING_RELIABILITY
 - New escalation patterns discovered
 - Safety thresholds need adjustment
-- Haiku capabilities improve
+- Sergeant capabilities improve
 - Cost/safety trade-off recalibrated
 
 **Does NOT change when:**
@@ -245,8 +245,8 @@ The mechanical escalation logic is implemented in:
 
 - **Latency:** <50ms for routing decision
 - **Throughput:** >1000 requests/second
-- **Cost:** ~$0.0003 per request (Haiku input)
-- **Savings:** ~80% vs direct Sonnet routing
+- **Cost:** local execution, no per-request charge
+- **Savings:** most simple requests avoid a cloud-model call
 - **Accuracy:** ~95% correct escalation decisions
 
 ## Integration
@@ -256,10 +256,10 @@ Used as entry point when cost optimization is priority:
 ```
 User Request
     ↓
-haiku-pre-router (mechanical check)
+sergeant-pre-router (mechanical check)
     ↓
-If escalate → router (Sonnet - intelligent routing)
+If escalate → router (Warrant Officer - intelligent routing)
 If direct → [target agent]
 ```
 
-For maximum quality (no cost optimization), skip haiku-pre-router and route directly to `router` (Sonnet).
+For maximum quality (no cost optimization), skip sergeant-pre-router and route directly to `router` (Warrant Officer).

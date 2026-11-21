@@ -146,7 +146,7 @@ Before recommending a batch, assess context homogeneity:
 ## Execution Strategy
 
 ### Phase 1: [Name]
-**Strategy:** direct-sonnet | propose-review | draft-then-evaluate
+**Strategy:** direct-warrant-officer | propose-review | draft-then-evaluate
 **Context:** [shared context for this phase]
 **Tasks:**
 1. [Task 1]
@@ -275,7 +275,7 @@ The planner designs the plan structure. Strategy-advisor optimizes execution of 
 **Rationale:** Homogeneous context, mechanical task, high P_accept expected
 
 ### Phase 2: Update API Index
-**Strategy:** direct-sonnet
+**Strategy:** direct-warrant-officer
 **Tasks:** 1 (generate index from docstrings)
 **Rationale:** Single task, depends on Phase 1
 
@@ -317,7 +317,7 @@ For each module (auth, users, products, ...):
 **Rationale:** High volume, fully mechanical, verifiable by grep
 
 ### Phase 2: Interface Updates
-**Strategy:** direct-sonnet
+**Strategy:** direct-warrant-officer
 **Tasks:** Update 5 interface definitions
 **Rationale:** Requires judgment, affects types
 

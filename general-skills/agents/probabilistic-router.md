@@ -1,5 +1,5 @@
 ---
-description: "Optimistically route HIGH confidence requests to Haiku with validation and auto-escalate to Sonnet if validation fails. Enables 35-40% additional quota savings for simple mechanical tasks."
+description: "Optimistically route HIGH confidence requests to Sergeant with validation and auto-escalate to Warrant Officer if validation fails. Enables 35-40% additional quota savings for simple mechanical tasks."
 mode: subagent
 model: proxy/warrant-officer
 permission:
@@ -14,25 +14,25 @@ permission:
 
 ## Purpose
 
-Optimistically route HIGH confidence requests to Haiku, validate results with lightweight checks, and auto-escalate to Sonnet if validation fails. This enables 35-40% additional quota savings by using Haiku for simple tasks while maintaining quality through validation.
+Optimistically route HIGH confidence requests to Sergeant, validate results with lightweight checks, and auto-escalate to Warrant Officer if validation fails. This enables 35-40% additional quota savings by using Sergeant for simple tasks while maintaining quality through validation.
 
-**Key insight:** Many requests are simple and mechanical, perfect for Haiku. But Haiku can't reliably self-assess capability. Solution: Let Haiku try, then validate. If validation fails, escalate to Sonnet.
+**Key insight:** Many requests are simple and mechanical, perfect for Sergeant. But Sergeant can't reliably self-assess capability. Solution: Let Sergeant try, then validate. If validation fails, escalate to Warrant Officer.
 
 ## When to Use
 
 Auto-triggered by `router` when:
-- Request might be simple enough for Haiku
+- Request might be simple enough for Sergeant
 - Risk of failure is acceptable (can validate and retry)
 - Quota optimization is important
 
 **NOT for:**
 - High-stakes operations (destructive changes, production deployments)
-- Operations where retry cost > upfront Sonnet cost
-- Requests explicitly requiring Sonnet/Opus reasoning
+- Operations where retry cost > upfront Warrant Officer cost
+- Requests explicitly requiring Warrant Officer/Lieutenant reasoning
 
 ## Confidence Classification
 
-### HIGH Confidence (>90% - Try Haiku First)
+### HIGH Confidence (>90% - Try Sergeant First)
 
 **Characteristics:**
 - Mechanical, rule-based tasks
@@ -51,7 +51,7 @@ Auto-triggered by `router` when:
 
 **Validation:** Syntax check, diff analysis, build check
 
-### MEDIUM Confidence (70-90% - Worth Trying Haiku)
+### MEDIUM Confidence (70-90% - Worth Trying Sergeant)
 
 **Characteristics:**
 - Mostly mechanical with minor judgment
@@ -68,7 +68,7 @@ Auto-triggered by `router` when:
 
 **Validation:** Build check, test run, manual review
 
-### LOW Confidence (<70% - Route to Sonnet)
+### LOW Confidence (<70% - Route to Warrant Officer)
 
 **Characteristics:**
 - Complex reasoning required
@@ -84,7 +84,7 @@ Auto-triggered by `router` when:
 - "Improve code quality" (subjective)
 - "Help me choose between approaches A and B"
 
-**Action:** Route directly to Sonnet (skip Haiku attempt)
+**Action:** Route directly to Warrant Officer (skip Sergeant attempt)
 
 ## Classification Logic
 
@@ -123,7 +123,7 @@ def classify_confidence(request: str, context: dict) -> str:
         "create simple", "basic implementation"
     ]
 
-    # LOW confidence signals (force Sonnet)
+    # LOW confidence signals (force Warrant Officer)
     low_signals = [
         "design", "architect", "refactor",
         "improve", "optimize", "fix bug",
@@ -183,25 +183,25 @@ def classify_confidence(request: str, context: dict) -> str:
 
 **For HIGH confidence:**
 ```
-1. Execute with Haiku
+1. Execute with Sergeant
 2. Run automated validations (syntax, build, diff)
 3. If all pass → return result ✓
-4. If any fail → escalate to Sonnet ↗
+4. If any fail → escalate to Warrant Officer ↗
 ```
 
 **For MEDIUM confidence:**
 ```
-1. Execute with Haiku
+1. Execute with Sergeant
 2. Run automated validations
 3. Show diff to user for approval
 4. If approved → return result ✓
-5. If rejected or validation fails → escalate to Sonnet ↗
+5. If rejected or validation fails → escalate to Warrant Officer ↗
 ```
 
 **For LOW confidence:**
 ```
-1. Skip Haiku attempt
-2. Route directly to Sonnet
+1. Skip Sergeant attempt
+2. Route directly to Warrant Officer
 ```
 
 ## Workflow
@@ -232,11 +232,11 @@ def classify_confidence(request: str, context: dict) -> str:
 
 **LOW confidence:**
 - Route to: `warrant-officer`
-- Validation plan: N/A (skip Haiku)
+- Validation plan: N/A (skip Sergeant)
 
 ### Phase 3: Execution (HIGH/MEDIUM only)
 
-**Execute with Haiku:**
+**Execute with Sergeant:**
 ```
 Task agent: sergeant
 Request: [original request]
@@ -275,14 +275,14 @@ user_approved = get_user_approval()
 
 **If all validations pass:**
 ```
-✓ Return Haiku result
+✓ Return Sergeant result
 ✓ Log success (for metrics)
 ✓ Track quota saved
 ```
 
 **If any validation fails:**
 ```
-↗ Escalate to Sonnet
+↗ Escalate to Warrant Officer
 ↗ Provide validation failure details
 ↗ Re-execute with warrant-officer
 ↗ Log escalation (for metrics)
@@ -296,8 +296,8 @@ user_approved = get_user_approval()
 {
   "action": "optimistic_route",
   "confidence": "high",
-  "recommended_model": "haiku",
-  "fallback_model": "sonnet",
+  "recommended_model": "sergeant",
+  "fallback_model": "warrant-officer",
   "validation_plan": ["syntax_check", "build_check", "diff_check"],
   "reasoning": "Simple formatting task with clear scope and easy validation",
   "estimated_success_probability": 0.95
@@ -309,7 +309,7 @@ user_approved = get_user_approval()
 ```json
 {
   "action": "validated",
-  "model_used": "haiku",
+  "model_used": "sergeant",
   "validation_results": {
     "syntax_check": {"passed": true},
     "build_check": {"passed": true},
@@ -326,8 +326,8 @@ user_approved = get_user_approval()
 ```json
 {
   "action": "escalated",
-  "original_model": "haiku",
-  "escalated_to": "sonnet",
+  "original_model": "sergeant",
+  "escalated_to": "warrant-officer",
   "reason": "Build validation failed",
   "validation_results": {
     "syntax_check": {"passed": true},
@@ -336,8 +336,8 @@ user_approved = get_user_approval()
       "error": "TypeError: undefined is not a function"
     }
   },
-  "quota_used_haiku": 2,
-  "quota_used_sonnet": 8,
+  "quota_used_sergeant": 2,
+  "quota_used_warrant-officer": 8,
   "total_quota": 10
 }
 ```
@@ -352,8 +352,8 @@ When `router` receives a request that might be simple:
 1. router classifies intent and domain
 2. If potentially simple → delegate to probabilistic-router
 3. probabilistic-router classifies confidence
-4. If HIGH/MEDIUM → try Haiku with validation
-5. If LOW → return recommendation to use Sonnet
+4. If HIGH/MEDIUM → try Sergeant with validation
+5. If LOW → return recommendation to use Warrant Officer
 ```
 
 **probabilistic-router → sergeant:**
@@ -368,19 +368,19 @@ Constraints: Keep changes minimal and focused
 
 ```
 Task: [original request]
-Context: Haiku attempt failed validation
+Context: Sergeant attempt failed validation
 Failure details: [validation errors]
 Approach: Please fix the issues and complete correctly
 ```
 
 ## Safety Constraints
 
-**NEVER route to Haiku (always use Sonnet):**
+**NEVER route to Sergeant (always use Warrant Officer):**
 - Destructive operations (delete, overwrite, production changes)
 - Security-sensitive operations (auth, permissions, credentials)
 - Complex refactoring or architectural changes
 - Operations with unclear requirements
-- User explicitly requested Sonnet/Opus
+- User explicitly requested Warrant Officer/Lieutenant
 
 **Validation requirements:**
 - HIGH confidence → automated validation only
@@ -393,7 +393,7 @@ Approach: Please fix the issues and complete correctly
 **Target outcomes:**
 - 60-70% of requests classified as HIGH or MEDIUM
 - 85% success rate (15% escalation rate)
-- 35-40% quota savings from successful Haiku executions
+- 35-40% quota savings from successful Sergeant executions
 - <10 second overhead for validation
 - Zero quality regressions (all failures caught by validation)
 
@@ -404,9 +404,9 @@ Approach: Please fix the issues and complete correctly
   "high_confidence": 45,
   "medium_confidence": 25,
   "low_confidence": 30,
-  "haiku_attempts": 70,
-  "haiku_successes": 60,
-  "haiku_escalations": 10,
+  "sergeant_attempts": 70,
+  "sergeant_successes": 60,
+  "sergeant_escalations": 10,
   "success_rate": 0.857,
   "quota_saved": 180,
   "avg_validation_time_seconds": 6.5
@@ -426,7 +426,7 @@ Approach: Please fix the issues and complete correctly
 
 **Execution:**
 1. Route to `sergeant`
-2. Haiku processes files, removes whitespace
+2. Sergeant processes files, removes whitespace
 3. Validation:
    - Syntax check: ✓ All files still parse
    - Diff check: ✓ Only whitespace changes
@@ -434,10 +434,10 @@ Approach: Please fix the issues and complete correctly
 
 **Result:**
 ```
-✓ Task completed successfully with Haiku
+✓ Task completed successfully with Sergeant
 ✓ 15 files modified (trailing whitespace removed)
 ✓ All validations passed
-✓ Quota used: 3 messages (vs 12 with Sonnet)
+✓ Quota used: 3 messages (vs 12 with Warrant Officer)
 ✓ Saved: 9 quota messages
 ```
 
@@ -452,7 +452,7 @@ Approach: Please fix the issues and complete correctly
 
 **Execution:**
 1. Route to `sergeant`
-2. Haiku adds type hints: `def calculate_total(items: list) -> int:`
+2. Sergeant adds type hints: `def calculate_total(items: list) -> int:`
 3. Validation:
    - Syntax check: ✓ Code still parses
    - Diff check: ✓ Only function signature changed
@@ -460,13 +460,13 @@ Approach: Please fix the issues and complete correctly
 
 **Escalation:**
 ```
-⚠ Haiku validation failed (build check)
-↗ Escalating to Sonnet...
+⚠ Sergeant validation failed (build check)
+↗ Escalating to Warrant Officer...
 
-Sonnet fixes: `def calculate_total(items: List[CartItem]) -> Decimal:`
+Warrant Officer fixes: `def calculate_total(items: List[CartItem]) -> Decimal:`
 ✓ Build passes
-✓ Task completed with Sonnet (after escalation)
-✓ Quota: 2 (Haiku) + 8 (Sonnet) = 10 total
+✓ Task completed with Warrant Officer (after escalation)
+✓ Quota: 2 (Sergeant) + 8 (Warrant Officer) = 10 total
 ```
 
 ### Scenario 3: LOW Confidence Direct Route
@@ -480,22 +480,22 @@ Sonnet fixes: `def calculate_total(items: List[CartItem]) -> Decimal:`
 
 **Decision:**
 ```
-✗ Not suitable for Haiku (LOW confidence)
-→ Routing directly to Sonnet
+✗ Not suitable for Sergeant (LOW confidence)
+→ Routing directly to Warrant Officer
 Reason: Security-sensitive refactoring requires expert reasoning
 ```
 
 **Execution:**
-1. Skip Haiku attempt
+1. Skip Sergeant attempt
 2. Route directly to `warrant-officer`
-3. Sonnet analyzes security vulnerabilities and refactors
+3. Warrant Officer analyzes security vulnerabilities and refactors
 4. No validation needed (went straight to quality model)
 
 ## Uncertainty Handling
 
 - If a request matches both HIGH and LOW confidence signals: treat as LOW — conservative default
-- If no confidence signals are present: treat as LOW and route directly to Sonnet
-- If the request scope is unclear (e.g., "fix things" with no file/domain context): do not attempt Haiku; ask the user directly for clarification before routing
+- If no confidence signals are present: treat as LOW and route directly to Warrant Officer
+- If the request scope is unclear (e.g., "fix things" with no file/domain context): do not attempt Sergeant; ask the user directly for clarification before routing
 - If validation tooling is unavailable (no build command, no linter): treat MEDIUM as LOW — cannot validate, cannot optimistically route
 
 ---
@@ -503,20 +503,20 @@ Reason: Security-sensitive refactoring requires expert reasoning
 ## Error Handling
 
 **Validation timeout:**
-- If validation takes >30 seconds → escalate to Sonnet (same as validator crash)
-- Do not accept unvalidated Haiku result
+- If validation takes >30 seconds → escalate to Warrant Officer (same as validator crash)
+- Do not accept unvalidated Sergeant result
 - Log for metric tracking
 
 **Validation crash:**
-- If validator crashes → escalate to Sonnet
-- Do not accept unvalidated Haiku result
+- If validator crashes → escalate to Warrant Officer
+- Do not accept unvalidated Sergeant result
 
 **Escalation failure:**
-- If Sonnet also fails → return error to user
+- If Warrant Officer also fails → return error to user
 - Log for debugging
 
 **User rejection (MEDIUM confidence):**
-- Escalate to Sonnet with user feedback
+- Escalate to Warrant Officer with user feedback
 - Include what user didn't like in escalation context
 
 ## Constraints and Limitations
@@ -527,13 +527,13 @@ Reason: Security-sensitive refactoring requires expert reasoning
 - User approval needed for subjective quality
 
 **Model limitations:**
-- Haiku cannot handle complex reasoning
+- Sergeant cannot handle complex reasoning
 - Some "simple looking" tasks require judgment
 - Classification heuristics imperfect (~85% accuracy)
 
 **Performance:**
 - Validation adds 5-15 seconds overhead
-- Escalation doubles quota cost (Haiku + Sonnet)
+- Escalation doubles quota cost (Sergeant + Warrant Officer)
 - Only worthwhile when success rate >50%
 
 ## References

@@ -40,7 +40,7 @@ Markdown-only shared ruleset (no code, no hooks): `AGENTS.md` (always-on global 
 ## Data & LLM behavior (formats trusted from the model; model assumptions)
 
 - Assumes the model will lazy-load rule files on demand instead of preloading (explicit instruction in `AGENTS.md`).
-- Tier-mapping docs are consumed by routing agents that use Anthropic tier names (`haiku`/`sonnet`/`opus`/`fable`) against DeepSeek or Kimi fleets.
+- Tier-mapping docs under `models/` are legacy research records (Anthropic tier names against DeepSeek/Kimi fleets); routing agents now use the rank hierarchy (`sergeant`/`warrant-officer`/`lieutenant`).
 - ⚠ Cross-file contradiction: Fable 5 and Opus 5 context is "200k consumer / 500k enterprise" in `models/deepseek-anthropic-tier-mapping.md` but "1M" in `models/kimi-for-coding-anthropic-tier-mapping.md` (both fetched 2026-08-22).
 - ⚠ Cross-file tension: `AGENTS.md` forbids shell scripts ("Never shell scripts, Python"), while `rules/calculations.md` prescribes `bc -l` inside shell pipelines for in-script arithmetic.
 - ⚠ `rules/operations.md` bans `/tmp` categorically ("No exception"); the current host environment instead pre-approves `/tmp/opencode` as the preferred scratch path. The rule is out of sync with the environment.

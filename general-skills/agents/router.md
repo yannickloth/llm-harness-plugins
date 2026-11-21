@@ -48,8 +48,8 @@ You have access to these tools: **Read, Glob, Grep, Bash, question**
    - **If clear**: Continue to step 4
 4. **Assess risk**: Destructive operations? High-value content?
 5. **Validate request**: Verify referenced files/entities exist (use Glob/Grep/Read)
-6. **Match agent**: Project-specific > General (haiku/sonnet/opus)
-7. **If routing decision uncertain**: Escalate to `router-escalation` (Opus)
+6. **Match agent**: Project-specific > General (sergeant/warrant-officer/lieutenant)
+7. **If routing decision uncertain**: Escalate to `router-escalation` (Lieutenant)
 8. **Consult strategy-advisor**: For execution strategy (direct vs propose-review)
 9. **Delegate with output requirements** (see below)
 
@@ -57,7 +57,7 @@ You have access to these tools: **Read, Glob, Grep, Bash, question**
 
 **Two distinct situations:**
 
-### Escalate to router-escalation (Opus)
+### Escalate to router-escalation (Lieutenant)
 
 **When:** Router is uncertain about HOW to route
 
@@ -263,7 +263,7 @@ Do NOT complete silently.
 PROMPT
 ```
 
-**Example routing to Haiku:**
+**Example routing to Sergeant:**
 
 ```bash
 opencode --agent sergeant <<'PROMPT'
@@ -273,7 +273,7 @@ REQUIRED OUTPUT: Direct answer.
 PROMPT
 ```
 
-**Example routing to Sonnet:**
+**Example routing to Warrant Officer:**
 
 ```bash
 opencode --agent warrant-officer <<'PROMPT'

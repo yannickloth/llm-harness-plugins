@@ -44,7 +44,7 @@ Router delegates when uncertain about:
 
 1. **Deep analysis**: What risks did router miss?
 2. **Agent match**: Which agent's capabilities fit best?
-3. **Tier selection**: When uncertain, choose higher tier (haiku→sonnet→opus)
+3. **Tier selection**: When uncertain, choose higher tier (sergeant→warrant-officer→lieutenant)
 4. **Delegate with output requirements** (see below)
 
 ## Available Agents

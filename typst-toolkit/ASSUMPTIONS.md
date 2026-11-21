@@ -7,10 +7,10 @@ truth for the structure/split agents.
 ## OpenCode API (hooks used, v1 vs v2, version sensitivity)
 - v2: `id` + `setup(ctx)`; skills via `ctx.skill.transform` (shared/v2-skills), agents via `ctx.agent.transform` (shared/agents), tool via `ctx.tool.transform` with JSON Schema input and `{ content }` results.
 - v1: `server()` serves a function-form factory; `config` hook (valid per `@opencode-ai/plugin` types) appends the skills dir and registers agents inline; `tool` map registers `typst-check`.
-- ⚠ Bare model aliases in agent frontmatter (`model: sonnet`, `model: haiku` on 6 of 8 agents) are silently dropped by shared/agents.ts (only `provider/model` survives) — the intended model pin never applies.
+- All agents pin full `proxy/<rank>` refs; a bare alias (`model: sonnet`) would be silently dropped by shared/agents.ts (only `provider/model` survives).
 - ⚠ `tools:` frontmatter lists are intentionally ignored by shared/agents.ts — "read-only" checkers rely on prose constraints plus the `permission:` map only.
 - ⚠ An agent id already present in the host config (e.g. defined in opencode.json) is not overwritten by the plugin.
-- ⚠ `typst-writer.md` pins `deepseek/deepseek-flash` — assumes that provider/model exists in the opencode config.
+- `typst-writer.md` pins `proxy/warrant-officer` — a rank every client reaches through the gateway.
 
 ## Environment (env vars read, with defaults; binaries on PATH; OS/process assumptions)
 - `typst` binary on PATH (typst 0.14.2 verified on this host).

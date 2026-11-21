@@ -16,7 +16,7 @@ final class Reformatter {
         Pattern.compile("^(I'm |I am )trying to ")
     );
 
-    // Rule 2: Add conciseness directive — critical for Claude Opus 5+
+    // Rule 2: Add conciseness directive — critical for the deeper ranks
     private static final String CONCISENESS_DIRECTIVE = "Be concise. Answer directly. Minimize output tokens. "
         + "Do NOT use bold headers, bullet lists for exposition, excessive em-dashes, or dramatic section titles. "
         + "Write in flowing prose. Respond only to what was asked — no preamble, no postamble.";

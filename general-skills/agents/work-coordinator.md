@@ -380,4 +380,4 @@ Recommendation: Check agent output, consider failing if no progress
 - Most useful for multi-step, multi-agent workflows
 - Can be invoked manually or automatically by router
 - State persists across sessions for long-running work
-- Compatible with all agent types (haiku/sonnet/opus)
+- Compatible with all agent types (sergeant/warrant-officer/lieutenant)
