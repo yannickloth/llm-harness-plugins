@@ -13,7 +13,7 @@ description: Prompt-intercepting tier router that classifies a request by reason
    - Uncertainty permission ("If unsure, say so")
    - Strips AI-style anti-patterns (em-dash abuse, weak openers, template language)
 4. **Ambiguity check**: detects vague requests ("fix the bug", "update the config") and asks for clarification before routing.
-5. **Dispatch**: the annotation names the recommended rank and agent. With `TIER_ROUTER_DISPATCH` (default), it instructs the model to delegate to `<tier>-general` via the Task tool; with `TIER_ROUTER_DISPATCH=0` it stays advisory. Annotation itself is opt-in via `TIER_ROUTER_ANNOTATE=1`.
+5. **Dispatch**: the annotation names the recommended rank and agent. With `TIER_ROUTER_DISPATCH` (default), it instructs the model to delegate to the tier's rank agent (the tier label doubles as the agent name) via the Task tool; with `TIER_ROUTER_DISPATCH=0` it stays advisory. Annotation itself is opt-in via `TIER_ROUTER_ANNOTATE=1`.
 
 ## Tier Agents
 

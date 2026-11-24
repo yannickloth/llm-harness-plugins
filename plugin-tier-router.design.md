@@ -25,7 +25,7 @@ User Prompt
 ┌──────────────────────────────────────────────────────────────┐
 │ RouterEngine — 10-step classification pipeline                   │
 │  route() = classify only. routeWithRewrite() = classify + rewrite │
-│  (1) ambiguity → DIRECT to sonnet with clarification Qs      │
+│  (1) ambiguity → DIRECT to warrant-officer with clar. Qs     │
 │  (2) meta-routing → ESCALATE                                 │
 │  (3) complexity signal → ESCALATE                            │
 │  (4) bulk destructive → ESCALATE                             │
@@ -33,7 +33,7 @@ User Prompt
 │  (6) agent def edit → ESCALATE                               │
 │  (7) multiple objectives → ESCALATE                          │
 │  (8) creation/design → ESCALATE                              │
-│  (9) keyword tier match → DIRECT (≥0.8) or sonnet verify     │
+│  (9) keyword tier match → DIRECT (≥0.8) else verify          │
 │ (10) no match → ESCALATE                                     │
 │                                                              │
 │  Internally: Classifier.java (escalation + keyword match)    │
@@ -52,8 +52,8 @@ User Prompt
 ┌──────────────────────────────────────────────────────────────┐
 │ Directive injected into LLM context                          │
 │  Skill-axis fleet → Task tool with init→specialist model IDs │
-│  DIRECT + tier   → Task tool spawns fable/haiku/sonnet/opus  │
-│  ESCALATE        → Task tool spawns sonnet-general (router)  │
+│  DIRECT + tier   → Task tool spawns the tier's rank agent    │
+│  ESCALATE        → Task tool spawns router-escalation        │
 │  Ambiguous       → agent asks user clarification questions,   │
 │                     re-processes after user replies            │
 └──────────────────────────────────────────────────────────────┘
@@ -72,12 +72,11 @@ tier-router/
 │   ├── BudgetState.java       # record: sessionId, tokensUsed, ceiling, startTime, exhausted
 │   ├── RoutingResult.java     # record: decision, tier, reason, confidence, prompt
 │   ├── Decision.java          # DIRECT | ESCALATE
-│   └── Tier.java              # FABLE | HAIKU | SONNET | OPUS + relativeCost()
-├── agents/                     # Agent definition .md files
-│   ├── fable-general.md       # Ultra-light: close brackets, add semicolons
-│   ├── haiku-general.md       # Mechanical: typos, format, rename, sort
-│   ├── sonnet-general.md      # Judgment: analyze, implement, refactor, review
-│   └── opus-general.md        # Deep: proofs, formal verification, math
+│   └── Tier.java              # Rank bands + relativeCost()
+├── agents/                    # Agent definition .md files
+│   ├── sergeant.md            # Mechanical: typos, format, rename, sort
+│   ├── warrant-officer.md     # Judgment: analyze, implement, refactor, review
+│   └── lieutenant.md          # Deep: proofs, formal verification, math
 ├── opencode/index.ts          # OpenCode: 3 tools
 ├── prompts/
 │   ├── README.md              # Plugin documentation
@@ -86,12 +85,22 @@ tier-router/
 
 ## Tier Agents
 
-| Tier | Model | Relative Cost | Use When |
-|------|-------|---------------|----------|
-| fable-general | fable | 0.25x | Trivial: close brackets, add semicolons, append/prepend |
-| haiku-general | haiku | 1x | Mechanical: fix typos, format code, rename, sort imports, lint |
-| sonnet-general | sonnet | ~12x | Judgment: analyze, implement, refactor, review, coordinate |
-| opus-general | opus | ~75x | Deep reasoning: prove theorems, formal verification, math |
+| Tier | Agent | Model | Relative Cost | Use When |
+|------|-------|-------|---------------|----------|
+| sergeant | `sergeant` | `proxy/sergeant` | 0.25x | Mechanical: fix typos, format code, rename, sort imports, lint |
+| warrant-officer | `warrant-officer` | `proxy/warrant-officer` | ~1x | Judgment: analyze, implement, refactor, review, coordinate |
+| lieutenant | `lieutenant` | `proxy/lieutenant` | ~12x | Deep reasoning: prove theorems, formal verification, math |
+
+The tier label **is** the rank name: it doubles as the agent name and the proxy
+model name (`proxy/<rank>`), so there is no band without a rank behind it.
+Trivial exact edits (close a bracket, append/prepend) land in the sergeant band.
+Rank capability and pricing are owned by the LiteLLM rank gateway
+(`~/code/nixos-config/services/litellm-proxy.nix`), not by this plugin.
+
+There is deliberately no Fable band: the gateway serves no Fable rank. If one is
+ever served it belongs **above** lieutenant — Anthropic's Fable tier is the
+strongest and most expensive one (Fable 5 is priced above Opus, 10x Haiku), so
+it must never be seated at the cheap end of the ladder.
 
 Each agent defines responsibilities, safety protocols, and escalation rules. See `agents/*.md`.
 
@@ -103,19 +112,18 @@ When the tier-router is active, agent-declared models may be overridden. The rou
 Priority chain (first match wins):
 1. Skill-axis fleet match → direct model IDs from skill-axis-mapping.json
    (no agent involved; tier-agent model ignored)
-2. Tier keyword/LLC match  → tier agent (haiku-general etc.) → its model
-3. ESCALATE                  → sonnet-general → its model
+2. Tier keyword/LLM match  → the tier's rank agent (sergeant etc.) → proxy/<rank>
+3. ESCALATE                  → router-escalation → proxy/lieutenant
 4. Router not active         → called agent → its own model
 ```
 
 | Router output | Agent invoked | Model used | Source |
 |---|---|---|---|
 | Skill-axis `fleetModels=[init, specialist]` | *(none)* | `init` → `specialist` | `skill-axis-mapping.json` |
-| `DIRECT` + `tier=FABLE` | `fable-general` | its declared model | agent `.md` → `opencode.json` |
-| `DIRECT` + `tier=HAIKU` | `haiku-general` | its declared model | agent `.md` → `opencode.json` |
-| `DIRECT` + `tier=SONNET` | `sonnet-general` | its declared model | agent `.md` → `opencode.json` |
-| `DIRECT` + `tier=OPUS` | `opus-general` | its declared model | agent `.md` → `opencode.json` |
-| `ESCALATE` | `sonnet-general` | its declared model | agent `.md` → `opencode.json` |
+| `DIRECT` + `tier=SERGEANT` | `sergeant` | `proxy/sergeant` | agent `.md` (`model:`) |
+| `DIRECT` + `tier=WARRANT_OFFICER` | `warrant-officer` | `proxy/warrant-officer` | agent `.md` (`model:`) |
+| `DIRECT` + `tier=LIEUTENANT` | `lieutenant` | `proxy/lieutenant` | agent `.md` (`model:`) |
+| `ESCALATE` | `router-escalation` | `proxy/lieutenant` | `general-skills/agents/router-escalation.md` |
 | No router active / direct call | (any agent) | its declared model | agent `.md` → `opencode.json` |
 
 Tier-agent models are fallback/default paths. Fleet models in `skill-axis-mapping.json` are the preferred path when a skill axis triggers. Custom agents (e.g. `*-auditor`) are consulted only when the router is absent or inactive.
@@ -128,7 +136,7 @@ Stops at first match. Steps 1–8 escalate complex/risky/ambiguous requests; ste
 
 Catches vague prompts before execution. Matches: `fix the bug`, `update the config`, `make it better`, `optimize the database`, `improve the code`, `clean this up`, `refactor this`. Skips if file path or extension present.
 
-Returns `Decision.DIRECT` with tier `SONNET` and confidence `0.3` — the low confidence signals to the directive generator that clarification is needed rather than normal execution.
+Returns `Decision.DIRECT` with tier `WARRANT_OFFICER` and confidence `0.3` — the low confidence signals to the directive generator that clarification is needed rather than normal execution.
 
 Generates context-specific clarification questions for 7 patterns:
 - "fix the bug" → "Which component? (login flow, auth, token refresh, permissions?)" + "What is the specific symptom or error?"
@@ -153,36 +161,35 @@ Generates context-specific clarification questions for 7 patterns:
 
 ### Step 9: Keyword Tier Match
 
-Priority: Haiku → Opus → Sonnet → Fable.
+Priority order in `Classifier.keywordMatch`: sergeant (trivial, then mechanical — both require a file path) → lieutenant → warrant-officer → file-path fallback to sergeant.
 
 | Tier | Keywords (regex) | Requires file path? |
 |------|------------------|---------------------|
-| Haiku | `fix\s+(typo\|spelling\|syntax)`, `format\s+(code\|file)`, `lint\s+`, `rename\s+\w+\s+\w*\s*to\s+\w+`, `add\s+(semicolon\|comma\|bracket\|import)`, `remove\s+(trailing\s+whitespace\|unused)`, `correct\s+(spelling\|typo)`, `sort\s+(imports\|lines)` | Yes |
-| Opus | `prove`, `formalize`, `verify correctness`, `mathematical`, `theorem`, `algorithm design`, `proof` | No |
-| Sonnet | `analyze`, `implement`, `refactor`, `integrate`, `review`, `optimize`, `debug`, `investigate` | No |
-| Fable | `\b(add\|close)\s+(semicolon\|bracket\|paren\|brace)\b` (case-insensitive), `\b(append\|prepend)\b` | Yes |
+| Sergeant (trivial) | `\b(add\|close)\s+(semicolon\|bracket\|paren\|brace)\b` (case-insensitive), `\b(append\|prepend)\b` | Yes |
+| Sergeant (mechanical) | `fix\s+(typo\|spelling\|syntax)`, `format\s+(code\|file)`, `lint\s+`, `rename\s+\w+\s+\w*\s*to\s+\w+`, `add\s+(semicolon\|comma\|bracket\|import)`, `remove\s+(trailing\s+whitespace\|unused)`, `correct\s+(spelling\|typo)`, `sort\s+(imports\|lines)` | Yes |
+| Lieutenant | `prove`, `formalize`, `verify correctness`, `mathematical`, `theorem`, `algorithm design`, `proof` | No |
+| Warrant-officer | `analyze`, `implement`, `refactor`, `integrate`, `review`, `optimize`, `debug`, `investigate` | No |
 
 Confidence formulas (per tier). Capped at tier-specific ceilings to avoid overconfidence from single-keyword matches:
 
 ```
-fable: count(keywords) > 0 → 0.9, else 0.0
-haiku: count(keywords) > 0 → min(0.9, 0.6 + count*0.1), else 0.5
-sonnet: count(keywords) > 0 → min(0.95, 0.65 + count*0.1), else 0.0
-opus: count(keywords) > 0 → min(0.95, 0.7 + count*0.1), else 0.0
+sergeant:       count(keywords) > 0 → min(0.9, 0.6 + count*0.1), else 0.5
+warrant-officer: count(keywords) > 0 → min(0.95, 0.65 + count*0.1), else 0.0
+lieutenant:     count(keywords) > 0 → min(0.95, 0.7 + count*0.1), else 0.0
 ```
 
-Ceilings: haiku 0.9, sonnet 0.95, opus 0.95. Prevents single-keyword prompts from reaching 1.0 confidence. The sonnet base was raised to 0.65 (from the original routing_core.py's 0.5) so single-keyword matches clear the 0.7 medium-confidence threshold.
+Ceilings: sergeant 0.9, warrant-officer 0.95, lieutenant 0.95. Prevents single-keyword prompts from reaching 1.0 confidence. The warrant-officer base was raised to 0.65 (from the original routing_core.py's 0.5) so single-keyword matches clear the 0.7 medium-confidence threshold.
 
 ### Step 10: Fallback Escalate
 
-No keyword match → escalate to sonnet-general for intelligent routing.
+No keyword match → escalate to `router-escalation` for intelligent routing.
 
 ### Confidence → Action Matrix
 
 | Confidence | Action |
 |------------|--------|
-| ≥ 0.8 | Direct route to matched tier agent |
-| 0.7–0.8 | Route to sonnet-general for verification |
+| ≥ 0.8 | Direct route to the matched rank agent |
+| 0.7–0.8 | Route to `warrant-officer` for verification |
 | < 0.7 | Escalate via step 10 (fallback — no tier matched with sufficient confidence) |
 
 ## Prompt Reformulation
@@ -213,10 +220,9 @@ Applied in order for all DIRECT-bound prompts:
 
 | Tier | Appended Directives |
 |------|---------------------|
-| Fable | Conciseness |
-| Haiku | Conciseness + Uncertainty permission |
-| Sonnet | Conciseness + Output format |
-| Opus | Conciseness + Output format + Uncertainty permission |
+| Sergeant | Conciseness + Uncertainty permission |
+| Warrant-officer | Conciseness + Output format |
+| Lieutenant | Conciseness + Output format + Uncertainty permission |
 
 ### Directives
 
@@ -270,10 +276,9 @@ All call Java `RouterCli` via Bun shell with stdin piping (no shell injection). 
 | Classifier (escalation triggers + keywords) | Task complexity taxonomy | Model capability tiers + ai-patterns Routing pattern (ch23) |
 | Reformatter | Prompt engineering best practices | Prompt engineering documentation |
 | BudgetTracker + BudgetState | Token pricing + session cost policies | Vendor pricing pages, org cost policies |
-| fable-general | Fable model capabilities | Model release notes |
-| haiku-general | Haiku model capabilities | Model release notes |
-| sonnet-general | Sonnet model capabilities | Model release notes |
-| opus-general | Opus model capabilities | Model release notes |
+| sergeant | The sergeant rank's capability | LiteLLM rank gateway (`services/litellm-proxy.nix`) |
+| warrant-officer | The warrant-officer rank's capability | LiteLLM rank gateway (`services/litellm-proxy.nix`) |
+| lieutenant | The lieutenant rank's capability | LiteLLM rank gateway (`services/litellm-proxy.nix`) |
 | opencode/index.ts | OpenCode plugin SDK | @opencode-ai/plugin |
 
 **IVP Compliance:** Changing model pricing never requires editing an agent definition. Changing model capabilities never requires editing routing rules. Changing budget policy never requires editing routing logic — only env var or session state files. Budget tracking varies independently from classification. The shared Java core varies with classification logic + budget tracking only.
@@ -339,4 +344,4 @@ The post-tool accumulation also writes this file on first-time exhaustion (via t
 
 Classification runs locally (Java, zero-cost). No model is consumed for routing. Sub-millisecond latency.
 
-Expected savings (estimate, not measured): ~55% with baseline routing if ~60% of tasks classify as mechanical (routed to Haiku instead of Sonnet). ~70% with probabilistic routing (Phase 2, not yet implemented).
+Expected savings (estimate, not measured): ~55% with baseline routing if ~60% of tasks classify as mechanical (routed to sergeant instead of warrant-officer). ~70% with probabilistic routing (Phase 2, not yet implemented).

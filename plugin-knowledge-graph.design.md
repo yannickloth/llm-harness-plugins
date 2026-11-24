@@ -316,18 +316,18 @@ If `kg-query` is NOT a tool, fall back to:
 GraphRAG's key insight: use a cheap LLM as a relevance filter, then an expensive
 LLM only on the relevant subgraph.
 
-| Tier | Model | When | What it does |
-|------|-------|------|--------------|
-| **Rater** | Haiku / GPT-4o-mini | Every agent call | Picks the right subgraph: "given the agent's task, which entities/communities are relevant?" |
-| **Reasoner** | Sonnet or Opus / GPT-4o | After subgraph is extracted | Reads only the relevant subgraph (entities + relationships + summaries) and performs the actual audit/writing/review |
+| Tier | Rank | When | What it does |
+|------|------|------|--------------|
+| **Rater** | sergeant | Every agent call | Picks the right subgraph: "given the agent's task, which entities/communities are relevant?" |
+| **Reasoner** | warrant-officer / lieutenant | After subgraph is extracted | Reads only the relevant subgraph (entities + relationships + summaries) and performs the actual audit/writing/review |
 
 **Token impact per agent call:**
 
 | Without KG | With KG (Tier 1 only) | With KG (two-tier) |
 |---|---|---|
-| Read all potentially-relevant files | Preloaded transitive-closure of target label | Haiku rates relevance → Sonnet/Opus reads only relevant community summaries |
-| 20-50K tokens (50+ files) | 0.5-2K tokens (entity list + dependency chain) | 0.2K tokens (Haiku rating) + 2-5K tokens (focused subgraph) |
-| ~$0.15-0.40/call (Sonnet) | ~$0.005-0.02/call | ~$0.002 + $0.02-0.05/call |
+| Read all potentially-relevant files | Preloaded transitive-closure of target label | Sergeant rates relevance → warrant-officer/lieutenant reads only relevant community summaries |
+| 20-50K tokens (50+ files) | 0.5-2K tokens (entity list + dependency chain) | 0.2K tokens (sergeant rating) + 2-5K tokens (focused subgraph) |
+| ~$0.15-0.40/call (warrant-officer) | ~$0.005-0.02/call | ~$0.002 + $0.02-0.05/call |
 
 ---
 

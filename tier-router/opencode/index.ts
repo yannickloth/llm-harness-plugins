@@ -296,7 +296,7 @@ async function classifyPrompt(dataDir: string | null, prompt: string): Promise<C
 /**
  * Whether the expensive LLM classifier is worth running for a prompt. Cheap,
  * deterministic gate: short prompts and prompts that are clearly single,
- * mechanical actions (the HAIKU band) skip the LLM round-trip and go
+ * mechanical actions (the sergeant band) skip the LLM round-trip and go
  * straight to the Java keyword router. Keeps the common trivial prompt path
  * sub-second instead of a multi-second spawned `opencode run`.
  */
@@ -448,7 +448,7 @@ const v1Factory: Plugin = async ({ client, directory, worktree }) => {
 
   return {
     // Register the tier agents (sergeant/warrant-officer/lieutenant) on the v1
-    // config map, so `opencode run --agent <tier>-general` resolves (no symlinks).
+    // config map, so `opencode run --agent <rank>` resolves (no symlinks).
     config: async (input: any) => {
       registerAgentDirV1(input, agentsDir)
     },

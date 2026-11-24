@@ -2,7 +2,7 @@
 
 Intercepts user prompts, classifies reasoning complexity (keyword rules + optional LLM classifier + skill-axis rank match), reformulates the prompt, and annotates the message (opt-in) with tier directives and a rank/agent recommendation. A Java 25 CLI (`RouterCli`) does the keyword/rank/budget logic; the OpenCode plugin (TS) spawns it and a headless `opencode run` for LLM classification.
 
-Tier labels are the rank hierarchy itself, ascending: **sergeant < warrant-officer < lieutenant**. Each label doubles as the agent name and the proxy model name (`proxy/<label>`); there is no band without a rank behind it.
+Tier labels are the rank hierarchy itself, ascending: **sergeant < warrant-officer < lieutenant**. Each label doubles as the agent name and the proxy model name (`proxy/<label>`); there is no band without a rank behind it. Anthropic's Fable tier is not a band here (no served rank) — it is the strongest and most expensive tier, above Opus, so a future Fable rank seats above lieutenant, never at the cheap end.
 
 ## OpenCode API (hooks used, v1 vs v2, version sensitivity)
 
@@ -11,14 +11,14 @@ Tier labels are the rank hierarchy itself, ascending: **sergeant < warrant-offic
 - v2 hooks: `ctx.session.hook("prompt")` (replaces `event.prompt.text` by assignment), `ctx.agent.transform`, `ctx.tool.transform` (`editor.add` with JSON Schema, `{ content }` results). ⚠ Shapes follow the datetime-inject v2 port, verified against opencode 2.x.
 - The v2 prompt hook is async (awaits classification). If the host does not await prompt hooks, the message passes through unannotated. ⚠
 - Plugin API `@opencode-ai/plugin` 1.19.3 (`tool`, `Plugin` types).
-- Agents are registered by the plugin itself (`shared/agents.ts`): `tools:` and `permissionMode:` frontmatter are ignored; a bare `model:` alias (no `provider/` prefix) is dropped. All four tier agents pin `proxy/<rank>` refs (`sergeant`, `warrant-officer`, `lieutenant`, `lieutenant-colonel`), which register as-is.
+- Agents are registered by the plugin itself (`shared/agents.ts`): `tools:` and `permissionMode:` frontmatter are ignored; a bare `model:` alias (no `provider/` prefix) is dropped. The three tier agents pin `proxy/<rank>` refs (`sergeant`, `warrant-officer`, `lieutenant`), which register as-is.
 
 ## Environment (env vars, binaries, OS/process)
 
 - `java` on PATH, JDK 25+. ⚠ `RouterCli` uses a package-private instance `void main(String[])` — accepted only by the JEP 512 launcher (final in JDK 25); JDK ≤ 24 rejects it.
 - `opencode` binary on PATH for the headless LLM classifier. ⚠
 - `TIER_ROUTER_ANNOTATE` — unset: prompt hook is a no-op (default); `1`: annotation replaces the message text.
-- `TIER_ROUTER_DISPATCH` — with annotate: unset/`1` (default) tells the model to delegate the task to the tier agent (`<tier>-general`) via the Task tool; `0` keeps the annotation advisory and handles the request directly.
+- `TIER_ROUTER_DISPATCH` — with annotate: unset/`1` (default) tells the model to delegate the task to the tier's rank agent (the tier label is the agent name) via the Task tool; `0` keeps the annotation advisory and handles the request directly.
 - `TIER_ROUTER_LEAN` — `1` (with annotate): send rewritten prompt + directives only.
 - `TIER_ROUTER_CLASSIFY_MODEL` — default `proxy/sergeant` (rank gateway) for the `opencode run` classifier. ⚠
 - `TIER_ROUTER_CLASSIFY_DATA_DIR` — explicit classify data home; else `$XDG_RUNTIME_DIR/tier-router-classify`; else `os.tmpdir()/tier-router-classify`.

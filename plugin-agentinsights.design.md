@@ -402,10 +402,10 @@ Validation on load: check required fields, enum values, numeric types. Delete co
 
 | Phase | Model | Rationale |
 |-------|-------|-----------|
-| Facet extraction | Opus-equivalent (best available) | Accuracy on classification |
-| Transcript summarization | Opus-equivalent | Needed for >30KB transcripts |
-| Insight generation | Opus-equivalent | Narrative quality |
-| At a Glance | Opus-equivalent | Synthesis of all other sections |
+| Facet extraction | Top rank (best available served model) | Accuracy on classification |
+| Transcript summarization | Top rank | Needed for >30KB transcripts |
+| Insight generation | Top rank | Narrative quality |
+| At a Glance | Top rank | Synthesis of all other sections |
 
 Configurable via env var `INSIGHTS_MODEL` (default: platform's best model).
 

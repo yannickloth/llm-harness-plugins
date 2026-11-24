@@ -153,7 +153,7 @@ invariant. A rule costs its full text on every request; a skill or command costs
 nothing until used.
 
 Each agent pins `model: deepseek/deepseek-v4-pro` in frontmatter. A bare alias
-such as `sonnet` also resolves, through the host's alias map, to whatever that
+such as `warrant-officer` also resolves, through the host's alias map, to whatever that
 map points at — the explicit reference is used so a remapped alias cannot change
 this agent's model silently. Verify with `opencode debug agents` (a reload is
 needed after editing frontmatter; the host caches agent definitions). To change

@@ -14,7 +14,7 @@ Source: _GenAI Design Patterns_ catalog (6 parts, ~30 patterns, 7 candidates) ×
 | Plugin | Book pattern | How |
 |--------|-------------|-----|
 | `agentmem` | **Memory Hierarchy** (Pt II, ch16) + **Dual-Tier Memory** (ch25) | Three-tier ADD-only memory (in-band → out-of-band extraction → nightly consolidation), hot/cold storage, decay curves, hierarchical scoping |
-| `knowledge-graph` | **GraphRAG** (Pt II, ch24) + **Hybrid Search** (ch18) | Build-time `.typ` → `graph.json` with Leiden community detection, community summaries, two-tier LLM (Haiku rater → Sonnet/Opus reasoner) |
+| `knowledge-graph` | **GraphRAG** (Pt II, ch24) + **Hybrid Search** (ch18) | Build-time `.typ` → `graph.json` with Leiden community detection, community summaries, two-tier LLM (sergeant rater → warrant-officer/lieutenant reasoner) |
 | `graphrag` | **GraphRAG** (Pt II, ch24) — full LLM implementation | MS GraphRAG engine: LLM-extracted entities/relationships, community summaries, covariates, vector-backed local/global/drift search; two-speed update (session.idle incremental) |
 | `tier-router` | **Routing** (Pt IV, ch23) + **LLM Cascade** (ch25) | 10-step classification pipeline: intent → cheapest sufficient model tier; keyword match → escalate on low confidence |
 | `agentinsights` | **Observability** (Pt IV, ch27) | Session scan → LLM facet extraction → aggregation → HTML narrative report |
@@ -237,11 +237,11 @@ src/main/java/eu/infolead/llmhp/router/
 | 1 | **Session-level budget enforcement** | High | Low | Budget Circuit-Breaker (ch26) | ✅ |
 | | Add `BudgetTracker.java` to tier-router. `user-prompt-submit.sh` checks cumulative token spend before routing; on exhausted → inject session-budget-exhausted directive. Configurable ceiling: `TIER_ROUTER_BUDGET_CEILING` (default 500K tokens). | | | | |
 | 2 | **Model fallback on agent failure** | Medium | Medium | Model Fallback (ch24) | ❌ |
-| | Currently: if routed agent fails (tool error, no output), no fallback. Add: if haiku fails → retry with sonnet. Configurable retry budget: max 1 fallback per prompt. Log fallback events to metrics. | | | | |
+| | Currently: if routed agent fails (tool error, no output), no fallback. Add: if sergeant fails → retry with warrant-officer. Configurable retry budget: max 1 fallback per prompt. Log fallback events to metrics. | | | | |
 | 3 | **Semantic cache check before classification** | Medium | Medium | Semantic Cache (ch30) | ❌ |
 | | Before 10-step classification pipeline, check if semantically similar prompt was already routed. Avoid re-classifying near-duplicates. Depends on `semantic-cache` plugin (2.1). | | | | |
 | 4 | **Agent performance → routing weight adjustment** | Low | High | Observability (Pt IV) → Routing | ❌ |
-| | Use agentinsights' friction/satisfaction data to adjust routing weights: "haiku has high friction on Python tasks → route Python prompts to sonnet." Depends on agentinsights → tier-router integration. | | | | |
+| | Use agentinsights' friction/satisfaction data to adjust routing weights: "sergeant has high friction on Python tasks → route Python prompts to warrant-officer." Depends on agentinsights → tier-router integration. | | | | |
 | 5 | **User memory → routing hint** | Medium | Low | Routing + Memory | ✅ |
 | | Read user's `MEMORY.md` at session start. Preferences ("terse responses"), expertise ("learning Rust") → adjust routing (expertise mismatch → escalate). Counterpart to agentmem change #4. | | | | |
 

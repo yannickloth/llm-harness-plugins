@@ -37,7 +37,7 @@ demand. Mark fragile assumptions with ⚠.
 ## Environment
 
 - All 6 agents pin `model: proxy/lieutenant` in frontmatter — an explicit
-  `provider/model` reference. A bare alias (`sonnet`, `haiku`) resolves through
+  `provider/model` reference. A bare alias (`warrant-officer`, `sergeant`) resolves through
   the host's alias map instead, so a remap there would change the model without
   a diff here; the pack test requires the explicit form. `opencode debug agents`
   caches agent definitions — reload after editing frontmatter before trusting it.

@@ -1749,11 +1749,15 @@ learns which sources to trust.
 
 | Tier | Examples | Default confidence | Agent behavior | Dreamer treatment |
 |------|----------|-------------------|----------------|-------------------|
-| `S` (frontier) | Opus 4.5, Sonnet 4.x, GPT-5 | `medium` | Apply normally | Normal decay |
-| `A` (strong) | Sonnet, GPT-4o, Gemini 2.5 Pro | `low` | Apply with hedge language | Faster staleness (7d) |
-| `B` (capable) | Haiku, GPT-4o-mini, DeepSeek v4 Pro | `low` | Apply with explicit caveat | Faster staleness (7d) |
-| `C` (light) | DeepSeek v3, local models | `speculative` | Never applied to decisions | Demoted on first correction |
+| `S` (frontier) | `proxy/brigadier-general`, k3.1-pro, GPT-5 | `medium` | Apply normally | Normal decay |
+| `A` (strong) | `proxy/lieutenant`, `proxy/lieutenant-colonel`, `proxy/major`, k3, GPT-4o, Gemini 2.5 Pro | `low` | Apply with hedge language | Faster staleness (7d) |
+| `B` (capable) | `proxy/warrant-officer`, `proxy/second-lieutenant`, GPT-4o-mini, DeepSeek v4 Pro | `low` | Apply with explicit caveat | Faster staleness (7d) |
+| `C` (light) | `proxy/sergeant`, DeepSeek v3, local models | `speculative` | Never applied to decisions | Demoted on first correction |
 | `Unknown` | No capability data | `low` | Conservative | Treat as tier B |
+
+`ModelTier.fromModelId` matches the rank ladder first, then the legacy explicit
+model ids it still accepts. Anthropic's Fable tier is frontier (`S`) — priced
+above Opus, 10x Haiku; it is never a cheap band.
 
 The tier is stored in frontmatter: `model_tier: B`, `model: deepseek/deepseek-v4-pro`.
 

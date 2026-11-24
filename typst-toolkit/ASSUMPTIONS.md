@@ -7,7 +7,7 @@ truth for the structure/split agents.
 ## OpenCode API (hooks used, v1 vs v2, version sensitivity)
 - v2: `id` + `setup(ctx)`; skills via `ctx.skill.transform` (shared/v2-skills), agents via `ctx.agent.transform` (shared/agents), tool via `ctx.tool.transform` with JSON Schema input and `{ content }` results.
 - v1: `server()` serves a function-form factory; `config` hook (valid per `@opencode-ai/plugin` types) appends the skills dir and registers agents inline; `tool` map registers `typst-check`.
-- All agents pin full `proxy/<rank>` refs; a bare alias (`model: sonnet`) would be silently dropped by shared/agents.ts (only `provider/model` survives).
+- All agents pin full `proxy/<rank>` refs; a bare alias (`model: warrant-officer`) would be silently dropped by shared/agents.ts (only `provider/model` survives).
 - ⚠ `tools:` frontmatter lists are intentionally ignored by shared/agents.ts — "read-only" checkers rely on prose constraints plus the `permission:` map only.
 - ⚠ An agent id already present in the host config (e.g. defined in opencode.json) is not overwritten by the plugin.
 - `typst-writer.md` pins `proxy/warrant-officer` — a rank every client reaches through the gateway.
