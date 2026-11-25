@@ -169,7 +169,7 @@ This is a ranking heuristic, not a score: the inputs are approximate, the orderi
 baseline + per-dimension noise floor → profile → gap table (peak + sustained) → rank by Exp.gain ÷ effort
    → screen the lever (n=4/side) → confirm the pre-registered set (n from stats.py design) → stability gates
    ↑        + outlen vs control (0 runs, reads the ledger)                              ↓
-   └───── update best-config + PLAN.md + ledger + gap table ←── accept / reject with reason ──┘
+   └───── update best-config + PLAN.md + ledger + gap table ←── accept / accept-lossy / not-actionable / reject with reason ──┘
 ```
 
 ### Lever order
@@ -328,7 +328,7 @@ See `references/publishing.md`.
 
 ## 5. Reporting to the user
 
-- **Start with a table:** metric, baseline, now, ceiling, how it was measured (median of N, cold or warm, which harness).
+- **Start with a table:** metric, baseline, now, ceiling, disposition, how it was measured (median of N, cold or warm, which harness).
 - **Then:** what got the gains, why it stops here, the known limitations, and the system state you changed (power profile, running servers, uncommitted code, branches that must not be deleted).
 - **Say plainly** what was not verified.
 - **When asked to free the GPU:** drain, stop the server, confirm no processes and an idle clock, and end any loop.

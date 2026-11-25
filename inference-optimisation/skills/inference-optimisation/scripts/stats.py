@@ -283,8 +283,12 @@ def main():
                    help="pct change in output length that must be labelled a trade, not a win (default 20)")
     o.add_argument("--uniform", type=float, default=5.0,
                    help="pct overall change that counts as a UNIFORM SHIFT when every prompt moved the "
-                        "same way (default 5). A uniform 15% shortening is invisible to a 20% per-prompt "
+                        "same way (default 5). A uniform 15%% shortening is invisible to a 20%% per-prompt "
                         "threshold and is exactly the mechanism the gate exists to catch.")
+    o.add_argument("--uniform-majority", type=float, default=3.0,
+                   help="pct overall change that counts as a MAJORITY SHIFT when >= N-1 prompts moved "
+                        "the same way (default 3). Catches cases like 5/6 prompts shortened 10%% "
+                        "when the uniform rule requires all prompts.")
 
     sub.add_parser("selftest", help="verify the exact null distribution by enumeration")
 
@@ -353,11 +357,15 @@ def main():
         # unacceptable - the chain stops at step 1 every time.
         K = ns.confirm_set if ns.confirm_set is not None else 1
         if ns.confirm_set is None:
-            print("WARNING: --confirm-set was not passed, so n is sized against alpha/K = alpha/1.")
-            print("  If your pre-registered confirm set has K > 1 levers, this n is TOO SMALL: Holm's")
-            print("  first threshold is alpha/K, and a test whose grid cannot reach it stops the chain")
-            print("  at step 1, so the confirm stage accepts nothing, every time. Re-run with")
-            print("  --confirm-set K before you fix the budget.")
+            print("WARNING: --confirm-set was not passed, so n is sized against alpha/K = alpha/1.",
+                  file=sys.stderr)
+            print("  If your pre-registered confirm set has K > 1 levers, this n is TOO SMALL: Holm's",
+                  file=sys.stderr)
+            print("  first threshold is alpha/K, and a test whose grid cannot reach it stops the chain",
+                  file=sys.stderr)
+            print("  at step 1, so the confirm stage accepts nothing, every time. Re-run with",
+                  file=sys.stderr)
+            print("  --confirm-set K before you fix the budget.", file=sys.stderr)
         target_alpha = ns.alpha / max(1, K)
         if K > 1:
             print(f"confirm set K = {K}: Holm's tightest threshold is alpha/K = "
@@ -492,6 +500,9 @@ def main():
             print(f"  {i:>7} {a:>8.0f} {b:>9.0f} {ch:>+8.1f}%{mark}")
         ma, mb = statistics.median(ctl), statistics.median(cand)
         overall = 0.0 if ma == 0 else 100 * (mb - ma) / ma
+        # Round to 2 decimal places to avoid floating-point boundary issues in >= comparisons
+        # (e.g., -3.0% stored as -2.999999999999997 fails `>= 3.0`)
+        overall = round(overall, 2)
         print(f"  overall median {ma:.0f} -> {mb:.0f}  ({overall:+.1f}%)")
         # Uniform-shift check: a lever that scales EVERY answer by the same factor has per-prompt spread
         # exactly 0%, and a 15% uniform shortening sits UNDER a 20% per-prompt threshold - so the direction
@@ -503,7 +514,15 @@ def main():
         if uniform:
             print(f"  UNIFORM SHIFT: all {len(ctl)} prompts moved {'down' if downs == len(ctl) else 'up'}, "
                   f"overall {overall:+.1f}% (>= {ns.uniform:.0f}%)")
-        if abs(overall) > thr or n_short or n_long or uniform:
+        # Majority-direction check: when ≥ N-1 prompts move the same way, the overall shift is still
+        # the mechanism even if one prompt behaves differently (the speed delta comes from the majority).
+        # 6/6 is already caught by uniform, so we check N-1.
+        majority = (downs >= len(ctl) - 1 or ups >= len(ctl) - 1) and abs(overall) >= ns.uniform_majority
+        if majority:
+            print(f"  MAJORITY SHIFT: {downs if downs >= len(ctl)-1 else ups} of {len(ctl)} prompts moved "
+                  f"{'down' if downs >= len(ctl)-1 else 'up'}, overall {overall:+.1f}% "
+                  f"(>= {ns.uniform_majority:.0f}%) — the speed delta is likely via answer length")
+        if abs(overall) > thr or n_short or n_long or uniform or majority:
             print(f"VERDICT: output length moved past the label threshold "
                   f"({n_short} shortened, {n_long} lengthened"
                   + (", uniform shift" if uniform else "") + f"). The speed delta is NOT a free win.")

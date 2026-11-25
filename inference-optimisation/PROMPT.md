@@ -57,14 +57,14 @@ You are optimising the serving speed of a local LLM on this machine. Use the `in
 
 Every report, whether progress or final, starts with this table:
 
-| Metric | Baseline | Now | Ceiling | How measured |
-|---|---:|---:|---:|---|
-| c1 decode | | | | median of N, thinking on/off, prompt panel, temperature |
-| cN decode | | | | wall-clock aggregate |
-| Prefill 4K / 32K / long | | | | cold unique prompt, prompt_tokens ÷ TTFT |
-| KV capacity | | | | tokens, and N × context proven by soak |
-| Startup / TTFT | | | | |
-| Peak memory | | | | driver residency + anon, vs cap |
+| Metric | Baseline | Now | Ceiling | Disposition | How measured |
+|---|---:|---:|---:|---|---|
+| c1 decode | | | | | median of N, thinking on/off, prompt panel, temperature |
+| cN decode | | | | | wall-clock aggregate |
+| Prefill 4K / 32K / long | | | | | cold unique prompt, prompt_tokens ÷ TTFT |
+| KV capacity | | | | | tokens, and N × context proven by soak |
+| Startup / TTFT | | | | | |
+| Peak memory | | | | | driver residency + anon, vs cap |
 
 Then:
 

@@ -242,11 +242,10 @@ def crossover_ctx(m, n=1, drafts=0):
         denom < 0, num < 0   ->  intensity starts above and FALLS through it: binds BELOW L.
         denom < 0, num > 0   ->  starts below and falls further: never binds (returns None).
 
-    The "binds BELOW" case is a model whose per-token linear cost is huge relative to its weights
-    while its asymptotic intensity bound sits under the hardware threshold. It is rare and it is
-    unphysical for real checkpoints at the extreme settings that produce it (100B active parameters
-    cannot live in 0.6 GB of weights), but the arithmetic is real and returning None there reads as
-    "the floor never binds", which is the opposite of the truth.
+    The "binds BELOW" case requires f0/b0 > T, i.e. intensity at ctx=0 exceeds the hardware
+    threshold. Since f0/b0 ≤ 2 for any real model and T ≥ 8 for any real hardware (minimum on a
+    slow CPU), this requires mfu < 2/T < 0.001 — a meaningless operating point. For any real
+    configuration this case is effectively impossible.
     """
     kv = m.get("kv_bytes_per_token", 0)
     if not kv:
@@ -258,13 +257,16 @@ def crossover_ctx(m, n=1, drafts=0):
     b0 = per_token_bytes(m, 0, drafts, n) * GB          # bytes/step at ctx 0 (weights, drafts, state)
     # Binds when  n*(f0 + a*L)  >  t * (b0 + rows*n*kv*L)
     denom = n * (a - t * rows * kv)
-    if denom == 0:
-        return None
     num = t * b0 - n * f0
+    # Intensity curve: I(L) = (f0 + a*L) / (b0 + rows*n*kv*L). Its slope sign is (a - T*rows*n*kv)
+    # which is denom/n. When denom == 0, intensity is flat. When denom != 0, I(L) is monotonic.
+    if denom == 0:
+        # Flat curve: never crosses the threshold. Binds everywhere if already above, nowhere if below.
+        return (0, True) if num < 0 else None     # num < 0 → starts above → binds at every context
     if denom > 0:
         return (0, True) if num <= 0 else (num / denom, True)
     if num >= 0:
-        return None                      # starts below the threshold and moves further below
+        return None                      # starts at/below threshold and falls further below
     return (num / denom, False)          # starts above it and falls through at L
 
 
