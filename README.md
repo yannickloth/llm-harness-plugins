@@ -24,6 +24,7 @@ with a Java backend and OpenCode TypeScript shim.
 | [`context-editing`](./context-editing) | Model-managed context — projects the conversation into an editable `context.md` (mirror) over an append-only trace, so long sessions stay relevant instead of rotting. Cache-aware, wire-format-safe, fail-open budget. Phase 0 (`notices-only`) by default |
 | [`codify-first`](./codify-first) | Meta-prompt plugin — injects a short intake directive (recurrence/stability/leverage gate) into the system prompt and ships the `codify-first` skill: check existing skills/agents, author the missing artifact into the project's `.opencode/`, then execute the task through it |
 | [`general-skills`](./general-skills) | Cross-project skill pack — 16 skills (`math`, `proof`, `logic`, `citation`, `ste-100`, `style`, `xref`, `redundancy`, `use-calculator`, `eval-loop`, `review-convergence`, …), 12 audit subagents, two permanent system rules (`[STE-100 Simplified Technical English]`, `[calc-discipline]`), and the `calc`/`calc_probe` tools: a session reports only numbers that a calculator computed (qalc/numbat/bc/python3/sympy/maxima), with the engine and expression stated, and a missing engine comes back as an install proposal instead of an estimate |
+| [`inference-optimisation`](./inference-optimisation) | LLM serving-speed hill-climb — theoretical ceilings per dimension (decode bandwidth, compute floor, prefill, KV capacity, startup, TTFT) with a verified peak-vs-sustained model, a gap table that ranks levers by expected gain ÷ effort, and a statistics layer that sizes each experiment from the measured noise floor: exact Mann-Whitney null distribution, quantized alpha, Monte-Carlo exact power, pre-registered confirm set with Holm across it, stability gates, and a ledger the winner must pass before publishing. Scripts: `ceiling.py`, `stats.py`, `bench.py`, `mem.sh`, `queue.sh` |
 
 `local-decide` is currently dormant: its backend is laya, whose `laya-mcp` service is installed but
 not auto-started, so the plugin is registered nowhere. Register `local-decide/opencode`
@@ -147,6 +148,7 @@ reference implementation for command self-registration
 | 11b | `premium-read-offload` | — | Premium-session read/generation offload; independent of other plugins |
 | 11c | `semantic-router` | — | Local intent→directive routing; independent of other plugins (TS-only) |
 | 11f | `codify-first` | `system-message-merge` | Intake directive + `codify-first` skill self-registration; load before the merge coalesces system messages |
+| 11i | `inference-optimisation` | — | Skill-only plugin (no agents, no commands): ceilings, gap table, acceptance statistics and benchmark harness for LLM serving-speed work. Independent of other plugins; its `stats.py`/`ceiling.py` need only Python 3 |
 | 12 | `sdlc-guardrails` | — | Enforcement layer; reads plan.md/spec.md/intent.md, load after skills |
 
 Hard dependency: `guardrail-chain` → `agentmem`. Rest is soft layering.
