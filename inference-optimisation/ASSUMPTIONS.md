@@ -863,8 +863,33 @@ still indicates length change as the mechanism."
 **Runtime verification:** All scripts compile clean. All fixtures reproduce correctly. Verdict text
 correct for all scenarios. Epsilon guard verified: -2.999... triggers, 2.995% does not.
 
+## Round 13
+
+**Focus:** Review of round-12 change (SKILL.md MAJORITY SHIFT documentation in rule 160). Also
+cross-reference audit of all outlen-related documentation.
+
+**Sophist findings:**
+- **Finding 1:** SKILL.md MAJORITY SHIFT absent — **FALSE POSITIVE**. MAJORITY SHIFT is present
+  in SKILL.md line 160. The sophist was working with stale state or a cached version of the file.
+- **Finding 2:** SKILL.md line 291 (disposition text) only mentions "uniform shift", not
+  "majority shift". The disposition text enumerates outlen triggers as "(per-prompt move past
+  the threshold, or a uniform shift)" — the code has THREE mechanisms but the text only names two.
+
+**Theory findings:**
+- Same 2 documentation gaps identified: SKILL.md line 291 and PROMPT.md line 39.
+- PROMPT.md only says "outlen flags any prompt whose median moved more than 20%" — omits both
+  uniform and majority shift checks.
+
+**Fixes applied:**
+- SKILL.md line 291: changed to "(per-prompt move past the threshold, a uniform shift, or a
+  majority shift — the three detection mechanisms)"
+- PROMPT.md line 39: added all three mechanisms with names and thresholds
+
+**Runtime verification:** All scripts compile clean.
+
 ## Convergence status
 
-Rounds 1–12 completed. 1 file changed in round 12 (SKILL.md). 1 of 2 reviewers clean at round 12
-(sophist clean, theory found 1 documentation gap — now fixed). Convergence criterion: 2 consecutive
-zero-finding rounds. Methodology is sound, code is tested, documentation is now complete.
+Rounds 1–13 completed. 2 files changed in round 13 (SKILL.md, PROMPT.md). 0 consecutive clean
+rounds at round 13. Convergence criterion: 2 consecutive zero-finding rounds. Methodology is
+sound, code is tested, all three documentation files now consistently name all three outlen
+detection mechanisms (per-prompt, uniform, majority).
