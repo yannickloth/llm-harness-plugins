@@ -20,7 +20,7 @@ A tuned config is only useful if someone else can rebuild it and get the same re
 ## 3. Write the launch exactly as benchmarked
 
 - Copy the environment and arguments from the best config, then diff them mechanically. Change nothing "while you're there".
-- **The launch contains only levers the harness accepted.** A lever disposed `not-actionable` is not in it, and neither is a lever the user asked for against the evidence — if one is installed, the recipe names it next to the flag (`installed by instruction, not by evidence`, with the power number) and the advertised numbers exclude it. A published recipe is a list of accepted levers, not a list of things that were tried.
+- **The launch contains only levers the harness accepted.** A lever disposed `not-actionable` is not in it, and neither is a lever the user asked for against the evidence — if one is installed, the recipe names it next to the flag (`installed by instruction, not by evidence`, with the power number) and the advertised numbers exclude it. A lever disposed `accept-lossy` (speed win with a labelled output-length trade) **is** included — the recipe states the trade next to the number. A published recipe is a list of accepted levers, not a list of things that were tried.
 - Make advertised numbers true. If a registry derives KV capacity as `ctx × seqs (+ margin)`, set the engine's pool to that value. Note any difference from what you soak-tested.
 
 ## 4. Acceptance gates (all required, on the clean build)

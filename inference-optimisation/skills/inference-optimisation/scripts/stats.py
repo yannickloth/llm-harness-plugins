@@ -500,9 +500,6 @@ def main():
             print(f"  {i:>7} {a:>8.0f} {b:>9.0f} {ch:>+8.1f}%{mark}")
         ma, mb = statistics.median(ctl), statistics.median(cand)
         overall = 0.0 if ma == 0 else 100 * (mb - ma) / ma
-        # Round to 2 decimal places to avoid floating-point boundary issues in >= comparisons
-        # (e.g., -3.0% stored as -2.999999999999997 fails `>= 3.0`)
-        overall = round(overall, 2)
         print(f"  overall median {ma:.0f} -> {mb:.0f}  ({overall:+.1f}%)")
         # Uniform-shift check: a lever that scales EVERY answer by the same factor has per-prompt spread
         # exactly 0%, and a 15% uniform shortening sits UNDER a 20% per-prompt threshold - so the direction
@@ -510,22 +507,42 @@ def main():
         # of this check, and it flagged nothing). Same direction on every prompt plus a small overall move
         # is the signature; the threshold for it is much tighter than the per-prompt one, because coherence
         # is the evidence, not magnitude.
-        uniform = (downs == len(ctl) or ups == len(ctl)) and abs(overall) >= ns.uniform
+        # Use epsilon tolerance for >= comparisons: -3.0% is stored as -2.999999999999997 in float,
+        # so abs(-2.999999999999997) >= 3.0 fails. A 1e-9 epsilon catches under-representation
+        # without falsely triggering at 2.995% (which is genuinely below 3.0).
+        eps = 1e-9
+        uniform = (downs == len(ctl) or ups == len(ctl)) and abs(overall) >= ns.uniform - eps
         if uniform:
             print(f"  UNIFORM SHIFT: all {len(ctl)} prompts moved {'down' if downs == len(ctl) else 'up'}, "
                   f"overall {overall:+.1f}% (>= {ns.uniform:.0f}%)")
         # Majority-direction check: when ≥ N-1 prompts move the same way, the overall shift is still
         # the mechanism even if one prompt behaves differently (the speed delta comes from the majority).
         # 6/6 is already caught by uniform, so we check N-1.
-        majority = (downs >= len(ctl) - 1 or ups >= len(ctl) - 1) and abs(overall) >= ns.uniform_majority
+        majority = (downs >= len(ctl) - 1 or ups >= len(ctl) - 1) and abs(overall) >= ns.uniform_majority - eps
         if majority:
             print(f"  MAJORITY SHIFT: {downs if downs >= len(ctl)-1 else ups} of {len(ctl)} prompts moved "
                   f"{'down' if downs >= len(ctl)-1 else 'up'}, overall {overall:+.1f}% "
                   f"(>= {ns.uniform_majority:.0f}%) — the speed delta is likely via answer length")
         if abs(overall) > thr or n_short or n_long or uniform or majority:
-            print(f"VERDICT: output length moved past the label threshold "
-                  f"({n_short} shortened, {n_long} lengthened"
-                  + (", uniform shift" if uniform else "") + f"). The speed delta is NOT a free win.")
+            # Build verdict detail: list what checks fired for transparency
+            parts = []
+            if n_short:
+                parts.append(f"{n_short} shortened")
+            if n_long:
+                parts.append(f"{n_long} lengthened")
+            if not parts:
+                # No per-prompt threshold crossed, but uniform/majority caught it
+                # Report direction: all/most moved up or down
+                direction = "down" if downs >= len(ctl) or downs >= ups else "up"
+                count = len(ctl) if downs == len(ctl) or ups == len(ctl) else f"{downs if downs >= len(ctl)-1 else ups}/{len(ctl)}"
+                parts.append(f"{count} prompts moved {direction}")
+            if uniform:
+                parts.append("uniform shift")
+            elif majority:
+                parts.append("majority shift")
+            detail = ", ".join(parts)
+            print(f"VERDICT: output length moved past the label threshold ({detail}). "
+                  f"The speed delta is NOT a free win.")
             print("  Label the lever a lossy trade in the report and name the mechanism (speculative decoding")
             print("  changes accepted length as its mechanism; a quantization that makes answers blander is a")
             print("  different task, not a faster one). Get the user's call before it enters best-config.json,")
