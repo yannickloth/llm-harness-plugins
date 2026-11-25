@@ -844,9 +844,27 @@ report table Disposition column, loop diagram).
 text correct for all directions (UP, DOWN, majority-only). Rounding boundary: 2.995% correctly does NOT
 trigger 3% threshold; exact -3.0% does trigger (epsilon catches float under-representation).
 
+## Round 12
+
+**Focus:** Review of round-11 changes (epsilon guard, verdict text, publishing.md accept-lossy,
+crossover_ctx denom==0). Also review of round-12 change (SKILL.md MAJORITY SHIFT documentation).
+
+**Findings:**
+- Theory: SKILL.md documents UNIFORM SHIFT but not MAJORITY SHIFT — the code implements the check
+  and prints "MAJORITY SHIFT" in verdicts, but SKILL.md never explains it. Agent reading the skill
+  would see "majority shift" in output with no explanation.
+- Sophist: 0 findings — clean.
+
+**Fix:** Added MAJORITY SHIFT documentation to SKILL.md line 160 alongside the UNIFORM SHIFT docs:
+"It also flags a MAJORITY SHIFT — when ≥N-1 prompts move the same way with overall ≥ 3%
+(`--uniform-majority`, default 3%) — catching cases where one prompt diverges but the majority
+still indicates length change as the mechanism."
+
+**Runtime verification:** All scripts compile clean. All fixtures reproduce correctly. Verdict text
+correct for all scenarios. Epsilon guard verified: -2.999... triggers, 2.995% does not.
+
 ## Convergence status
 
-Rounds 1–11 completed. 4 files changed in round 11 (stats.py, publishing.md). 0 consecutive clean
-rounds at round 11. Convergence criterion: 2 consecutive zero-finding rounds. Methodology is sound,
-code is tested, no blocking defects remain. Open items are design preferences (majority vs uniform
-threshold, epsilon size) that have been reviewed and accepted.
+Rounds 1–12 completed. 1 file changed in round 12 (SKILL.md). 1 of 2 reviewers clean at round 12
+(sophist clean, theory found 1 documentation gap — now fixed). Convergence criterion: 2 consecutive
+zero-finding rounds. Methodology is sound, code is tested, documentation is now complete.
