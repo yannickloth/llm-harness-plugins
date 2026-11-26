@@ -1,6 +1,7 @@
 import { registerSkillRecords, readSkillRecords } from "../../shared/v2-skills"
 import { moduleDir } from "../../shared/module-dir"
 import { createLogger } from "../../shared/plugin-logger"
+import { writeLoadCanary } from "../../shared/load-canary"
 import path from "path"
 
 const pluginRoot = path.resolve(moduleDir(import.meta.url, import.meta.dir), "..")
@@ -30,6 +31,7 @@ export default {
   id: "inference-optimisation",
 
   async setup(ctx: any) {
+    writeLoadCanary("inference-optimisation")
     const logger = createLogger(ctx.client ?? {}, "inference-optimisation")
     logger.info(`plugin active — skill dir registered at ${skillsDir}`)
 
@@ -42,6 +44,7 @@ export default {
 
   // v1 compat — appends the skills directory so the old path works too.
   async server(input: any, options?: any) {
+    writeLoadCanary("inference-optimisation")
     return async ({ client }: any) => {
       const logger = createLogger(client, "inference-optimisation")
       logger.info(`plugin active (v1 path)`)
