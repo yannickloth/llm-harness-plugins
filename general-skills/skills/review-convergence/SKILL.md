@@ -37,10 +37,12 @@ Each reviewer is either:
   rounds both returned zero findings for it, and which has not been changed
   since. Eliminated regions are never re-reviewed on schedule. Elimination is
   the converged state — not a parked, deferred, or ledgered state.
-- **Re-add:** any change to a region re-enters it with its clean history reset —
-  including a change forced indirectly (a fix in region B that requires editing
-  region A re-adds A). A previously converged region that must be modified
-  converges again the same way: two clean rounds over the new content.
+- **Re-add (cleared regions can come back):** a region eliminated in an earlier
+  round may be changed in a later round — directly, or indirectly when a fix
+  elsewhere requires editing it. Any such change re-adds the region as a review
+  target, with its clean history reset. A previously converged region that must
+  be modified converges again the same way: two clean rounds over the new
+  content.
 - **Termination:** the review set computed for the next round is empty →
   converged; stop. Round 10 with findings still open → halt; report remaining
   findings for human review.
@@ -94,8 +96,10 @@ Per round (R1, R2, ...):
 - The round-1 broad pass is the only complete pass. Its quality sets the floor
   for everything the window eliminates — a shallow broad pass eliminates
   under-reviewed regions. Do not let R1 be a skim.
-- Eliminated ≠ ignored forever: later findings in region B may force an edit in
-  eliminated region A; that edit re-adds A. Expected, not a failure of the model.
+- Cleared ≠ permanent: a region cleared in earlier rounds can be changed in
+  later rounds — directly, or because a fix elsewhere requires it. Every such
+  change re-adds it as a review target. Expect eliminated regions to re-enter;
+  that is the model working, not a failure of it.
 - A round with zero findings over a non-empty set eliminates those regions; the
   next set is whatever else is still in its window, else empty → stop.
 - Do not re-audit cleared ground to "be safe" — that is how this loop used to
